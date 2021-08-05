@@ -41,6 +41,12 @@ void CPU::Reset()
 }
 
 
+void CPU::Initialize()
+{
+
+}
+
+
 void CPU::Update()
 {
 	if (curr_instr.instr_executing)
@@ -48,7 +54,7 @@ void CPU::Update()
 		std::invoke(curr_instr.addr_mode_fun, this);
 	}
 	else
-		OneInstruction();
+		BeginInstruction();
 }
 
 
@@ -76,7 +82,7 @@ void CPU::Deserialize(std::ifstream& ifs)
 }
 
 
-void CPU::OneInstruction()
+void CPU::BeginInstruction()
 {
 	curr_instr.opcode = bus->Read(PC++);
 	curr_instr.addr_mode = DetermineAddressingMode(curr_instr.opcode);
@@ -143,7 +149,7 @@ void CPU::StepZeroPage()
 }
 
 
-void CPU::StepZeroPageIndexed(u8 index_reg)
+void CPU::StepZeroPageIndexed(u8& index_reg)
 {
 	switch (curr_instr.cycle++)
 	{
@@ -214,7 +220,7 @@ void CPU::StepAbsolute()
 }
 
 
-void CPU::StepAbsoluteIndexed(u8 index_reg)
+void CPU::StepAbsoluteIndexed(u8& index_reg)
 {
 	static bool addition_overflow;
 
@@ -404,7 +410,8 @@ CPU::AddrMode CPU::DetermineAddressingMode(u8 opcode) const
 {
 	switch (opcode & 0x1F)
 	{
-	case 0x00: if (opcode == 0x20)           return AddrMode::Absolute;
+	case 0x00:
+		if (opcode == 0x20)           return AddrMode::Absolute;
 		if ((opcode & ~0x1F) >= 0x80) return AddrMode::Immediate;
 		return AddrMode::Implicit; // nani
 	case 0x01: return AddrMode::Indexed_indirect;
@@ -445,11 +452,12 @@ CPU::AddrMode CPU::DetermineAddressingMode(u8 opcode) const
 void CPU::ADC()
 {
 	u8 op = curr_instr.read_addr + flags.C;
+	flags.V = ((A & 0x7F) + (curr_instr.read_addr & 0x7F) + flags.C > 0x7F)
+	        ^ ((A & 0xFF) + (curr_instr.read_addr & 0xFF) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
-	flags.V = ((A & 0x7F) + (op & 0x7F) > 0x7F) ^ flags.C;
 	A += op;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -458,7 +466,7 @@ void CPU::AND()
 	u8 op = curr_instr.read_addr;
 	A &= op;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -467,10 +475,10 @@ void CPU::ASL()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = target << 1 & 0xFF;
 	curr_instr.new_target = new_target;
-	flags.C = CheckBit(target, 7);
+	flags.C = target & 0x80;
 	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
 		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
-	flags.N = CheckBit(new_target, 7);
+	flags.N = new_target & 0x80;
 }
 
 
@@ -496,8 +504,8 @@ void CPU::BIT()
 {
 	u8 op = curr_instr.read_addr;
 	flags.Z = A & op;
-	flags.V = CheckBit(op, 6);
-	flags.N = CheckBit(op, 7);
+	flags.V = op & 0x40;
+	flags.N = op & 0x80;
 }
 
 
@@ -569,7 +577,7 @@ void CPU::CMP()
 	flags.C = A >= M;
 	flags.Z = A == M;
 	u8 result = A - M;
-	flags.N = CheckBit(result, 7);
+	flags.N = result & 0x80;
 }
 
 
@@ -579,7 +587,7 @@ void CPU::CPX()
 	flags.C = X >= M;
 	flags.Z = X == M;
 	u8 result = X - M;
-	flags.N = CheckBit(result, 7);
+	flags.N = result & 0x80;
 }
 
 
@@ -589,7 +597,7 @@ void CPU::CPY()
 	flags.C = Y >= M;
 	flags.Z = Y == M;
 	u8 result = Y - M;
-	flags.N = CheckBit(result, 7);
+	flags.N = result & 0x80;
 }
 
 
@@ -599,7 +607,7 @@ void CPU::DEC()
 	M--;
 	curr_instr.new_target = M;
 	flags.Z = M == 0;
-	flags.N = CheckBit(M, 7);
+	flags.N = M & 0x80;
 }
 
 
@@ -607,7 +615,7 @@ void CPU::DEX()
 {
 	X--;
 	flags.Z = X == 0;
-	flags.N = CheckBit(X, 7);
+	flags.N = X & 0x80;
 }
 
 
@@ -615,7 +623,7 @@ void CPU::DEY()
 {
 	Y--;
 	flags.Z = Y == 0;
-	flags.N = CheckBit(Y, 7);
+	flags.N = Y & 0x80;
 }
 
 
@@ -624,7 +632,7 @@ void CPU::EOR()
 	u8 op = curr_instr.read_addr;
 	A ^= op;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -634,7 +642,7 @@ void CPU::INC()
 	M++;
 	curr_instr.new_target = M;
 	flags.Z = M == 0;
-	flags.N = CheckBit(M, 7);
+	flags.N = M & 0x80;
 }
 
 
@@ -642,7 +650,7 @@ void CPU::INX()
 {
 	X++;
 	flags.Z = X == 0;
-	flags.N = CheckBit(X, 7);
+	flags.N = X & 0x80;
 }
 
 
@@ -650,7 +658,7 @@ void CPU::INY()
 {
 	Y++;
 	flags.Z = Y == 0;
-	flags.N = CheckBit(Y, 7);
+	flags.N = Y & 0x80;
 }
 
 
@@ -673,7 +681,7 @@ void CPU::LDA()
 	u8 M = curr_instr.read_addr;
 	A = M;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -682,7 +690,7 @@ void CPU::LDX()
 	u8 M = curr_instr.read_addr;
 	X = M;
 	flags.Z = X == 0;
-	flags.N = CheckBit(X, 7);
+	flags.N = X & 0x80;
 }
 
 
@@ -691,7 +699,7 @@ void CPU::LDY()
 	u8 M = curr_instr.read_addr;
 	Y = M;
 	flags.Z = Y == 0;
-	flags.N = CheckBit(Y, 7);
+	flags.N = Y & 0x80;
 }
 
 
@@ -700,9 +708,9 @@ void CPU::LSR()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = target >> 1;
 	curr_instr.new_target = new_target;
-	flags.C = CheckBit(target, 0);
+	flags.C = target & 0x80;
 	flags.Z = new_target == 0;
-	flags.N = CheckBit(new_target, 7);
+	flags.N = new_target & 0x80;
 }
 
 
@@ -717,7 +725,7 @@ void CPU::ORA()
 	u8 M = curr_instr.read_addr;
 	A |= M;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -737,20 +745,20 @@ void CPU::PLA()
 {
 	A = PullByteFromStack();
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
 void CPU::PLP()
 {
 	u8 P = PullByteFromStack();
-	flags.C = CheckBit(P, 0);
-	flags.Z = CheckBit(P, 1);
-	flags.I = CheckBit(P, 2);
-	flags.D = CheckBit(P, 3);
-	flags.B = CheckBit(P, 4);
-	flags.V = CheckBit(P, 6);
-	flags.N = CheckBit(P, 7);
+	flags.C = P & 0x01;
+	flags.Z = P & 0x02;
+	flags.I = P & 0x04;
+	flags.D = P & 0x08;
+	flags.B = P & 0x10;
+	flags.V = P & 0x40;
+	flags.N = P & 0x80;
 }
 
 
@@ -759,10 +767,10 @@ void CPU::ROL()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = (target << 1 | flags.C) & 0xFF;
 	curr_instr.new_target = new_target;
-	flags.C = CheckBit(target, 7);
+	flags.C = target & 0x80;
 	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
 		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
-	flags.N = CheckBit(new_target, 7);
+	flags.N = new_target & 0x80;
 }
 
 
@@ -771,23 +779,23 @@ void CPU::ROR()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = target >> 1 | flags.C << 7;
 	curr_instr.new_target = new_target;
-	flags.C = CheckBit(target, 0);
+	flags.C = target & 0x80;
 	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
 		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
-	flags.N = CheckBit(new_target, 7);
+	flags.N = new_target & 0x80;
 }
 
 
 void CPU::RTI()
 {
 	u8 P = PullByteFromStack();
-	flags.C = CheckBit(P, 0);
-	flags.Z = CheckBit(P, 1);
-	flags.I = CheckBit(P, 2);
-	flags.D = CheckBit(P, 3);
-	flags.B = CheckBit(P, 4);
-	flags.V = CheckBit(P, 6);
-	flags.N = CheckBit(P, 7);
+	flags.C = P & 0x01;
+	flags.Z = P & 0x02;
+	flags.I = P & 0x04;
+	flags.D = P & 0x08;
+	flags.B = P & 0x10;
+	flags.V = P & 0x40;
+	flags.N = P & 0x80;
 
 	PC = PullWordFromStack();
 }
@@ -801,12 +809,13 @@ void CPU::RTS()
 
 void CPU::SBC()
 {
-	u8 op = curr_instr.read_addr + !flags.C;
-	flags.C = op > A;
-	A -= op;
+	u8 op = (0xFF - curr_instr.read_addr) + flags.C;
+	flags.V = ((A & 0x7F) + ((u8)(0xFF - curr_instr.read_addr) & 0x7F) + flags.C > 0x7F)
+	        ^ ((A & 0xFF) + ((u8)(0xFF - curr_instr.read_addr) & 0xFF) + flags.C > 0xFF);
+	flags.C = !(A + op > 0xFF);
+	A += op;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
-	// todo: flags.V
+	flags.N = A & 0x80;
 }
 
 
@@ -850,7 +859,7 @@ void CPU::TAX()
 {
 	X = A;
 	flags.Z = X == 0;
-	flags.N = CheckBit(X, 7);
+	flags.N = X & 0x80;
 }
 
 
@@ -858,7 +867,7 @@ void CPU::TAY()
 {
 	Y = A;
 	flags.Z = Y == 0;
-	flags.N = CheckBit(Y, 7);
+	flags.N = Y & 0x80;
 }
 
 
@@ -866,7 +875,7 @@ void CPU::TSX()
 {
 	X = S;
 	flags.Z = X == 0;
-	flags.N = CheckBit(X, 7);
+	flags.N = X & 0x80;
 }
 
 
@@ -874,7 +883,7 @@ void CPU::TXA()
 {
 	A = X;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -882,7 +891,7 @@ void CPU::TXS()
 {
 	S = X;
 	flags.Z = S == 0;
-	flags.N = CheckBit(S, 7);
+	flags.N = S & 0x80;
 }
 
 
@@ -890,7 +899,7 @@ void CPU::TYA()
 {
 	A = Y;
 	flags.Z = A == 0;
-	flags.N = CheckBit(A, 7);
+	flags.N = A & 0x80;
 }
 
 
@@ -1015,7 +1024,7 @@ void CPU::TAS()
 {
 	S = A;
 	flags.Z = S == 0;
-	flags.N = CheckBit(S, 7);
+	flags.N = S & 0x80;
 }
 
 
