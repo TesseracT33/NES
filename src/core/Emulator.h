@@ -8,8 +8,8 @@
 class Emulator
 {
 public:
-	virtual void StartGame(const char* rom_path) = 0;
-	virtual void MainLoop();
+	void StartGame(const char* rom_path);
+	void MainLoop();
 
 	void Pause();
 	void Reset();
@@ -20,9 +20,13 @@ public:
 	void SaveState();
 
 private:
+	const unsigned cycles_per_sec_NTSC = 1789773;
+	const unsigned cycles_per_sec_PAL = 1662607;
+	const unsigned cycles_per_sec_Dendy = 1773448;
+
 	virtual void AddComponents() = 0;
 	std::vector<Component*> components;
 
-	Cartridge* cartridge;
+	Cartridge cartridge;
 };
 

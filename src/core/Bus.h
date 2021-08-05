@@ -5,7 +5,7 @@
 
 #include "Component.h"
 
-class Bus : public Component
+class Bus final : public Component
 {
 public:
 	enum Addr : u16
@@ -15,6 +15,12 @@ public:
 		INPUT_2 = 0x4017,
 	};
 
+	void Initialize() override;
+	void Reset() override;
+
+	void Serialize(std::ofstream& ofs) override;
+	void Deserialize(std::ifstream& ifs) override;
+
 	u8 Read(u16 addr);
 	void Write(u16 addr, u8 data);
 
@@ -23,7 +29,7 @@ private:
 	{
 		u8 ram[0x800];
 		u8 ppu_regs[0x8];
-		u8 apu_io_regs[0x17];
+		u8 apu_io_regs[0x18];
 	} memory;
 };
 

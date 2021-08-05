@@ -1,6 +1,30 @@
 #include "Bus.h"
 
 
+void Bus::Initialize()
+{
+
+}
+
+
+void Bus::Reset()
+{
+
+}
+
+
+void Bus::Serialize(std::ofstream& ofs)
+{
+
+}
+
+
+void Bus::Deserialize(std::ifstream& ifs)
+{
+
+}
+
+
 u8 Bus::Read(u16 addr)
 {
 	// Internal RAM ($0000 - $1FFF)

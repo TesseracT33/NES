@@ -19,6 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\core\Header.h" />
+    <ClInclude Include="src\core\mappers\BaseMapper.h" />
+    <ClInclude Include="src\core\mappers\MapperEnum.h" />
+    <ClInclude Include="src\core\mappers\NROM.h" />
     <ClInclude Include="src\gui\App.h" />
     <ClInclude Include="src\gui\MainWindow.h" />
     <ClInclude Include="src\core\Emulator.h" />
@@ -32,6 +36,7 @@
     <ClInclude Include="src\Utils.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\core\mappers\BaseMapper.cpp" />
     <ClCompile Include="src\gui\App.cpp" />
     <ClCompile Include="src\gui\MainWindow.cpp" />
     <ClCompile Include="src\core\Emulator.cpp" />

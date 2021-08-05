@@ -19,9 +19,10 @@ void Emulator::SaveState()
 
 void Emulator::StartGame(const char* rom_path)
 {
-	Cartridge::Mapper mapper = Cartridge::GetMapperFromCartridge(rom_path);
-	if (mapper == Cartridge::Mapper::INVALID)
-		return;
+	bool rom_loaded = cartridge.ReadRomFile(rom_path);
+	if (!rom_loaded) return;
+
+	MainLoop();
 }
 
 
