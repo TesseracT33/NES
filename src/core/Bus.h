@@ -3,6 +3,7 @@
 #include "../Types.h"
 #include "../Utils.h"
 
+#include "Cartridge.h"
 #include "Component.h"
 
 class Bus final : public Component
@@ -14,6 +15,8 @@ public:
 		INPUT_1 = 0x4016,
 		INPUT_2 = 0x4017,
 	};
+
+	Cartridge* cartridge;
 
 	void Initialize() override;
 	void Reset() override;

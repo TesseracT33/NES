@@ -25,6 +25,12 @@ void Cartridge::Deserialize(std::ifstream& ifs)
 }
 
 
+void Cartridge::Eject()
+{
+
+}
+
+
 u8 Cartridge::Read(u16 addr, bool ppu) const { return mapper->Read(addr); }
 
 

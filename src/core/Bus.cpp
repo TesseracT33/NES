@@ -54,7 +54,7 @@ u8 Bus::Read(u16 addr)
 	// Cartridge Space($4020 - $FFFF)
 	else
 	{
-
+		return cartridge->Read(addr);
 	}
 }
 
@@ -88,6 +88,6 @@ void Bus::Write(u16 addr, u8 data)
 	// Cartridge Space($4020 - $FFFF)
 	else
 	{
-
+		cartridge->Write(addr, data);
 	}
 }

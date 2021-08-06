@@ -60,6 +60,18 @@
     <ClInclude Include="src\core\Header.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\core\mappers\MMC1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\PPU.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\APU.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\Joypad.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\Bus.cpp">
@@ -80,7 +92,13 @@
     <ClCompile Include="src\gui\App.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\core\mappers\BaseMapper.cpp">
+    <ClCompile Include="src\core\PPU.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\APU.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\Joypad.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

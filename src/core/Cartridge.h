@@ -2,7 +2,7 @@
 
 #include <wx/msgdlg.h>
 
-#include "Bus.h"
+#include "Component.h"
 #include "Header.h"
 
 #include "mappers/BaseMapper.h"
@@ -18,10 +18,10 @@ public:
 	void Serialize(std::ofstream& ofs) override;
 	void Deserialize(std::ifstream& ifs) override;
 
+	void Eject();
 	u8 Read(u16 addr, bool ppu = false) const;
-	void Write(u16 addr, u8 data, bool ppu = false);
-
 	bool ReadRomFile(const char* path);
+	void Write(u16 addr, u8 data, bool ppu = false);
 
 private:
 	static const size_t header_size = 0x10;
