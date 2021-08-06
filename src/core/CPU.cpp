@@ -273,7 +273,16 @@ void CPU::StepAbsoluteIndexed(u8& index_reg)
 
 void CPU::StepRelative()
 {
+	switch (curr_instr.cycle++)
+	{
+	case 1:
+		curr_instr.addr_lo = bus->Read(PC++);
+		return;
 
+	case 2:
+		std::invoke(curr_instr.instr, this);
+		curr_instr.instr_executing = false;
+	}
 }
 
 

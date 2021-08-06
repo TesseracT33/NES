@@ -61,6 +61,7 @@ private:
 		InstrType instr_type;
 		int cycle;
 		bool addition_overflow;
+		int additional_cycles;
 
 		u8 addr_lo, addr_hi;
 		u8 read_addr;
@@ -256,7 +257,8 @@ private:
 		// todo: read offset even if !cond?
 		if (cond)
 		{
-			s8 offset = Read_s8();
+			s8 offset = (s8)curr_instr.addr_lo;
+			curr_instr.additional_cycles = (PC & 0xFF00) == (PC + offset & 0xFF) ? 1 : 2;
 			PC += offset;
 		}
 	}
