@@ -54,13 +54,6 @@ void CPU::Initialize()
 
 void CPU::Update()
 {
-	// possibly wait for the currently executing instruction to finish
-	if (curr_instr.additional_cycles > 0)
-	{
-		curr_instr.additional_cycles--;
-		return;
-	}
-
 	if (IRQ_is_being_serviced)
 	{
 		if (--cycles_until_IRQ_service_stops == 0)
@@ -108,6 +101,7 @@ void CPU::StepImplicit()
 	else if (--curr_instr.additional_cycles == 0)
 	{
 		curr_instr.instr_executing = false;
+		instr_invoked = false;
 	}
 }
 
@@ -286,14 +280,25 @@ void CPU::StepAbsoluteIndexed(u8& index_reg)
 
 void CPU::StepRelative()
 {
+	// TODO: unsure about timing
+	// Branch instructions (only these use relative addressing) take 2 + 1 or 2 + 2 cycles, depending on if the branch succeeds
+	// However, all branching logic is inside of the Branch() function (including changing PC, which probably happens on cycle 3 on real HW?)
+	// Not that it matters; neither the PC or the offset can be changed from the outside, if PC were changed in cycle 3 instead of 2.
 	switch (curr_instr.cycle++)
 	{
 	case 1:
 		curr_instr.addr_lo = bus->Read(PC++);
+		std::invoke(curr_instr.instr, this);
+		if (curr_instr.additional_cycles == 0)
+			curr_instr.instr_executing = false;
 		return;
 
 	case 2:
-		std::invoke(curr_instr.instr, this);
+		if (--curr_instr.additional_cycles == 0)
+			curr_instr.instr_executing = false;
+		return;
+
+	case 3:
 		curr_instr.instr_executing = false;
 	}
 }
