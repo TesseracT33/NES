@@ -1,8 +1,13 @@
 #include "CPU.h"
 
-using namespace Util;
 
 CPU::CPU()
+{
+	BuildInstrTypeTable();
+}
+
+
+void CPU::BuildInstrTypeTable()
 {
 	auto GetInstrType = [&](instr_t instr)
 	{
@@ -49,60 +54,67 @@ void CPU::Initialize()
 
 void CPU::Update()
 {
+	// possibly wait for the currently executing instruction to finish
+	if (curr_instr.additional_cycles > 0)
+	{
+		curr_instr.additional_cycles--;
+		return;
+	}
+
+	if (IRQ_is_being_serviced)
+	{
+		if (--cycles_until_IRQ_service_stops == 0)
+			IRQ_is_being_serviced = false;
+		else
+			return;
+	}
+
 	if (curr_instr.instr_executing)
 	{
 		std::invoke(curr_instr.addr_mode_fun, this);
 	}
 	else
+	{
+		if (!flags.I && IRQ == 0)
+			ServiceIRQ();
 		BeginInstruction();
-}
-
-
-void CPU::Serialize(std::ofstream& ofs)
-{
-	ofs.write((const char*)&curr_instr, sizeof(InstrDetails));
-	ofs.write((const char*)&A, sizeof(u8));
-	ofs.write((const char*)&X, sizeof(u8));
-	ofs.write((const char*)&Y, sizeof(u8));
-	ofs.write((const char*)&S, sizeof(u8));
-	ofs.write((const char*)&PC, sizeof(u16));
-	ofs.write((const char*)&flags, sizeof(Flags));
-}
-
-
-void CPU::Deserialize(std::ifstream& ifs)
-{
-	ifs.read((char*)&curr_instr, sizeof(InstrDetails));
-	ifs.read((char*)&A, sizeof(u8));
-	ifs.read((char*)&X, sizeof(u8));
-	ifs.read((char*)&Y, sizeof(u8));
-	ifs.read((char*)&S, sizeof(u8));
-	ifs.read((char*)&PC, sizeof(u16));
-	ifs.read((char*)&flags, sizeof(Flags));
+	}
 }
 
 
 void CPU::BeginInstruction()
 {
 	curr_instr.opcode = bus->Read(PC++);
-	curr_instr.addr_mode = DetermineAddressingMode(curr_instr.opcode);
+	curr_instr.addr_mode = GetAddressingModeFromOpcode(curr_instr.opcode);
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
 	curr_instr.instr_executing = true;
 	curr_instr.cycle = 1;
+	curr_instr.additional_cycles = 0;
 }
 
 
 void CPU::StepImplicit()
 {
-	bus->Read(PC);
-	std::invoke(curr_instr.instr, this);
-	curr_instr.instr_executing = false;
+	// Some instructions using implicit addressing take longer than two cycles (remaining amount is stored in curr_instr.additional_cycles)
+	//    so we need to wait until these "finish".
+	static bool instr_invoked = false;
+
+	if (!instr_invoked)
+	{
+		std::invoke(curr_instr.instr, this);
+		instr_invoked = true;
+	}
+	else if (--curr_instr.additional_cycles == 0)
+	{
+		curr_instr.instr_executing = false;
+	}
 }
 
 
 void CPU::StepAccumulator()
 {
+	// all instructions using the accumulator addressing mode take two cycles (first one is from when fetching the opcode)
 	curr_instr.read_addr = A;
 	std::invoke(curr_instr.instr, this);
 	A = curr_instr.new_target;
@@ -112,6 +124,7 @@ void CPU::StepAccumulator()
 
 void CPU::StepImmediate()
 {
+	// all instructions using the immediate addressing mode take two cycles (first one is from when fetching the opcode)
 	curr_instr.read_addr = bus->Read(PC++);
 	std::invoke(curr_instr.instr, this);
 	curr_instr.instr_executing = false;
@@ -415,16 +428,16 @@ void CPU::StepIndirectIndexed()
 }
 
 
-CPU::AddrMode CPU::DetermineAddressingMode(u8 opcode) const
+CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 {
 	switch (opcode & 0x1F)
 	{
 	case 0x00:
 		if (opcode == 0x20)           return AddrMode::Absolute;
 		if ((opcode & ~0x1F) >= 0x80) return AddrMode::Immediate;
-		return AddrMode::Implicit; // nani
+		return AddrMode::Implicit;
 	case 0x01: return AddrMode::Indexed_indirect;
-	case 0x02: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implicit; // nani
+	case 0x02: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implicit;
 	case 0x03: return AddrMode::Indexed_indirect;
 	case 0x04:
 	case 0x05:
@@ -432,29 +445,48 @@ CPU::AddrMode CPU::DetermineAddressingMode(u8 opcode) const
 	case 0x07: return AddrMode::Zero_page;
 	case 0x08: return AddrMode::Implicit;
 	case 0x09: return AddrMode::Immediate;
-	case 0x0A: // todo
+	case 0x0A: return AddrMode::Accumulator;
 	case 0x0B: return AddrMode::Immediate;
-	case 0x0C: return (opcode == 0x6C ? AddrMode::Indirect : AddrMode::Absolute);
+	case 0x0C: return (opcode == 0x6) ? AddrMode::Indirect : AddrMode::Absolute;
 	case 0x0D:
 	case 0x0E:
 	case 0x0F: return AddrMode::Absolute;
 	case 0x10: return AddrMode::Relative;
 	case 0x11: return AddrMode::Indirect_indexed;
-	case 0x12: // todo
+	case 0x12: return AddrMode::Implicit;
 	case 0x13: return AddrMode::Indirect_indexed;
 	case 0x14:
 	case 0x15: return AddrMode::Zero_page_X;
 	case 0x16:
 	case 0x17: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Zero_page_Y : AddrMode::Zero_page_X;
-	case 0x18: // todo
+	case 0x18: return (opcode == 0x98) ? AddrMode::Accumulator : AddrMode::Implicit;
 	case 0x19: return AddrMode::Absolute_Y;
-	case 0x1A: // todo
+	case 0x1A: return AddrMode::Implicit;
 	case 0x1B: return AddrMode::Absolute_Y;
 	case 0x1C:
 	case 0x1D: return AddrMode::Absolute_X;
 	case 0x1E:
 	case 0x1F: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Absolute_Y : AddrMode::Absolute_X;
 	}
+}
+
+
+void CPU::ServiceIRQ()
+{
+	// todo: not sure if this would need to be divided into steps (from each cycle)?
+	PushWordToStack(PC);
+	PushByteToStack(GetStatusRegInterrupt());
+	PC = bus->Read(Bus::Addr::IRQ_BRK_VEC) | bus->Read(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
+	flags.I = 1;
+
+	IRQ_is_being_serviced = true;
+	cycles_until_IRQ_service_stops = IRQ_service_cycle_len;
+}
+
+
+void CPU::ServiceNMI()
+{
+
 }
 
 
@@ -538,9 +570,11 @@ void CPU::BPL()
 
 void CPU::BRK()
 {
-	PushWordToStack(PC);
-	PushByteToStack(GetStatusReg(&CPU::BRK));
+	ServiceIRQ();
 	flags.B = 1;
+	// If the interrupt servicing is forced from the BRK instruction,
+    // the interrupt servicing takes one less cycle to perform (6 instead of 7)
+	cycles_until_IRQ_service_stops--;
 }
 
 
@@ -682,6 +716,7 @@ void CPU::JSR()
 {
 	PushWordToStack(PC);
 	PC = curr_instr.addr;
+	// todo: doc says "The JSR instruction pushes the address (minus one)". 'minus one' meaning?
 }
 
 
@@ -741,12 +776,16 @@ void CPU::ORA()
 void CPU::PHA()
 {
 	PushByteToStack(A);
+	// This instr takes 3 cycles, but due to the way that the StepImplied() function is built,
+    //    all instr with implied addressing take 2 cycles.
+	curr_instr.additional_cycles = 1;
 }
 
 
 void CPU::PHP()
 {
-	PushByteToStack(GetStatusReg(&CPU::PHP));
+	PushByteToStack(GetStatusRegInstr(&CPU::PHP));
+	curr_instr.additional_cycles = 1;
 }
 
 
@@ -755,6 +794,9 @@ void CPU::PLA()
 	A = PullByteFromStack();
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
+	// This instr takes 4 cycles, but due to the way that the StepImplied() function is built,
+	//    all instr with implied addressing take 2 cycles.
+	curr_instr.additional_cycles = 2;
 }
 
 
@@ -768,6 +810,7 @@ void CPU::PLP()
 	flags.B = P & 0x10;
 	flags.V = P & 0x40;
 	flags.N = P & 0x80;
+	curr_instr.additional_cycles = 2;
 }
 
 
@@ -805,14 +848,19 @@ void CPU::RTI()
 	flags.B = P & 0x10;
 	flags.V = P & 0x40;
 	flags.N = P & 0x80;
-
 	PC = PullWordFromStack();
+	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
+	//    all instr with implied addressing take 2 cycles.
+	curr_instr.additional_cycles = 4;
 }
 
 
 void CPU::RTS()
 {
 	PC = PullWordFromStack();
+	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
+	//    all instr with implied addressing take 2 cycles.
+	curr_instr.additional_cycles = 4;
 }
 
 
@@ -1040,4 +1088,28 @@ void CPU::TAS()
 void CPU::XAA()
 {
 
+}
+
+
+void CPU::Serialize(std::ofstream& ofs)
+{
+	ofs.write((const char*)&curr_instr, sizeof(InstrDetails));
+	ofs.write((const char*)&A, sizeof(u8));
+	ofs.write((const char*)&X, sizeof(u8));
+	ofs.write((const char*)&Y, sizeof(u8));
+	ofs.write((const char*)&S, sizeof(u8));
+	ofs.write((const char*)&PC, sizeof(u16));
+	ofs.write((const char*)&flags, sizeof(Flags));
+}
+
+
+void CPU::Deserialize(std::ifstream& ifs)
+{
+	ifs.read((char*)&curr_instr, sizeof(InstrDetails));
+	ifs.read((char*)&A, sizeof(u8));
+	ifs.read((char*)&X, sizeof(u8));
+	ifs.read((char*)&Y, sizeof(u8));
+	ifs.read((char*)&S, sizeof(u8));
+	ifs.read((char*)&PC, sizeof(u16));
+	ifs.read((char*)&flags, sizeof(Flags));
 }

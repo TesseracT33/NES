@@ -72,12 +72,6 @@ private:
 
 	static const size_t num_instr = 0x100;
 
-	u8 A, X, Y; // registers
-	u8 S; // stack pointer
-	u16 PC; // program counter
-
-	struct Flags { bool C, Z, I, D, V, N, B; } flags;
-
 	const instr_t instr_table[num_instr] =
 	{
 		&CPU::BRK, &CPU::ORA, &CPU::STP, &CPU::SLO, &CPU::NOP, &CPU::ORA, &CPU::ASL, &CPU::SLO, 
@@ -125,12 +119,25 @@ private:
 		&CPU::StepIndirect, &CPU::StepIndexedIndirect, &CPU::StepIndirectIndexed
 	};
 
-	AddrMode DetermineAddressingMode(u8 opcode) const;
+	u8 A, X, Y; // registers
+	u8 S; // stack pointer
+	u16 PC; // program counter
+
+	struct Flags { bool C, Z, I, D, V, N, B; } flags;
+
+	// interrupt-related
+	bool IRQ;
+	bool IRQ_is_being_serviced = false;
+	const unsigned IRQ_service_cycle_len = 7;
+	unsigned cycles_until_IRQ_service_stops;
+
+	bool NMI;
 
 	// Maps opcodes to instruction types (Read, write, etc.). 
 	// Built in the ctor of CPU. Making it constexpr did not work smoothly
 	std::array<InstrType, num_instr> instr_type_table;
 
+	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 
 	void StepImplicit();
 	void StepAccumulator();
@@ -147,6 +154,11 @@ private:
 	void StepIndirect();
 	void StepIndexedIndirect();
 	void StepIndirectIndexed();
+
+	void ServiceIRQ();
+	void ServiceNMI();
+
+	void BuildInstrTypeTable();
 
 	// official instructions
 	void ADC();
@@ -258,7 +270,8 @@ private:
 		if (cond)
 		{
 			s8 offset = (s8)curr_instr.addr_lo;
-			curr_instr.additional_cycles = (PC & 0xFF00) == (PC + offset & 0xFF) ? 1 : 2;
+			// +1 cycle if branch succeeds, +2 if to a new page
+			curr_instr.additional_cycles = (PC & 0xFF00) == ((u16)(PC + offset) & 0xFF00) ? 1 : 2;
 			PC += offset;
 		}
 	}
@@ -280,10 +293,17 @@ private:
 		return hi << 8 | lo;
 	}
 
-	u8 GetStatusReg(instr_t instr) const
+	// called when an instruction wants access to the status register
+	u8 GetStatusRegInstr(instr_t instr) const
 	{
 		bool bit4 = (instr == &CPU::BRK || instr == &CPU::PHP);
 		return flags.N << 7 | flags.V << 6 | 1 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
+	}
+
+	// called when an interrupt is being serviced and the status register is pushed to the stack
+	u8 GetStatusRegInterrupt() const
+	{
+		return flags.N << 7 | flags.V << 6 | 1 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 };
 
