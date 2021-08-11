@@ -9,8 +9,6 @@
 class Bus final : public Component
 {
 public:
-	enum class Component { CPU, PPU };
-
 	enum Addr : u16
 	{
 		// PPU regs
@@ -43,7 +41,6 @@ public:
 		DMC_RAW    = 0x4011,
 		DMC_START  = 0x4012,
 		DMC_LEN    = 0x4013,
-		OAMDMA     = 0x4014,
 		SND_CHN    = 0x4015,
 		JOY1       = 0x4016,
 		JOY2       = 0x4017,
@@ -69,7 +66,6 @@ private:
 	struct Memory
 	{
 		u8 ram[0x800];        // $0000-$07FF, repeated three times until $1FFF
-		u8 ppu_regs[0x8];     // $2000-$2007, repeated until $3FFF
 		u8 apu_io_regs[0x18]; // $4000-$4017
 		u8 apu_io_test[0x08]; // $4018-$401F
 	} memory;

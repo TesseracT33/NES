@@ -36,7 +36,8 @@ u8 Bus::Read(u16 addr)
 	// PPU Registers($2000 - $3FFF)
 	else if (addr <= 0x3FFF)
 	{
-		return memory.ppu_regs[(addr - 0x2000) & 7]; // wrap address to between 0x2000-0x2007 
+		// wrap address to between 0x2000-0x2007 
+		// todo: read from ppu
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -70,7 +71,8 @@ void Bus::Write(u16 addr, u8 data)
 	// PPU Registers($2000 - $3FFF)
 	else if (addr <= 0x3FFF)
 	{
-		memory.ppu_regs[(addr - 0x2000) & 7] = data; // wrap address to between 0x2000-0x2007 
+		// wrap address to between 0x2000-0x2007 
+		// todo: write to ppu
 	}
 
 	// APU & I/O Registers ($4000-$4017)
