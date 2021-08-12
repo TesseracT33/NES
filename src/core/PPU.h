@@ -4,11 +4,13 @@
 
 #include "Bus.h"
 #include "Component.h"
+#include "CPU.h"
 
 class PPU final : public Component
 {
 public:
 	Bus* bus;
+	CPU* cpu;
 
 	void Initialize();
 	void Update();

@@ -113,7 +113,7 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL:
-		if (PPUCTRL_NMI_enable && PPUCTRL_NMI_enable && PPUSTATUS_vblank && this->IsInVblank())
+		if (!PPUCTRL_NMI_enable && (data & PPUCTRL_NMI_enable_mask) && PPUSTATUS_vblank && this->IsInVblank())
 		{
 			// todo: generate NMI signal
 		}
@@ -169,11 +169,11 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 
 	case Bus::Addr::OAMDMA:
 	{
-		// perform OAM DMA transfer
+		// perform OAM DMA transfer. it is technically performed by the cpu, so the cpu will stop executing instructions during this time
 		const u16 start_addr = OAMADDR << 8;
 		for (u16 addr = start_addr; addr <= start_addr + 0xFF; addr++)
 			memory.oam[addr & 0xFF] = bus->Read(addr);
-		// todo: stop cpu from executing instructions for a while
+		cpu->Set_OAM_DMA_Active();
 	}
 
 	}

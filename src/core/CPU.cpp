@@ -54,6 +54,13 @@ void CPU::Initialize()
 
 void CPU::Update()
 {
+	if (oam_dma_transfer_active)
+	{
+		if (--oam_dma_cycles_until_finished == 0)
+			oam_dma_transfer_active = false;
+		return;
+	}
+
 	if (IRQ_is_being_serviced)
 	{
 		if (--cycles_until_IRQ_service_stops == 0)
@@ -72,6 +79,13 @@ void CPU::Update()
 			ServiceIRQ();
 		BeginInstruction();
 	}
+}
+
+
+void CPU::Set_OAM_DMA_Active()
+{
+	oam_dma_transfer_active = true;
+	oam_dma_cycles_until_finished = odd_cpu_cycle ? 514 : 513;
 }
 
 

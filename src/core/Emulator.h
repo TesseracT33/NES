@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "APU.h"
-#include "Bus.h"
+#include "BusImpl.h"
 #include "Cartridge.h"
 #include "Component.h"
 #include "CPU.h"
@@ -37,6 +37,8 @@ private:
 	const unsigned cycles_per_sec_Dendy = 1773448;
 
 	const unsigned cycles_per_frame_NTSC = 0;
+	const unsigned cycles_per_frame_PAL = 0;
+	const unsigned cycles_per_frame_Dendy = 0;
 
 	const unsigned microseconds_per_frame_NTSC = 0;
 
@@ -47,7 +49,7 @@ private:
 	unsigned cycle_counter;
 
 	APU apu;
-	Bus bus;
+	BusImpl bus;
 	Cartridge cartridge;
 	CPU cpu;
 	Joypad joypad;

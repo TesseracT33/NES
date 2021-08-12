@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "Bus.h"
+#include "Component.h"
 
 #define DEBUG
 
@@ -14,10 +15,11 @@ public:
 
 	Bus* bus;
 
-	void BeginInstruction();
 	void Initialize() override;
 	void Reset() override;
 	void Update() override;
+
+	void Set_OAM_DMA_Active();
 
 	void   Serialize(std::ofstream& ofs) override;
 	void Deserialize(std::ifstream& ifs) override;
@@ -125,11 +127,16 @@ private:
 
 	struct Flags { bool C, Z, I, D, V, N, B; } flags;
 
+	bool odd_cpu_cycle;
+
 	// interrupt-related
 	bool IRQ;
 	bool IRQ_is_being_serviced = false;
 	const unsigned IRQ_service_cycle_len = 7;
 	unsigned cycles_until_IRQ_service_stops;
+
+	bool oam_dma_transfer_active = false;
+	unsigned oam_dma_cycles_until_finished;
 
 	bool NMI;
 
@@ -138,6 +145,8 @@ private:
 	std::array<InstrType, num_instr> instr_type_table;
 
 	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
+
+	void BeginInstruction();
 
 	void StepImplicit();
 	void StepAccumulator();
@@ -266,7 +275,6 @@ private:
 
 	void Branch(bool cond)
 	{
-		// todo: read offset even if !cond?
 		if (cond)
 		{
 			s8 offset = (s8)curr_instr.addr_lo;

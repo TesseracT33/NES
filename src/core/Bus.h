@@ -1,12 +1,8 @@
 #pragma once
 
 #include "../Types.h"
-#include "../Utils.h"
 
-#include "Cartridge.h"
-#include "Component.h"
-
-class Bus final : public Component
+class Bus
 {
 public:
 	enum Addr : u16
@@ -51,23 +47,7 @@ public:
 		IRQ_BRK_VEC = 0xFFFE
 	};
 
-	Cartridge* cartridge;
-
-	void Initialize() override;
-	void Reset() override;
-
-	void Serialize(std::ofstream& ofs) override;
-	void Deserialize(std::ifstream& ifs) override;
-
-	u8 Read(u16 addr);
-	void Write(u16 addr, u8 data);
-
-private:
-	struct Memory
-	{
-		u8 ram[0x800];        // $0000-$07FF, repeated three times until $1FFF
-		u8 apu_io_regs[0x18]; // $4000-$4017
-		u8 apu_io_test[0x08]; // $4018-$401F
-	} memory;
+	virtual u8 Read(u16 addr) = 0;
+	virtual void Write(u16 addr, u8 data) = 0;
 };
 

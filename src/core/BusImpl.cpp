@@ -1,31 +1,19 @@
-#include "Bus.h"
+#include "BusImpl.h"
 
 
-void Bus::Initialize()
+void BusImpl::Initialize()
 {
 
 }
 
 
-void Bus::Reset()
+void BusImpl::Reset()
 {
 
 }
 
 
-void Bus::Serialize(std::ofstream& ofs)
-{
-
-}
-
-
-void Bus::Deserialize(std::ifstream& ifs)
-{
-
-}
-
-
-u8 Bus::Read(u16 addr)
+u8 BusImpl::Read(u16 addr)
 {
 	// Internal RAM ($0000 - $1FFF)
 	if (addr <= 0x1FFF)
@@ -37,7 +25,8 @@ u8 Bus::Read(u16 addr)
 	else if (addr <= 0x3FFF)
 	{
 		// wrap address to between 0x2000-0x2007 
-		// todo: read from ppu
+		addr = 0x2000 + (addr & 7);
+		return ppu->ReadFromPPUReg(addr);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -60,7 +49,7 @@ u8 Bus::Read(u16 addr)
 }
 
 
-void Bus::Write(u16 addr, u8 data)
+void BusImpl::Write(u16 addr, u8 data)
 {
 	// Internal RAM ($0000 - $1FFF)
 	if (addr <= 0x1FFF)
@@ -72,7 +61,8 @@ void Bus::Write(u16 addr, u8 data)
 	else if (addr <= 0x3FFF)
 	{
 		// wrap address to between 0x2000-0x2007 
-		// todo: write to ppu
+		addr = 0x2000 + (addr & 7);
+		ppu->WriteToPPUReg(addr, data);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -92,4 +82,16 @@ void Bus::Write(u16 addr, u8 data)
 	{
 		cartridge->Write(addr, data);
 	}
+}
+
+
+void BusImpl::Serialize(std::ofstream& ofs)
+{
+
+}
+
+
+void BusImpl::Deserialize(std::ifstream& ifs)
+{
+
 }
