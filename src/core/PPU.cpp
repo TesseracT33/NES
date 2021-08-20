@@ -53,31 +53,60 @@ void PPU::Initialize()
 
 void PPU::Update()
 {
-	for (int i = 0; i < 3; i++) // PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
+	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
+	for (int i = 0; i < 3; i++)
 	{
-		if (ppu_cycle_counter == 1)
+		if (current_scanline == pre_render_scanline) // == -1
 		{
-			if (current_scanline == pre_render_scanline)
+			if (ppu_cycle_counter == 1)
 				PPUSTATUS &= ~PPUSTATUS_vblank_mask;
-			else if (current_scanline == post_render_scanline)
+		}
+		else if (current_scanline < post_render_scanline) // < 240
+		{
+			if (ppu_cycle_counter == 1)
+			{
+				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64 (each write taking two cycles).
+				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time (?)
+				for (int i = 0; i < 32; i++)
+					secondary_OAM[i] = 0xFF;
+			}
+			else if (ppu_cycle_counter <= 256)
+			{
+				UpdateTileFetcher();
+				DoSpriteEvaluation();
+			}
+			else if (ppu_cycle_counter <= 320)
+			{
+
+			}
+			else if (ppu_cycle_counter <= 336)
+			{
+				UpdateTileFetcher();
+			}
+			else
+			{
+
+			}
+
+			if (reload_bg_shifters)
+			{
+				// this way of doing things may not make any sense... we will see
+				bg_pattern_table_shift_reg[0] = bg_pattern_table_shift_reg[0] & 0xFF | tile_fetcher.pattern_table_tile_low << 8;
+				bg_pattern_table_shift_reg[1] = bg_pattern_table_shift_reg[1] & 0xFF | tile_fetcher.pattern_table_tile_high << 8;
+			}
+
+			if (current_scanline > pre_render_scanline && current_scanline < post_render_scanline)
+			{
+				ShiftPixel();
+			}
+		}
+		else if (current_scanline == post_render_scanline + 1) // == 241
+		{
+			if (ppu_cycle_counter == 1)
+			{
 				PPUSTATUS |= PPUSTATUS_vblank_mask;
-		}
-
-		if (ppu_cycle_counter == 0)
-		{
-
-		}
-		else if (ppu_cycle_counter <= 256)
-		{
-			FetchTile();
-		}
-		else if (ppu_cycle_counter <= 320)
-		{
-
-		}
-		else if (ppu_cycle_counter <= 336)
-		{
-
+				// todo: set VBlank NMI
+			}
 		}
 
 		ppu_cycle_counter = (ppu_cycle_counter + 1) % (current_scanline == pre_render_scanline && odd_frame ? 340 : 341);
@@ -103,7 +132,10 @@ u8 PPU::ReadFromPPUReg(u16 addr)
 
 	case Bus::Addr::PPUADDR  : return PPUADDR; // todo: should it return the last written byte?
 	case Bus::Addr::PPUDATA  : return memory.Read(ppuaddr_written_addr);
-	case Bus::Addr::OAMDATA  : return OAMDATA;
+	case Bus::Addr::OAMDATA  : return ppu_cycle_counter < 64 ? 0xFF : OAMDATA;
+
+	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
+		;
 	}
 }
 
@@ -136,7 +168,8 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 	case Bus::Addr::OAMDATA:
 		if (current_scanline < post_render_scanline && (PPUMASK_bg_enable || PPUMASK_sprite_enable))
 		{
-			// todo: perform a glitchy increment of OAMADDR, bumping only the high 6 bits
+			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
+			OAMADDR += 0b100; // todo: correct?
 		}
 		else
 		{
@@ -180,39 +213,76 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 }
 
 
-void PPU::FetchTile()
+void PPU::ShiftPixel()
 {
-	static u8 nametable_byte, attribute_table_byte, pattern_table_tile_low, pattern_table_tile_high;
 
-	if (tile_fetcher.cycle == 1)
+}
+
+
+void PPU::DoSpriteEvaluation()
+{
+	for (int sprite_index = 0; sprite_index < std::size(memory.oam) / 4; sprite_index++)
 	{
-		tile_fetcher.cycle = 0;
-		tile_fetcher.step = (tile_fetcher.step + 1) % 4;
+		u8 y_pos = memory.oam[sprite_index];
+	}
+}
+
+
+void PPU::UpdateTileFetcher()
+{
+	auto GetBasePatternTableIndex = [&]()
+	{
+		switch (tile_fetcher.tile_type)
+		{
+		case TileFetcher::TileType::BG: return PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000;
+		case TileFetcher::TileType::OAM_8x8: return PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000;
+		case TileFetcher::TileType::OAM_8x16: return 0; // todo:  bit 0 of each OAM entry's tile number applies to 8x16 sprites.
+		}
+	};
+
+	if (tile_fetcher.sleep_on_next_update)
+	{
+		tile_fetcher.sleep_on_next_update = false;
+		tile_fetcher.step = static_cast<TileFetcher::Step>((tile_fetcher.step + 1) % 4);
 	}
 	else
 	{
 		switch (tile_fetcher.step)
 		{
 
-		case TileFetcher::nametable_byte:
+		case TileFetcher::Step::fetch_nametable_byte:
 		{
+			u16 base_addr = 0x2000 + 0x400 * PPUCTRL_nametable_sel;
 			u16 index = 32 * (current_scanline / 8) + tile_fetcher.x_pos; // todo: current_scanline == -1?
-			nametable_byte = memory.vram[index];
+			tile_fetcher.nametable_byte = memory.Read(base_addr + index);
 			break;
 		}
 
-		case TileFetcher::attribute_table_byte:
+		case TileFetcher::Step::fetch_attribute_table_byte:
 		{
-
+			u16 base_addr = 0x23C0 + 0x400 * PPUCTRL_nametable_sel;
+			u8 index = 8 * (current_scanline / 32) + tile_fetcher.x_pos / 2;
+			tile_fetcher.attribute_table_byte = memory.Read(base_addr + index);
 			break;
 		}
 
-		case TileFetcher::pattern_table_tile_low:
+		case TileFetcher::Step::fetch_pattern_table_tile_low:
 		{
-
+			u16 base_addr = GetBasePatternTableIndex(); // either 0x0000 or 0x1000, depending on if the right or left pattern table is used
+			u16 index = tile_fetcher.nametable_byte << 1 | (current_scanline % 8);
+			tile_fetcher.pattern_table_tile_low = memory.Read(base_addr + index);
 			break;
 		}
 
+		case TileFetcher::Step::fetch_pattern_table_tile_high:
+		{
+			u16 base_addr = GetBasePatternTableIndex();
+			u16 index = tile_fetcher.nametable_byte << 1 | (current_scanline % 8 + 8);
+			tile_fetcher.pattern_table_tile_high = memory.Read(base_addr + index);
+			reload_bg_shifters = true;
+			break;
+		}
+		tile_fetcher.sleep_on_next_update = true;
 		}
 	}
 }
@@ -226,7 +296,7 @@ void PPU::PrepareForNewFrame()
 
 void PPU::PrepareForNewScanline()
 {
-	current_scanline = (current_scanline + 1) % 262;
+	current_scanline = (current_scanline + 1) % 261;
 	if (current_scanline == 0)
 		PrepareForNewFrame();
 }

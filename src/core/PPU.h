@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdexcept>
+#include <limits>
+
 #include "../Types.h"
 
 #include "Bus.h"
@@ -44,10 +47,13 @@ private:
 
 	struct TileFetcher
 	{
-		enum Step { nametable_byte = 1, attribute_table_byte, pattern_table_tile_low, pattern_table_tile_high };
-		unsigned cycle;
-		u8 x_pos; // index of the tile currently being fetched. Between 0-31, making 32 * 8 = 256 pixels
-		u8 step; // representing the tile fetching step as described by the enum above
+		u8 nametable_byte, attribute_table_byte, pattern_table_tile_low, pattern_table_tile_high;
+
+		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
+		bool sleep_on_next_update = true;
+		u8 x_pos = 0; // index of the tile currently being fetched. Between 0-31, making 32 * 8 = 256 pixels
+
+		enum class TileType { BG, OAM_8x8, OAM_8x16 } tile_type;
 	} tile_fetcher;
 
 	// PPU registers accessible by the CPU
@@ -75,7 +81,23 @@ private:
 
 	unsigned ppu_cycle_counter;
 
-	void FetchTile();
+	u8 secondary_OAM[32];
+
+	bool reload_bg_shifters;
+	u16 bg_pattern_table_shift_reg[2];
+	u8 bg_palette_attr_shift_reg[2];
+
+	struct Regs
+	{
+		u16 v; // Current VRAM address (15 bits)
+		u16 t; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
+		u8 x; // Fine X scroll (3 bits)
+		bool w; // First or second write toggle (1 bit)
+	} regs;
+
+	void ShiftPixel();
+	void DoSpriteEvaluation();
+	void UpdateTileFetcher();
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
 };
