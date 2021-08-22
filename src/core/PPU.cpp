@@ -59,7 +59,9 @@ void PPU::Update()
 		if (current_scanline == pre_render_scanline) // == -1
 		{
 			if (ppu_cycle_counter == 1)
-				PPUSTATUS &= ~PPUSTATUS_vblank_mask;
+			{
+				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_overflow_mask);
+			}
 		}
 		else if (current_scanline < post_render_scanline) // < 240
 		{
@@ -68,12 +70,13 @@ void PPU::Update()
 				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64 (each write taking two cycles).
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time (?)
 				for (int i = 0; i < 32; i++)
-					secondary_OAM[i] = 0xFF;
+					secondary_oam[i] = 0xFF;
 			}
 			else if (ppu_cycle_counter <= 256)
 			{
 				UpdateTileFetcher();
-				DoSpriteEvaluation();
+				if (!(ppu_cycle_counter & 1) && (PPUMASK_sprite_enable || PPUMASK_bg_enable))
+					DoSpriteEvaluation();
 			}
 			else if (ppu_cycle_counter <= 320)
 			{
@@ -132,7 +135,12 @@ u8 PPU::ReadFromPPUReg(u16 addr)
 
 	case Bus::Addr::PPUADDR  : return PPUADDR; // todo: should it return the last written byte?
 	case Bus::Addr::PPUDATA  : return memory.Read(ppuaddr_written_addr);
-	case Bus::Addr::OAMDATA  : return ppu_cycle_counter < 64 ? 0xFF : OAMDATA;
+
+	case Bus::Addr::OAMDATA:
+		// during cycles 1-64, secondary OAM is initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
+		if (ppu_cycle_counter >= 1 && ppu_cycle_counter <= 64)
+			return 0xFF;
+		return OAMDATA;
 
 	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
 		;
@@ -221,9 +229,70 @@ void PPU::ShiftPixel()
 
 void PPU::DoSpriteEvaluation()
 {
-	for (int sprite_index = 0; sprite_index < std::size(memory.oam) / 4; sprite_index++)
+	static unsigned num_sprites_copied = 0;
+	static u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
+	static bool idle = false;
+
+	auto increment_n = [&]()
 	{
-		u8 y_pos = memory.oam[sprite_index];
+		if (++n == 64)
+		{
+			idle = true;
+		}
+	};
+
+	auto increment_m = [&]()
+	{
+		if (++m == 4)
+		{
+			m = 0;
+			increment_n();
+			num_sprites_copied++;
+		}
+	};
+
+	if (idle) return;
+
+	u8 read_oam = memory.oam[4 * n + m];
+
+	if (num_sprites_copied < 8)
+	{
+		secondary_oam[num_sprites_copied + m] = read_oam;
+
+		if (m == 0)
+		{
+			// check if the y-pos of the current sprite ('read_oam' = oam[4 * n + 0]) is in range
+			if (read_oam >= current_scanline && read_oam < current_scanline + 8)  // todo: sprites with height 16
+			{
+				m = 1;
+			}
+			else
+			{
+				m = 0;
+				increment_n();
+			}
+		}
+		else
+		{
+			increment_m();
+		}
+	}
+	else
+	{
+		if (read_oam >= current_scanline && read_oam < current_scanline + 8)  // todo: sprites with height 16
+		{
+			PPUSTATUS |= PPUSTATUS_sprite_overflow_mask;
+			// On real hw, the ppu will continue scanning oam after setting the sprite overflow flag.
+			// However, none of it will have an effect on anything other than n and m, so we may as well start idling from here.
+			// Note also that the sprite overflow flag is not writeable by the cpu, and cleared only on the pre-render scanline
+			idle = true;
+		}
+		else
+		{
+			// hw bug: increment both n and m (instead of just n)
+			increment_m();
+			increment_n();
+		}
 	}
 }
 
@@ -240,9 +309,9 @@ void PPU::UpdateTileFetcher()
 		}
 	};
 
+	// on every call to this function, alternate between updating and sleeping, since each operation takes two cycles
 	if (tile_fetcher.sleep_on_next_update)
 	{
-		tile_fetcher.sleep_on_next_update = false;
 		tile_fetcher.step = static_cast<TileFetcher::Step>((tile_fetcher.step + 1) % 4);
 	}
 	else
@@ -253,7 +322,7 @@ void PPU::UpdateTileFetcher()
 		case TileFetcher::Step::fetch_nametable_byte:
 		{
 			u16 base_addr = 0x2000 + 0x400 * PPUCTRL_nametable_sel;
-			u16 index = 32 * (current_scanline / 8) + tile_fetcher.x_pos; // todo: current_scanline == -1?
+			u16 index = 32 * (current_scanline / 8) + tile_fetcher.x_pos;
 			tile_fetcher.nametable_byte = memory.Read(base_addr + index);
 			break;
 		}
@@ -282,9 +351,11 @@ void PPU::UpdateTileFetcher()
 			reload_bg_shifters = true;
 			break;
 		}
-		tile_fetcher.sleep_on_next_update = true;
+
 		}
 	}
+
+	tile_fetcher.sleep_on_next_update = !tile_fetcher.sleep_on_next_update;
 }
 
 
