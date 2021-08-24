@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SDL.h"
+
 #include <stdexcept>
 #include <limits>
 
@@ -25,36 +27,54 @@ public:
 	inline bool IsInVblank() { return current_scanline >= 241; };
 
 private:
+	static const unsigned resolution_x = 256;
 	static const unsigned resolution_y = 240;
+	static const unsigned colour_channels = 3;
+	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
+
+	// https://wiki.nesdev.com/w/index.php/PPU_palettes
+	const SDL_Color palette[64] = { 
+		{ 84,  84,  84}, {  0,  30, 116}, {  8,  16, 144}, { 48,   0, 136}, { 68,   0, 100}, { 92,   0,  48}, { 84,   4,   0}, { 60,  24,   0},
+		{ 32,  42,   0}, {  8,  58,   0}, {  0,  64,   0}, {  0,  60,   0}, {  0,  50,  60}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0},
+		{152, 150, 152}, {  8,  76, 196}, { 48,  50, 236}, { 92,  30, 228}, {136,  20, 176}, {160,  20, 100}, {152,  34,  32}, {120,  60,   0},
+		{ 84,  90,   0}, { 40, 114,   0}, {  8, 124,   0}, {  0, 118,  40}, {  0, 102, 120}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0},
+		{236, 238, 236}, { 76, 154, 236}, {120, 124, 236}, {176,  98, 236}, {228,  84, 236}, {236,  88, 180}, {236, 106, 100}, {212, 136,  32},
+		{160, 170,   0}, {116, 196,   0}, { 76, 208,  32}, { 56, 204, 108}, { 56, 180, 204}, { 60,  60,  60}, {  0,   0,   0}, {  0,   0,   0},
+		{236, 238, 236}, {168, 204, 236}, {188, 188, 236}, {212, 178, 236}, {236, 174, 236}, {236, 174, 212}, {236, 180, 176}, {228, 194, 144},
+		{204, 210, 120}, {180, 222, 120}, {168, 226, 144}, {152, 226, 180}, {160, 214, 228}, {160, 162, 160}, {  0,   0,   0}, {  0,   0,   0}
+	};
 
 	struct Memory
 	{
 		u8 vram[0x1000]{};
 		u8 palette_ram[0x20]{};
 		u8 oam[0x100]{};
-
-		// reading and writing done internally by the ppu, e.g. when PPUDATA is written/read to/from
-		u8 Read(u16 addr) const
-		{
-			return u8();
-		}
-
-		void Write(u16 addr, u8 data)
-		{
-
-		}
 	} memory;
 
 	struct TileFetcher
 	{
-		u8 nametable_byte, attribute_table_byte, pattern_table_tile_low, pattern_table_tile_high;
+		// fetched data of the tile currently being fetched
+		u8 nametable_byte; // hex digits 2-1 of the address of the tile's pattern table entries. the 0th digit is '(current_scanline % 8)' and the 3rd is either 0 or 1, depending on PPUCTRL flags
+		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
+		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
+
+		u8 attribute_table_quadrant;
 
 		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
-		bool sleep_on_next_update = true;
-		u8 x_pos = 0; // index of the tile currently being fetched. Between 0-31, making 32 * 8 = 256 pixels
+		u8 x_pos = 0; // index of the tile currently being fetched (0-31, => 32 * 8 = 256 pixels)
 
 		enum class TileType { BG, OAM_8x8, OAM_8x16 } tile_type;
 	} tile_fetcher;
+
+	bool sprite_0_included = false;
+
+	struct Sprites
+	{
+		u8 x_pos[8];
+		u8 y_pos[8];
+		u8 attr[8];
+		u8 pattern_data[8];
+	} sprites;
 
 	// PPU registers accessible by the CPU
 	u8 PPUCTRL;
@@ -76,29 +96,51 @@ private:
 	bool NMI_occured, NMI_output;
 	bool ppuscroll_written_to, ppuaddr_written_to;
 
-	int current_scanline; // includes -1 (pre-render scanline) and 0-239 (visible scanlines) and 240 (post-render scanline)
+	int current_scanline; // includes -1 (pre-render scanline), 0-239 (visible scanlines) and 240 (post-render scanline)
 	bool odd_frame; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
 	unsigned ppu_cycle_counter;
 
-	u8 secondary_OAM[32];
+	u8 secondary_oam[32];
 
-	bool reload_bg_shifters;
-	u16 bg_pattern_table_shift_reg[2];
-	u8 bg_palette_attr_shift_reg[2];
+	u16 bg_pattern_shift_reg[2];
+	u8 bg_palette_attr_reg;
+	u8 sprite_pattern_shift_reg[2][8];
+	u8 sprite_attribute_latch[8];
+	u8 sprite_x_pos_counter[8];
+
+	u8 pixel_x_pos = 0;
+
+	enum class TileType { BG, OBJ };
 
 	struct Regs
 	{
-		u16 v; // Current VRAM address (15 bits)
-		u16 t; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
-		u8 x; // Fine X scroll (3 bits)
+		unsigned v : 15; // Current VRAM address (15 bits)
+		unsigned t : 15; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
+		unsigned x :  3; // Fine X scroll (3 bits)
 		bool w; // First or second write toggle (1 bit)
-	} regs;
+	} reg;
 
-	void ShiftPixel();
+	u8 framebuffer[framebuffer_size]{};
+	unsigned frame_buffer_pos = 0;
+
+	// SDL renderering specific
+	SDL_Renderer* renderer;
+	SDL_Rect rect;
+	unsigned scale;
+	unsigned pixel_offset_x, pixel_offset_y;
+
 	void DoSpriteEvaluation();
-	void UpdateTileFetcher();
+	void FetchSpriteDataFromSecondaryOAM();
+	u8 GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type);
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
+	void PushPixel(u8 colour);
+	void RenderGraphics();
+	void ShiftPixel();
+	void UpdateTileFetcher();
+
+	u8 ReadMemory(u16 addr);
+	void WriteMemory(u16 addr, u8 data);
 };
 
