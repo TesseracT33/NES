@@ -1110,25 +1110,13 @@ void CPU::XAA()
 }
 
 
-void CPU::Serialize(std::ofstream& ofs)
+void CPU::State(Serialization::BaseFunctor& functor)
 {
-	ofs.write((const char*)&curr_instr, sizeof(InstrDetails));
-	ofs.write((const char*)&A, sizeof(u8));
-	ofs.write((const char*)&X, sizeof(u8));
-	ofs.write((const char*)&Y, sizeof(u8));
-	ofs.write((const char*)&S, sizeof(u8));
-	ofs.write((const char*)&PC, sizeof(u16));
-	ofs.write((const char*)&flags, sizeof(Flags));
-}
-
-
-void CPU::Deserialize(std::ifstream& ifs)
-{
-	ifs.read((char*)&curr_instr, sizeof(InstrDetails));
-	ifs.read((char*)&A, sizeof(u8));
-	ifs.read((char*)&X, sizeof(u8));
-	ifs.read((char*)&Y, sizeof(u8));
-	ifs.read((char*)&S, sizeof(u8));
-	ifs.read((char*)&PC, sizeof(u16));
-	ifs.read((char*)&flags, sizeof(Flags));
+	functor.fun(&curr_instr, sizeof(InstrDetails));
+	functor.fun(&A, sizeof(u8));
+	functor.fun(&X, sizeof(u8));
+	functor.fun(&Y, sizeof(u8));
+	functor.fun(&S, sizeof(u8));
+	functor.fun(&PC, sizeof(u16));
+	functor.fun(&flags, sizeof(Flags));
 }

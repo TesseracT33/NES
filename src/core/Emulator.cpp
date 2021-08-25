@@ -26,7 +26,13 @@ void Emulator::ConnectSystemComponents()
 
 void Emulator::LoadState()
 {
-	std::ifstream ifs{ "state.bin" };
+	if (!load_state_on_next_cycle)
+	{
+		load_state_on_next_cycle = true;
+		return;
+	}
+
+	std::ifstream ifs(save_state_path, std::ifstream::in);
 	if (!ifs)
 	{
 		wxMessageBox("Save state does not exist or could not be opened.");
@@ -34,15 +40,24 @@ void Emulator::LoadState()
 		return;
 	}
 
-	for (Component* component : components)
-		component->Deserialize(ifs);
-	this->Deserialize(ifs);
+	Serialization::DeserializeFunctor functor{ ifs };
+	for (Snapshottable* snapshottable : snapshottable_components)
+		snapshottable->State(functor);
+
+	ifs.close();
+	load_state_on_next_cycle = false;
 }
 
 
 void Emulator::SaveState()
 {
-	std::ofstream ofs{ "state.bin", std::ofstream::out };
+	if (!save_state_on_next_cycle)
+	{
+		save_state_on_next_cycle = true;
+		return;
+	}
+
+	std::ofstream ofs(save_state_path, std::ofstream::out | std::fstream::trunc);
 	if (!ofs)
 	{
 		wxMessageBox("Save state could not be created.");
@@ -50,28 +65,58 @@ void Emulator::SaveState()
 		return;
 	}
 
-	for (Component* component : components)
-		component->Serialize(ofs);
-	this->Serialize(ofs);
+	Serialization::SerializeFunctor functor{ ofs };
+	for (Snapshottable* snapshottable : snapshottable_components)
+		snapshottable->State(functor);
+
+	ofs.close();
+	save_state_on_next_cycle = false;
+}
+
+void Emulator::State(Serialization::BaseFunctor& functor)
+{
+}
+
+void Emulator::Configure(Serialization::BaseFunctor& functor)
+{
+}
+
+void Emulator::SetDefaultConfig()
+{
 }
 
 
-void Emulator::Serialize(std::ofstream& ofs)
+bool Emulator::SetupSDLVideo(const void* window_handle)
 {
-
+	return true;
 }
 
-
-void Emulator::Deserialize(std::ifstream& ifs)
+void Emulator::SetEmulationSpeed(unsigned speed)
 {
+}
 
+void Emulator::SetWindowScale(unsigned scale)
+{
+}
+
+void Emulator::SetWindowSize(wxSize size)
+{
+}
+
+unsigned Emulator::GetWindowScale()
+{
+	return 0;
+}
+
+wxSize Emulator::GetWindowSize()
+{
+	return wxSize();
 }
 
 
 void Emulator::StartGame(const char* rom_path)
 {
-	for (Component* component : components)
-		component->Reset();
+	// todo: reset all components
 
 	bool rom_loaded = cartridge.ReadRomFile(rom_path);
 	if (!rom_loaded) return;
@@ -108,7 +153,7 @@ void Emulator::MainLoop()
 		auto frame_end_t = std::chrono::steady_clock::now();
 		long long microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
 
-		if (!emu_speed_uncapped)
+		if (!emulation_speed_uncapped)
 		{
 			while (microseconds_elapsed_this_frame < microseconds_per_frame_NTSC)
 			{

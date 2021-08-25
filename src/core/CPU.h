@@ -15,14 +15,13 @@ public:
 
 	Bus* bus;
 
-	void Initialize() override;
-	void Reset() override;
-	void Update() override;
+	void Initialize();
+	void Reset();
+	void Update();
 
 	void Set_OAM_DMA_Active();
 
-	void   Serialize(std::ofstream& ofs) override;
-	void Deserialize(std::ifstream& ifs) override;
+	void State(Serialization::BaseFunctor& functor) override;
 
 private:
 	enum class AddrMode

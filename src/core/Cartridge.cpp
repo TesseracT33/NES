@@ -12,18 +12,9 @@ void Cartridge::Reset()
 
 }
 
-
-void Cartridge::Serialize(std::ofstream& ofs)
+void Cartridge::State(Serialization::BaseFunctor& functor)
 {
-
 }
-
-
-void Cartridge::Deserialize(std::ifstream& ifs)
-{
-
-}
-
 
 void Cartridge::Eject()
 {

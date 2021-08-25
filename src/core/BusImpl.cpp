@@ -84,14 +84,6 @@ void BusImpl::Write(u16 addr, u8 data)
 	}
 }
 
-
-void BusImpl::Serialize(std::ofstream& ofs)
+void BusImpl::State(Serialization::BaseFunctor& functor)
 {
-
-}
-
-
-void BusImpl::Deserialize(std::ifstream& ifs)
-{
-
 }

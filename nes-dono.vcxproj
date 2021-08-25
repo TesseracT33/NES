@@ -19,6 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\Snapshottable.h" />
+    <ClInclude Include="src\gui\InputBindingsWindow.h" />
+    <ClInclude Include="src\Observer.h" />
+    <ClInclude Include="src\Serialization.h" />
+    <ClInclude Include="src\Config.h" />
     <ClInclude Include="src\core\BusImpl.h" />
     <ClInclude Include="src\core\Joypad.h" />
     <ClInclude Include="src\core\APU.h" />
@@ -42,6 +47,9 @@
     <ClInclude Include="src\Utils.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\gui\InputBindingsWindow.cpp" />
+    <ClCompile Include="src\Serialization.cpp" />
+    <ClCompile Include="src\Config.cpp" />
     <ClCompile Include="src\core\BusImpl.cpp" />
     <ClCompile Include="src\core\Joypad.cpp" />
     <ClCompile Include="src\core\APU.cpp" />

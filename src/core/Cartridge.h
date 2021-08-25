@@ -12,11 +12,10 @@
 class Cartridge final : public Component
 {
 public:
-	void Initialize() override;
-	void Reset() override;
+	void Initialize();
+	void Reset();
 
-	void Serialize(std::ofstream& ofs) override;
-	void Deserialize(std::ifstream& ifs) override;
+	void State(Serialization::BaseFunctor& functor) override;
 
 	void Eject();
 	u8 Read(u16 addr, bool ppu = false) const;

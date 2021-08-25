@@ -15,14 +15,13 @@ public:
 	CPU* cpu;
 	PPU* ppu;
 
-	void Initialize() override;
-	void Reset() override;
+	void Initialize();
+	void Reset();
 
 	u8 Read(u16 addr) override;
 	void Write(u16 addr, u8 data) override;
 
-	void Serialize(std::ofstream& ofs) override;
-	void Deserialize(std::ifstream& ifs) override;
+	void State(Serialization::BaseFunctor& functor) override;
 
 private:
 	struct Memory

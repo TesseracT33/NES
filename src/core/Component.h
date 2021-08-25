@@ -1,20 +1,12 @@
 #pragma once
 
 #include "../Configurable.h"
-#include "../Serializable.h"
+#include "../Snapshottable.h"
 
-class Component : public Configurable, public Serializable
+class Component : public Snapshottable, public Configurable
 {
 public:
-	virtual void Initialize() {};
-	virtual void Reset() {};
-	virtual void Update() {};
-
-	virtual void Serialize(std::ofstream& ofs) {};
-	virtual void Deserialize(std::ifstream& ifs) {};
-
-	virtual void SaveConfig(std::ofstream& ofs) {};
-	virtual void LoadConfig(std::ifstream& ifs) {};
-	virtual void SetDefaultConfig() {};
+	virtual void State(Serialization::BaseFunctor& functor) override {};
+	virtual void Configure(Serialization::BaseFunctor& functor) override {};
+	virtual void SetDefaultConfig() override {};
 };
-

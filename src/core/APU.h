@@ -4,5 +4,7 @@
 
 class APU final : public Component
 {
+public:
+	void Update();
 };
 
