@@ -54,7 +54,7 @@ private:
 	struct TileFetcher
 	{
 		// fetched data of the tile currently being fetched
-		u8 nametable_byte; // hex digits 2-1 of the address of the tile's pattern table entries. the 0th digit is '(current_scanline % 8)' and the 3rd is either 0 or 1, depending on PPUCTRL flags
+		u8 tile_num; // nametable byte; hex digits 2-1 of the address of the tile's pattern table entries. 
 		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
 		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
 
@@ -63,7 +63,7 @@ private:
 		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
 		u8 x_pos = 0; // index of the tile currently being fetched (0-31, => 32 * 8 = 256 pixels)
 
-		enum class TileType { BG, OAM_8x8, OAM_8x16 } tile_type;
+		enum class TileType { BG, OAM } tile_type;
 	} tile_fetcher;
 
 	bool sprite_0_included = false;
@@ -81,7 +81,6 @@ private:
 	u8 PPUMASK;
 	u8 PPUSTATUS;
 	u8 PPUSCROLL;
-	u8 PPUADDR;
 	u8 PPUDATA;
 	u8 OAMADDR;
 	u8 OAMDATA;
@@ -115,10 +114,48 @@ private:
 
 	struct Regs
 	{
-		unsigned v : 15; // Current VRAM address (15 bits)
+		/* Composition of 'v' (and 't'):
+		  yyy NN YYYYY XXXXX
+		  ||| || ||||| +++++-- coarse X scroll
+		  ||| || +++++-------- coarse Y scroll
+		  ||| ++-------------- nametable select
+		  +++----------------- fine Y scroll
+		*/
+		unsigned v : 15; // Current VRAM address (15 bits): yyy NN YYYYY XXXXX
 		unsigned t : 15; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
 		unsigned x :  3; // Fine X scroll (3 bits)
 		bool w; // First or second write toggle (1 bit)
+
+		void increment_coarse_x()
+		{
+			if ((v & 0x1F) == 0x1F) // if coarse X == 31
+			{
+				v &= ~0x1F; // set course x = 0
+				v ^= 0x400; // switch horizontal nametable by toggling bit 10
+			}
+			else v++; // increment coarse X
+		}
+
+		void increment_y()
+		{
+			if ((v & 0x7000) == 0x7000) // if fine y == 7
+			{
+				v &= ~0x7000; // set fine y = 0
+				switch ((v >> 5) & 0x3F) // branch on coarse y
+				{
+				case 29:
+					v &= ~(0x3F << 5); // set course y = 0
+					v ^= 0x800; // switch vertical nametable
+					break;
+				case 31:
+					v &= ~(0x3F << 5); // set course y = 0
+					break;
+				default:
+					v += 0x20; // increment coarse y
+				}
+			}
+			else v += 0x1000;
+		}
 	} reg;
 
 	u8 framebuffer[framebuffer_size]{};
@@ -138,6 +175,8 @@ private:
 	void PushPixel(u8 colour);
 	void RenderGraphics();
 	void ShiftPixel();
+	void UpdateBGShiftRegs();
+	void UpdateSpriteShiftRegs(unsigned sprite_index);
 	void UpdateTileFetcher();
 
 	u8 ReadMemory(u16 addr);
