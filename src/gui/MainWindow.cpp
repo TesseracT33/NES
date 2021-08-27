@@ -140,7 +140,7 @@ void MainWindow::LaunchGame()
 	}
 
 	SwitchToGameView();
-	emulator.StartGame(active_rom_path);
+	emulator.StartGame(std::string(active_rom_path.mb_str()));
 }
 
 
@@ -213,6 +213,9 @@ void MainWindow::CreateMenuBar()
 	menu_settings->AppendSubMenu(menu_speed, wxT("&Emulation speed"));
 
 	menu_settings->Append(MenuBarID::input, wxT("&Configure input bindings"));
+
+	menu_settings->AppendSeparator();
+	menu_settings->AppendCheckItem(MenuBarID::toggle_filter_nes_files, wxT("&Filter game list to .nes files only"));
 
 	menu_settings->AppendSeparator();
 	menu_settings->Append(MenuBarID::reset_settings, wxT("&Reset settings"));
@@ -309,7 +312,7 @@ void MainWindow::Quit()
 void MainWindow::UpdateWindowLabel(bool gameIsRunning)
 {
 	wxSize window_size = GetClientSize();
-	int scale = std::min(window_size.GetWidth() / 160, window_size.GetHeight() / 144);
+	int scale = std::min(window_size.GetWidth() / 256, window_size.GetHeight() / 240); // TODO: hardcoded; fix
 
 	if (gameIsRunning)
 		this->SetLabel(wxString::Format("%s | %s | %ix%i | FPS: %i",
@@ -545,7 +548,7 @@ void MainWindow::OnMenuInput(wxCommandEvent& event)
 void MainWindow::OnMenuToggleFilterFiles(wxCommandEvent& event)
 {
 	SetupGameList();
-	display_only_gb_gbc_files = menu_settings->IsChecked(MenuBarID::toggle_filter_nes_files);;
+	display_only_nes_files = menu_settings->IsChecked(MenuBarID::toggle_filter_nes_files);;
 	config.Save();
 }
 
@@ -790,14 +793,12 @@ void MainWindow::Configure(Serialization::BaseFunctor& functor)
 	Serialization::STD_string(functor, str);
 	rom_folder_path = wxString(str);
 
-	functor.fun(&display_only_gb_gbc_files, sizeof(bool));
-	functor.fun(&generate_random_colour_palette_on_every_boot, sizeof(bool));
+	functor.fun(&display_only_nes_files, sizeof(bool));
 }
 
 
 void MainWindow::SetDefaultConfig()
 {
 	rom_folder_path = default_rom_folder_path;
-	display_only_gb_gbc_files = default_display_only_gb_gbc_files;
-	generate_random_colour_palette_on_every_boot = default_generate_random_colour_palette_on_every_boot;
+	display_only_nes_files = default_display_only_nes_files;
 }

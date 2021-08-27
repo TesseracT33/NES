@@ -1,5 +1,6 @@
 #pragma once
 
+#include "wx/wx.h"
 #include "SDL.h"
 
 #include <stdexcept>
@@ -11,26 +12,45 @@
 #include "Component.h"
 #include "CPU.h"
 
+#include "mappers/BaseMapper.h"
+
 class PPU final : public Component
 {
 public:
 	Bus* bus;
 	CPU* cpu;
 
-	void Initialize();
+	std::shared_ptr<BaseMapper> mapper;
+
+	bool CreateRenderer(const void* window_handle);
+	void Power();
+	void Reset();
 	void Update();
 
 	// writing and reading done by the CPU to/from the registers at $2000-$2007, $4014
-	u8 ReadFromPPUReg(u16 addr);
-	void WriteToPPUReg(u16 addr, u8 data);
+	u8 ReadRegister(u16 addr);
+	void WriteRegister(u16 addr, u8 data);
 
 	inline bool IsInVblank() { return current_scanline >= 241; };
+
+	unsigned GetWindowScale() { return scale; }
+	wxSize GetWindowSize() { return wxSize(resolution_x * scale, resolution_y * scale); }
+	void SetWindowScale(unsigned scale) { this->scale = scale; }
+	void SetWindowSize(wxSize size);
+
+	void Configure(Serialization::BaseFunctor& functor) override;
+	void SetDefaultConfig() override;
 
 private:
 	static const unsigned resolution_x = 256;
 	static const unsigned resolution_y = 240;
 	static const unsigned colour_channels = 3;
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
+
+	const unsigned default_scale = 5;
+
+	const signed pre_render_scanline = -1;
+	const signed post_render_scanline = 240;
 
 	// https://wiki.nesdev.com/w/index.php/PPU_palettes
 	const SDL_Color palette[64] = { 
@@ -46,8 +66,8 @@ private:
 
 	struct Memory
 	{
-		u8 vram[0x1000]{};
-		u8 palette_ram[0x20]{};
+		u8 vram[0x1000]{}; // $2000-$2FFF; nametables
+		u8 palette_ram[0x20]{}; // $3F00-3F1F
 		u8 oam[0x100]{};
 	} memory;
 
@@ -61,9 +81,9 @@ private:
 		u8 attribute_table_quadrant;
 
 		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
-		u8 x_pos = 0; // index of the tile currently being fetched (0-31, => 32 * 8 = 256 pixels)
 
-		enum class TileType { BG, OAM } tile_type;
+		void SetBGTileFetchingActive()     { step = Step::fetch_nametable_byte; }
+		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
 	} tile_fetcher;
 
 	bool sprite_0_included = false;
@@ -85,6 +105,8 @@ private:
 	u8 OAMADDR;
 	u8 OAMDATA;
 	u8 OAMDMA;
+
+	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
 
 	u8 scroll_x;
 	s16 scroll_y;
@@ -158,14 +180,17 @@ private:
 		}
 	} reg;
 
+	// SDL renderering specific
+	SDL_Renderer* renderer;
+	SDL_Window* window;
+	SDL_Rect rect;
+	unsigned scale, scale_temp;
+	unsigned pixel_offset_x, pixel_offset_y, pixel_offset_x_temp, pixel_offset_y_temp;
+	bool reset_graphics_after_render;
 	u8 framebuffer[framebuffer_size]{};
 	unsigned frame_buffer_pos = 0;
 
-	// SDL renderering specific
-	SDL_Renderer* renderer;
-	SDL_Rect rect;
-	unsigned scale;
-	unsigned pixel_offset_x, pixel_offset_y;
+	void ResetGraphics();
 
 	void DoSpriteEvaluation();
 	void FetchSpriteDataFromSecondaryOAM();
@@ -177,7 +202,8 @@ private:
 	void ShiftPixel();
 	void UpdateBGShiftRegs();
 	void UpdateSpriteShiftRegs(unsigned sprite_index);
-	void UpdateTileFetcher();
+	void UpdateBGTileFetching();
+	void UpdateSpriteTileFetching(unsigned sprite_index);
 
 	u8 ReadMemory(u16 addr);
 	void WriteMemory(u16 addr, u8 data);

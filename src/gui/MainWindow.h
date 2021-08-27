@@ -104,11 +104,9 @@ private:
 	Emulator emulator;
 
 	// configuration-related variables
-	const bool default_display_only_gb_gbc_files = true;
-	const bool default_generate_random_colour_palette_on_every_boot = false;
+	const bool default_display_only_nes_files = true;
 	const wxString default_rom_folder_path = wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath(wxPATH_GET_VOLUME | wxPATH_GET_SEPARATOR);
-	bool display_only_gb_gbc_files = default_display_only_gb_gbc_files;
-	bool generate_random_colour_palette_on_every_boot = default_generate_random_colour_palette_on_every_boot;
+	bool display_only_nes_files = default_display_only_nes_files;
 
 	// as per the wxwidgets documentation, all menus should be created on the heap
 	// however, there is no need to manually use delete on any of these pointers

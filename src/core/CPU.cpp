@@ -37,23 +37,38 @@ void CPU::BuildInstrTypeTable()
 }
 
 
-void CPU::Reset()
+void CPU::Power()
 {
+	// https://wiki.nesdev.com/w/index.php?title=CPU_power_up_state
+
+	Reset();
+
+	SetStatusReg(0x34);
 	A = X = Y = 0;
-	flags = {};
-	S = 0xFF;
-	PC = bus->Read(0xFFFC);
+	S = 0xFD;
+	for (u16 addr = 0x4000; addr <= 0x4013; addr++)
+		bus->Write(addr, 0);
+	bus->Write(0x4015, 0);
+	bus->Write(0x4017, 0);
+
+	IRQ = 1;
 }
 
 
-void CPU::Initialize()
+void CPU::Reset()
 {
+	cpu_clocks_since_reset = 0;
+	all_ppu_regs_writable = false;
 
+	PC = bus->Read(0xFFFC) | bus->Read(0xFFFD) << 8;
 }
 
 
 void CPU::Update()
 {
+	if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
+		all_ppu_regs_writable = true;
+
 	if (oam_dma_transfer_active)
 	{
 		if (--oam_dma_cycles_until_finished == 0)
@@ -110,13 +125,13 @@ void CPU::StepImplicit()
 	if (!instr_invoked)
 	{
 		std::invoke(curr_instr.instr, this);
-		instr_invoked = true;
+		if (curr_instr.additional_cycles == 0)
+			curr_instr.instr_executing = false;
+		else
+			instr_invoked = true;
 	}
 	else if (--curr_instr.additional_cycles == 0)
-	{
-		curr_instr.instr_executing = false;
-		instr_invoked = false;
-	}
+		curr_instr.instr_executing = instr_invoked = false;
 }
 
 

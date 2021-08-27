@@ -21,12 +21,11 @@ u8 BusImpl::Read(u16 addr)
 		return memory.ram[addr & 0x7FF]; // wrap address to between 0-0x7FF
 	}
 
-	// PPU Registers($2000 - $3FFF)
+	// PPU Registers ($2000 - $3FFF)
 	else if (addr <= 0x3FFF)
 	{
-		// wrap address to between 0x2000-0x2007 
-		addr = 0x2000 + (addr & 7);
-		return ppu->ReadFromPPUReg(addr);
+		// Wrap address to between 0x2000-0x2007 
+		return ppu->ReadRegister(0x2000 + (addr & 7));
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -41,7 +40,7 @@ u8 BusImpl::Read(u16 addr)
 		//unused
 	}
 
-	// Cartridge Space($4020 - $FFFF)
+	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
 		return cartridge->Read(addr);
@@ -62,7 +61,7 @@ void BusImpl::Write(u16 addr, u8 data)
 	{
 		// wrap address to between 0x2000-0x2007 
 		addr = 0x2000 + (addr & 7);
-		ppu->WriteToPPUReg(addr, data);
+		ppu->WriteRegister(addr, data);
 	}
 
 	// APU & I/O Registers ($4000-$4017)

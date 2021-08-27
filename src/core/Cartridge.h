@@ -4,6 +4,7 @@
 
 #include "Component.h"
 #include "Header.h"
+#include "PPU.h"
 
 #include "mappers/BaseMapper.h"
 #include "mappers/MapperEnum.h"
@@ -12,6 +13,8 @@
 class Cartridge final : public Component
 {
 public:
+	PPU* ppu;
+
 	void Initialize();
 	void Reset();
 
@@ -19,7 +22,7 @@ public:
 
 	void Eject();
 	u8 Read(u16 addr, bool ppu = false) const;
-	bool ReadRomFile(const char* path);
+	bool ReadRomFile(std::string path);
 	void Write(u16 addr, u8 data, bool ppu = false);
 
 private:
@@ -30,7 +33,7 @@ private:
 	
 	Header header;
 
-	std::unique_ptr<BaseMapper> mapper;
+	std::shared_ptr<BaseMapper> mapper;
 
 	void ParseRomHeader(u8* header_arr);
 	void ConstructMapper();

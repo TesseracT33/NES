@@ -28,14 +28,13 @@ public:
 	bool emulation_speed_uncapped = false;
 	unsigned emulation_speed = 100;
 
-	void StartGame(const char* rom_path);
+	void StartGame(std::string rom_path);
 	void MainLoop();
 
 	void Pause();
 	void Reset();
 	void Resume();
 	void Stop();
-
 	void LoadState();
 	void SaveState();
 
@@ -46,11 +45,11 @@ public:
 	bool SetupSDLVideo(const void* window_handle);
 
 	void SetEmulationSpeed(unsigned speed);
-	void SetWindowScale(unsigned scale);
-	void SetWindowSize(wxSize size);
+	void SetWindowScale(unsigned scale) { ppu.SetWindowScale(scale); }
+	void SetWindowSize(wxSize size) { ppu.SetWindowSize(size); }
 
-	unsigned GetWindowScale();
-	wxSize GetWindowSize();
+	unsigned GetWindowScale() { return ppu.GetWindowScale(); }
+	wxSize GetWindowSize() { return ppu.GetWindowSize(); }
 
 	APU apu;
 	BusImpl bus;
@@ -77,13 +76,14 @@ private:
 
 	std::vector<Component*> components;
 
-	char* current_rom_path;
+	std::string current_rom_path;
 	std::string save_state_path = wxFileName(wxStandardPaths::Get().GetExecutablePath())
 		.GetPath(wxPATH_GET_VOLUME | wxPATH_GET_SEPARATOR) + "state.bin";
 
 	std::vector<Snapshottable*> snapshottable_components{};
 
 	void AddComponents();
+	//void BuildComponentVector();
 	void ConnectSystemComponents();
 };
 

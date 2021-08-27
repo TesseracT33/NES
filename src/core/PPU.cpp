@@ -41,13 +41,42 @@
 #define PPUSTATUS_sprite_overflow      (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
 
 
-#define pre_render_scanline -1
-#define post_render_scanline 240
-
-
-void PPU::Initialize()
+void PPU::Power()
 {
-	
+	Reset();
+
+	OAMADDR = reg.v = reg.t = 0;
+	PPUSTATUS = PPUSTATUS & 0x1F | 0b10100000;
+}
+
+
+void PPU::Reset()
+{
+	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
+	odd_frame = false;
+	ppu_cycle_counter = 0;
+}
+
+
+bool PPU::CreateRenderer(const void* window_handle)
+{
+	this->window = SDL_CreateWindowFrom(window_handle);
+	if (window == NULL)
+	{
+		wxMessageBox("Could not create the SDL window!");
+		return false;
+	}
+
+	this->renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+	if (renderer == NULL)
+	{
+		wxMessageBox("Renderer could not be created!");
+		SDL_DestroyWindow(window);
+		window = nullptr;
+		return false;
+	}
+
+	return true;
 }
 
 
@@ -85,15 +114,13 @@ void PPU::Update()
 					for (int i = 0; i < 32; i++)
 						secondary_oam[i] = 0xFF;
 
-					tile_fetcher.tile_type = TileFetcher::TileType::BG;
-					tile_fetcher.step = TileFetcher::Step::fetch_nametable_byte;
-					tile_fetcher.x_pos = 2; // The first two tiles have already been fetched (during cycles 321-336 of the last scanline)
+					tile_fetcher.SetBGTileFetchingActive();
 				}
 
 				// On odd cycles, update the bg tile fetching (each step takes 2 cycles, starting at cycle 1).
 				// On even cycles, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both operations are done on even cycles.
 				if (ppu_cycle_counter & 1)
-					UpdateTileFetcher();
+					UpdateBGTileFetching();
 				else if (PPUMASK_sprite_enable || PPUMASK_bg_enable) // Sprite evaluation occurs if either the sprite layer or background layer is enabled
 					DoSpriteEvaluation();
 
@@ -114,33 +141,33 @@ void PPU::Update()
 
 				if (ppu_cycle_counter == 257)
 				{
-					tile_fetcher.tile_type = TileFetcher::TileType::OAM; // Start fetching sprite tiles
+					tile_fetcher.SetSpriteTileFetchingActive();
 					UpdateBGShiftRegs(); // Update the bg shift registers at cycle 257
 					sprite_index = 0;
 				}
 
 				// Consider an 8 cycle period (1-8) between cycles 257-320 (of which there are eight; one for each sprite)
-				// On odd cycles, update the tile fetching (each step takes 2 cycles, starting at cycle 257).
+				// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
+				//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
 				// On cycle 1-4: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM
 				// On cycle 9 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data
 				// Not sure if all of this precise timing is necessary. However, the switch stmnt should make it fairly performant anyways
 				switch ((ppu_cycle_counter - 257) % 8)
 				{
-				case 0: UpdateTileFetcher(); break;
+				case 0: break;
 				case 1: 
 					tile_fetcher.tile_num = secondary_oam[4 * sprite_index + 1]; 
 					if (ppu_cycle_counter >= 266) UpdateSpriteShiftRegs(sprite_index - 1); // the pattern data for the previous sprite is loaded
 					break;
 				case 2: 
-					UpdateTileFetcher(); 
 					sprite_attribute_latch[sprite_index] = secondary_oam[4 * sprite_index + 2];
 					break;
 				case 3: 
 					sprite_x_pos_counter[sprite_index] = secondary_oam[4 * sprite_index + 3]; 
 					break;
-				case 4: UpdateTileFetcher(); break;
+				case 4: UpdateSpriteTileFetching(sprite_index); break;
 				case 5: break;
-				case 6: UpdateTileFetcher(); break;
+				case 6: UpdateSpriteTileFetching(sprite_index); break;
 				case 7: sprite_index++; break;
 				}
 			}
@@ -148,13 +175,13 @@ void PPU::Update()
 			{
 				if (ppu_cycle_counter == 321)
 				{
-					tile_fetcher.tile_type = TileFetcher::TileType::BG;
+					tile_fetcher.SetBGTileFetchingActive();
 					UpdateSpriteShiftRegs(7); // the last sprite pattern data to be loaded (sprite index == 7)
 				}
 
 			    // todo: UpdateTileFetcher will be called on cycle 341, is it correct ?
 				if (ppu_cycle_counter & 1)
-					UpdateTileFetcher();
+					UpdateBGTileFetching();
 
 				// Increment the coarse X scroll at cycles 328 and 336, and update the bg shift registers at cycles 329 and 337
 				switch (ppu_cycle_counter)
@@ -181,28 +208,31 @@ void PPU::Update()
 		}
 
 		ppu_cycle_counter = (ppu_cycle_counter + 1) % (current_scanline == pre_render_scanline && odd_frame ? 340 : 341);
-		if (ppu_cycle_counter == 0)
-			PrepareForNewScanline();
-
-		if (ppu_cycle_counter == 256)
+		
+		switch (ppu_cycle_counter)
 		{
+		case 0:
+			PrepareForNewScanline(); 
+			break;
+
+		case 256:
 			// todo: the condition is 'rendering enabled', not sure what it means
-			// todo: should we increment y during ALL scanlines?
 			if (PPUCTRL_PPU_master)
 			{
 				reg.increment_y();
 			}
-		}
-		else if (ppu_cycle_counter == 257)
-		{
+			break;
+
+		case 257:
 			// Set bit 10 of 'v' to bit 10 of 't', and bits 4-0 of 'v' to bits 4-0 of 't'
 			reg.v = reg.v & ~(1 << 10) & ~0x1F | reg.t & (1 << 10) | reg.t & 0x1F;
+			break;
 		}
 	}
 }
 
 
-u8 PPU::ReadFromPPUReg(u16 addr)
+u8 PPU::ReadRegister(u16 addr)
 {
 	switch (addr)
 	{
@@ -246,21 +276,25 @@ u8 PPU::ReadFromPPUReg(u16 addr)
 }
 
 
-void PPU::WriteToPPUReg(u16 addr, u8 data)
+void PPU::WriteRegister(u16 addr, u8 data)
 {
+	// Writes to the following registers are ignored if earlier than ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR. This also means that the PPUSCROLL/PPUADDR latch will not toggle
+	// The other registers work immediately: PPUSTATUS, OAMADDR, OAMDATA ($2004), PPUDATA, and OAMDMA ($4014).
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL: // $2000
+		if (!cpu->all_ppu_regs_writable) return;
+
 		if (!PPUCTRL_NMI_enable && (data & PPUCTRL_NMI_enable_mask) && PPUSTATUS_vblank && this->IsInVblank())
 		{
 			// todo: generate NMI signal
 		}
 		PPUCTRL = data;
-		// todo: After power/reset, writes to this register are ignored for about 30,000 cycles.
 		reg.t = reg.t & ~(3 << 10) | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
 	case Bus::Addr::PPUMASK: // $2001
+		if (!cpu->all_ppu_regs_writable) return;
 		PPUMASK = data;
 		return;
 
@@ -285,6 +319,8 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUSCROLL: // $2005
+		if (!cpu->all_ppu_regs_writable) return;
+
 		if (reg.w == 0) // Update x-scroll registers
 		{
 			reg.t = reg.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
@@ -299,6 +335,8 @@ void PPU::WriteToPPUReg(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUADDR: // $2006
+		if (!cpu->all_ppu_regs_writable) return;
+
 		if (reg.w == 0)
 		{
 			reg.t = reg.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
@@ -472,11 +510,22 @@ void PPU::RenderGraphics()
 
 	SDL_RenderPresent(renderer);
 
-	//if (reset_graphics_after_render)
-	//	ResetGraphics();
+	if (reset_graphics_after_render)
+		ResetGraphics();
 
 	SDL_FreeSurface(surface);
 	SDL_DestroyTexture(texture);
+}
+
+
+void PPU::ResetGraphics()
+{
+	scale = scale_temp;
+	pixel_offset_x = pixel_offset_x_temp;
+	pixel_offset_y = pixel_offset_y_temp;
+
+	SDL_RenderClear(renderer);
+	reset_graphics_after_render = false;
 }
 
 
@@ -569,21 +618,14 @@ void PPU::UpdateSpriteShiftRegs(unsigned sprite_index)
 }
 
 
-void PPU::UpdateTileFetcher()
+void PPU::UpdateBGTileFetching()
 {
-	auto GetBasePatternTableIndex = [&]()
-	{
-		switch (tile_fetcher.tile_type)
-		{
-		case TileFetcher::TileType::BG: return PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000;
-		case TileFetcher::TileType::OAM: return PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000;
-		}
-	};
-
 	switch (tile_fetcher.step)
 	{
 	case TileFetcher::Step::fetch_nametable_byte:
 	{
+		reg.increment_coarse_x();
+
 		/* Composition of the nametable address:
 		  10 NN YYYYY XXXXX
 		  || || ||||| +++++-- Coarse X scroll
@@ -593,6 +635,7 @@ void PPU::UpdateTileFetcher()
 		*/
 		u16 addr = 0x2000 | (reg.v & 0x0FFF);
 		tile_fetcher.tile_num = ReadMemory(addr);
+		tile_fetcher.step = TileFetcher::Step::fetch_attribute_table_byte;
 		break;
 	}
 
@@ -613,74 +656,112 @@ void PPU::UpdateTileFetcher()
 		// topleft == 0, topright == 1, bottomleft == 2, bottomright = 3
 		// scroll-x % 4 and scroll-y % 4 give the "tile-coordinates" of the current tile in the metatile
 		tile_fetcher.attribute_table_quadrant = 2 * ((reg.v & 0x60) > 0x20) + ((reg.v & 3) > 1);
+
+		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_low;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_low:
 	{
 		/* Composition of the pattern table address for BG tiles and 8x8 sprites:
-		H RRRR CCCC P yyy
-		| |||| |||| | +++-- Fine Y scroll, the row number within a tile
-		| |||| |||| +------ Bit plane (0: "lower"; 1: "upper")
-		| |||| ++++-------- Tile column
-		| ++++------------- Tile row
-		+------------------ Half of sprite table (0: "left"; 1: "right"); dependent on PPUCTRL flags
-		For BG tiles    : RRRR CCCC == the nametable byte fetched in step 1
-		For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
-
-		Composition of the pattern table adress for 8x16 sprites:
-		H RRRR CCC S P yyy
-		| |||| ||| | | +++-- Fine Y scroll, the row number within a tile
-		| |||| ||| | +------ Bit plane (0: "lower"; 1: "upper")
-		| |||| ||| +-------- Sprite tile half (0: "top"; 1: "bottom") TODO: check if it isn't the reverse
-		| |||| +++---------- Tile column
-		| ++++-------------- Tile row
-		+------------------- Half of sprite table (0: "left"; 1: "right"); equal to bit 0 of the sprite tile index number fetched from secondary OAM during cycles 257-320
-		RRRR CCCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
+		  H RRRR CCCC P yyy
+		  | |||| |||| | +++-- Fine Y scroll, the row number within a tile
+		  | |||| |||| +------ Bit plane (0: "lower"; 1: "upper")
+		  | |||| ++++-------- Tile column
+		  | ++++------------- Tile row
+		  +------------------ Half of sprite table (0: "left"; 1: "right"); dependent on PPUCTRL flags
+		  For BG tiles    : RRRR CCCC == the nametable byte fetched in step 1
+		  For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		u16 addr;
-		if (tile_fetcher.tile_type == TileFetcher::TileType::OAM && PPUCTRL_sprite_height) // 8x16 sprites
+		u16 addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12;
+		tile_fetcher.pattern_table_tile_low = ReadMemory(addr);
+		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
+		break;
+	}
+
+	case TileFetcher::Step::fetch_pattern_table_tile_high:
+	{
+		u16 addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12 | 8;
+		tile_fetcher.pattern_table_tile_high = ReadMemory(addr);
+		tile_fetcher.step = TileFetcher::Step::fetch_nametable_byte;
+		break;
+	}
+	}
+}
+
+
+void PPU::UpdateSpriteTileFetching(unsigned sprite_index)
+{
+	switch (tile_fetcher.step)
+	{
+	case TileFetcher::Step::fetch_pattern_table_tile_low:
+	{
+		/* Composition of the pattern table adress for 8x16 sprites:
+		  H RRRR CCC S P yyy
+		  | |||| ||| | | +++-- Fine Y scroll, the row number within a tile
+		  | |||| ||| | +------ Bit plane (0: "lower"; 1: "upper")
+		  | |||| ||| +-------- Sprite tile half (0: "top"; 1: "bottom") TODO: check if it isn't the reverse
+		  | |||| +++---------- Tile column
+		  | ++++-------------- Tile row
+		  +------------------- Half of sprite table (0: "left"; 1: "right"); equal to bit 0 of the sprite tile index number fetched from secondary OAM during cycles 257-320
+		  RRRR CCCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
+		*/
+		u16 addr = 0;
+		// todo: fix; should not be "reg.v >> 12" for sprites
+		if (PPUCTRL_sprite_height)  // 8x16 sprites
 		{
 			addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12;
 			// Check if we are on the top or bottom tile of the 8x16 sprite
 			if (reg.v & 0x20) // i.e. the course Y scroll is odd, meaning that we are on the bottom tile
 				addr |= 0x10;
 		}
-		else
-			addr = GetBasePatternTableIndex() | tile_fetcher.tile_num << 4 | reg.v >> 12;
+		else // 8x8 sprites
+			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | (reg.v >> 12);
+
 		tile_fetcher.pattern_table_tile_low = ReadMemory(addr);
+		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
 	{
-		u16 addr;
-		if (tile_fetcher.tile_type == TileFetcher::TileType::OAM && PPUCTRL_sprite_height) // 8x16 sprites
+		u16 addr = 0;
+		// todo: fix; should not be "reg.v >> 12" for sprites
+		if (PPUCTRL_sprite_height)  // 8x16 sprites
 		{
 			addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12 | 8;
-			if (reg.v & 0x20)
+			// Check if we are on the top or bottom tile of the 8x16 sprite
+			if (reg.v & 0x20) // i.e. the course Y scroll is odd, meaning that we are on the bottom tile
 				addr |= 0x10;
 		}
-		else
-			addr = GetBasePatternTableIndex() | tile_fetcher.tile_num << 4 | reg.v >> 12 | 8;
+		else // 8x8 sprites
+			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | (reg.v >> 12) | 8;
+
 		tile_fetcher.pattern_table_tile_high = ReadMemory(addr);
+		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_low;
 		break;
 	}
 	}
-
-	tile_fetcher.step = static_cast<TileFetcher::Step>((tile_fetcher.step + 1) % 4);
 }
 
+
+// Reading and writing done internally by the ppu
 u8 PPU::ReadMemory(u16 addr)
 {
-	// reading and writing done internally by the ppu, e.g. when PPUDATA is written/read to/from
-	if (addr <= 0x2FFF)
+	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
+	if (addr <= 0x1FFF)
 	{
-		return u8();
+		return mapper->ReadCHR(addr);
 	}
+	// $2000-$2FFF - Nametables; internal ppu vram
+	else if (addr <= 0x2FFF)
+	{
+		return memory.vram[addr - 0x2000];
+	}
+	// $3000-$3EFF - Mirrors of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		return u8();
+		return memory.vram[addr - 0x3000];
 	}
 	else if (addr <= 0x3F1F)
 	{
@@ -719,4 +800,30 @@ void PPU::PrepareForNewScanline()
 	current_scanline = (current_scanline + 1) % 261;
 	if (current_scanline == 0)
 		PrepareForNewFrame();
+}
+
+
+void PPU::SetWindowSize(wxSize size)
+{
+	unsigned width = size.GetWidth(), height = size.GetHeight();
+
+	if (width > 0 && height)
+	{
+		scale_temp = std::min(width / resolution_x, height / resolution_y);
+		pixel_offset_x_temp = 0.5 * (width - scale_temp * resolution_x);
+		pixel_offset_y_temp = 0.5 * (height - scale_temp * resolution_y);
+		reset_graphics_after_render = true;
+	}
+}
+
+
+void PPU::Configure(Serialization::BaseFunctor& functor)
+{
+	functor.fun(&scale, sizeof(unsigned));
+}
+
+
+void PPU::SetDefaultConfig()
+{
+	scale = default_scale;
 }

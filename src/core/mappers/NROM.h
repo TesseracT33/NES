@@ -16,7 +16,7 @@ public:
 		this->variant = this->prg_rom.size() == prg_rom_size_base ? Variant::PRG_128 : Variant::PRG_256;
 	}
 
-	u8 Read(u16 addr) const override
+	u8 ReadPRG(u16 addr) const override
 	{
 		if (addr <= 0x5FFF)
 		{
@@ -36,12 +36,22 @@ public:
 		}
 	};
 
-	void Write(u16 addr, u8 data) override
+	void WritePRG(u16 addr, u8 data) override
 	{
 		if (addr <= 0x7FFF)
 		{
 			prg_ram[addr - 0x6000] = data;
 		}
+	};
+
+	u8 ReadCHR(u16 addr) const override
+	{
+		return chr_rom[addr];
+	};
+
+	void WriteCHR(u16 addr, u8 data) override
+	{
+
 	};
 };
 

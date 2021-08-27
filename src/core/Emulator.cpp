@@ -20,7 +20,20 @@ void Emulator::AddComponents()
 
 void Emulator::ConnectSystemComponents()
 {
+	bus.apu = &apu;
 	bus.cartridge = &cartridge;
+	bus.cpu = &cpu;
+	bus.ppu = &ppu;
+
+	cartridge.ppu = &ppu;
+
+	cpu.bus = &bus;
+
+	joypad.bus = &bus;
+	joypad.cpu = &cpu;
+
+	ppu.bus = &bus;
+	ppu.cpu = &cpu;
 }
 
 
@@ -88,39 +101,27 @@ void Emulator::SetDefaultConfig()
 
 bool Emulator::SetupSDLVideo(const void* window_handle)
 {
-	return true;
+	bool success = ppu.CreateRenderer(window_handle);
+	return success;
 }
+
 
 void Emulator::SetEmulationSpeed(unsigned speed)
 {
 }
 
-void Emulator::SetWindowScale(unsigned scale)
+
+void Emulator::StartGame(std::string rom_path)
 {
-}
-
-void Emulator::SetWindowSize(wxSize size)
-{
-}
-
-unsigned Emulator::GetWindowScale()
-{
-	return 0;
-}
-
-wxSize Emulator::GetWindowSize()
-{
-	return wxSize();
-}
-
-
-void Emulator::StartGame(const char* rom_path)
-{
-	// todo: reset all components
-
+	cartridge.Reset();
 	bool rom_loaded = cartridge.ReadRomFile(rom_path);
 	if (!rom_loaded) return;
-	strcpy(this->current_rom_path, rom_path);
+	this->current_rom_path = rom_path;
+
+	apu.Reset();
+	bus.Reset();
+	cpu.Power();
+	ppu.Power();
 
 	MainLoop();
 }
@@ -138,7 +139,7 @@ void Emulator::MainLoop()
 		auto frame_start_t = std::chrono::steady_clock::now();
 
 		cycle_counter = 0;
-		while (cycle_counter++ < cycles_per_frame_NTSC)
+		while (cycle_counter++ < 50000)
 		{
 			apu.Update();
 			cpu.Update();

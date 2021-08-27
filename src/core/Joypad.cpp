@@ -194,8 +194,8 @@ void Joypad::MatchInputToBindings(s32 button, InputEvent input_event, InputMetho
 
 void Joypad::Configure(Serialization::BaseFunctor& functor)
 {
-	functor.fun(&joypad_bindings, sizeof(joypad_bindings));
-	functor.fun(&keyboard_bindings, sizeof(keyboard_bindings));
+	//functor.fun(&joypad_bindings, sizeof(joypad_bindings));
+	//functor.fun(&keyboard_bindings, sizeof(keyboard_bindings));
 }
 
 

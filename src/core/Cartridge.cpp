@@ -12,9 +12,6 @@ void Cartridge::Reset()
 
 }
 
-void Cartridge::State(Serialization::BaseFunctor& functor)
-{
-}
 
 void Cartridge::Eject()
 {
@@ -22,15 +19,15 @@ void Cartridge::Eject()
 }
 
 
-u8 Cartridge::Read(u16 addr, bool ppu) const { return mapper->Read(addr); }
+u8 Cartridge::Read(u16 addr, bool ppu) const { return mapper->ReadPRG(addr); }
 
 
-void Cartridge::Write(u16 addr, u8 data, bool ppu) { mapper->Write(addr, data); }
+void Cartridge::Write(u16 addr, u8 data, bool ppu) { mapper->WritePRG(addr, data); }
 
 
-bool Cartridge::ReadRomFile(const char* path)
+bool Cartridge::ReadRomFile(std::string path)
 {
-	FILE* rom_file = fopen(path, "rb");
+	FILE* rom_file = fopen(path.c_str(), "rb");
 	if (rom_file == NULL)
 	{
 		wxMessageBox("Failed to open rom file.");
@@ -86,8 +83,10 @@ void Cartridge::ConstructMapper()
 {
 	switch (this->header.mapper_num)
 	{
-	case MapperNum::NROM: this->mapper = std::make_unique<NROM>();
+	case MapperNum::NROM: this->mapper = std::make_shared<NROM>();
 	}
+
+	ppu->mapper = this->mapper;
 }
 
 
@@ -101,4 +100,10 @@ void Cartridge::LayoutMapperMemory(u8* rom_arr)
 
 	u16 chr_rom_addr_start = prg_rom_addr_start + header.prg_size;
 	memcpy(&mapper->chr_rom[0], rom_arr + chr_rom_addr_start, header.chr_size);
+}
+
+
+void Cartridge::State(Serialization::BaseFunctor& functor)
+{
+
 }
