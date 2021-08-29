@@ -117,8 +117,8 @@ private:
 	bool NMI_occured, NMI_output;
 	bool ppuscroll_written_to, ppuaddr_written_to;
 
-	int current_scanline; // includes -1 (pre-render scanline), 0-239 (visible scanlines) and 240 (post-render scanline)
-	bool odd_frame; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
+	int current_scanline = -1; // includes -1 (pre-render scanline), 0-239 (visible scanlines) and 240 (post-render scanline)
+	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
 	unsigned ppu_cycle_counter;
 
@@ -131,6 +131,8 @@ private:
 	u8 sprite_x_pos_counter[8];
 
 	u8 pixel_x_pos = 0;
+
+	u8 value_last_written_to_ppu_reg;
 
 	enum class TileType { BG, OBJ };
 

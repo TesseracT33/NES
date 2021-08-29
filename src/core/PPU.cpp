@@ -85,7 +85,12 @@ void PPU::Update()
 	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
 	for (int i = 0; i < 3; i++)
 	{
-		if (ppu_cycle_counter == 0) continue; // idle cycle on every scanline (?)
+		if (ppu_cycle_counter == 0)
+		{
+			// idle cycle on every scanline (?)
+			ppu_cycle_counter = 1;
+			continue;
+		}
 
 		if (current_scanline == pre_render_scanline) // == -1
 		{
@@ -192,7 +197,8 @@ void PPU::Update()
 				}
 			}
 
-			if (current_scanline > pre_render_scanline && current_scanline < post_render_scanline)
+			if (current_scanline > pre_render_scanline && current_scanline < post_render_scanline &&
+				ppu_cycle_counter > 0 && ppu_cycle_counter <= 256)
 			{
 				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
 				ShiftPixel();
@@ -245,9 +251,13 @@ u8 PPU::ReadRegister(u16 addr)
 		return 0xFF; // write-only. TODO: return 0xFF or 0?
 
 	case Bus::Addr::PPUSTATUS: // $2002
+	{
+		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
+		u8 PPUSTATUS_ret = PPUSTATUS & 0xE0 | value_last_written_to_ppu_reg & 0x1F;
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
 		reg.w = 0;
-		return PPUSTATUS;
+		return PPUSTATUS_ret;
+	}
 
 	case Bus::Addr::OAMDATA: // $2004
 		// during cycles 1-64, secondary OAM is initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
@@ -280,10 +290,13 @@ void PPU::WriteRegister(u16 addr, u8 data)
 {
 	// Writes to the following registers are ignored if earlier than ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR. This also means that the PPUSCROLL/PPUADDR latch will not toggle
 	// The other registers work immediately: PPUSTATUS, OAMADDR, OAMDATA ($2004), PPUDATA, and OAMDMA ($4014).
+	
+	value_last_written_to_ppu_reg = data;
+	
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL: // $2000
-		if (!cpu->all_ppu_regs_writable) return;
+		//if (!cpu->all_ppu_regs_writable) return;
 
 		if (!PPUCTRL_NMI_enable && (data & PPUCTRL_NMI_enable_mask) && PPUSTATUS_vblank && this->IsInVblank())
 		{
@@ -294,13 +307,12 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUMASK: // $2001
-		if (!cpu->all_ppu_regs_writable) return;
+		//if (!cpu->all_ppu_regs_writable) return;
 		PPUMASK = data;
 		return;
 
 	case Bus::Addr::PPUSTATUS: // $2002
-		PPUSTATUS = data;
-		return;
+		return; // not writable, except that bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
 
 	case Bus::Addr::OAMADDR: // $2003
 		OAMADDR = data;
@@ -319,7 +331,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUSCROLL: // $2005
-		if (!cpu->all_ppu_regs_writable) return;
+		//if (!cpu->all_ppu_regs_writable) return;
 
 		if (reg.w == 0) // Update x-scroll registers
 		{
@@ -335,7 +347,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUADDR: // $2006
-		if (!cpu->all_ppu_regs_writable) return;
+		//if (!cpu->all_ppu_regs_writable) return;
 
 		if (reg.w == 0)
 		{
@@ -800,6 +812,7 @@ void PPU::PrepareForNewScanline()
 	current_scanline = (current_scanline + 1) % 261;
 	if (current_scanline == 0)
 		PrepareForNewFrame();
+	pixel_x_pos = frame_buffer_pos = 0;
 }
 
 
