@@ -2,21 +2,9 @@
 
 #include "BaseMapper.h"
 
-class NROM final : public BaseMapper
+class MMC1 final : public BaseMapper
 {
 public:
-	static const size_t prg_ram_size      = 0x2000;
-	static const size_t prg_rom_size_base = 0x4000;
-	static const size_t chr_rom_size      = 0x2000;
-
-	enum class Variant { PRG_128, PRG_256 } variant;
-
-	void Initialize() override
-	{
-		this->variant = this->prg_rom.size() == prg_rom_size_base ? Variant::PRG_128 : Variant::PRG_256;
-		prg_ram.resize(prg_ram_size);
-	}
-
 	u8 ReadPRG(u16 addr) const override
 	{
 		if (addr <= 0x5FFF)
@@ -33,7 +21,7 @@ public:
 		}
 		else
 		{
-			return prg_rom[addr - (variant == Variant::PRG_128 ? 0xC000 : 0x8000)];
+			return 0xFF;
 		}
 	};
 
@@ -47,12 +35,14 @@ public:
 
 	u8 ReadCHR(u16 addr) const override
 	{
-		return chr_rom[addr];
+		return u8();
 	};
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
 
 	};
-};
 
+private:
+	u8 current_PRG_ROM_bank = 0;
+};

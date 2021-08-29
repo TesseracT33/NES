@@ -54,9 +54,6 @@
     <ClInclude Include="src\core\mappers\BaseMapper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\mappers\MapperEnum.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\core\Header.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -91,6 +88,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Snapshottable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\mappers\UxROM.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\mappers\MapperIncludes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

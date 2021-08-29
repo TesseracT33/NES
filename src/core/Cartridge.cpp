@@ -75,7 +75,7 @@ void Cartridge::ParseRomHeader(u8* header_arr)
 	this->header.prg_size = header_arr[PRG_ROM_SIZE] * prg_piece_size;
 	this->header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
 	this->header.has_trainer = header_arr[FLAGS_6] & 4;
-	this->header.mapper_num = static_cast<MapperNum>(header_arr[FLAGS_7] & 0xF0 | header_arr[FLAGS_6] >> 4);
+	this->header.mapper_num = header_arr[FLAGS_7] & 0xF0 | header_arr[FLAGS_6] >> 4;
 }
 
 
@@ -83,7 +83,9 @@ void Cartridge::ConstructMapper()
 {
 	switch (this->header.mapper_num)
 	{
-	case MapperNum::NROM: this->mapper = std::make_shared<NROM>();
+	case 0x00: MapperFactory<NROM>() ; break;
+	case 0x01: MapperFactory<MMC1>() ; break;
+	case 0x02: MapperFactory<UxROM>(); break;
 	}
 
 	ppu->mapper = this->mapper;
@@ -100,6 +102,8 @@ void Cartridge::LayoutMapperMemory(u8* rom_arr)
 
 	u16 chr_rom_addr_start = prg_rom_addr_start + header.prg_size;
 	memcpy(&mapper->chr_rom[0], rom_arr + chr_rom_addr_start, header.chr_size);
+
+	mapper->Initialize();
 }
 
 

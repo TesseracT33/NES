@@ -19,6 +19,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\core\mappers\MapperIncludes.h" />
+    <ClInclude Include="src\core\mappers\UxROM.h" />
     <ClInclude Include="src\Snapshottable.h" />
     <ClInclude Include="src\gui\InputBindingsWindow.h" />
     <ClInclude Include="src\Observer.h" />
@@ -30,7 +32,6 @@
     <ClInclude Include="src\core\PPU.h" />
     <ClInclude Include="src\core\Header.h" />
     <ClInclude Include="src\core\mappers\BaseMapper.h" />
-    <ClInclude Include="src\core\mappers\MapperEnum.h" />
     <ClInclude Include="src\core\mappers\MMC1.h" />
     <ClInclude Include="src\core\mappers\NROM.h" />
     <ClInclude Include="src\core\System.h" />

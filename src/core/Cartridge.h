@@ -7,8 +7,7 @@
 #include "PPU.h"
 
 #include "mappers/BaseMapper.h"
-#include "mappers/MapperEnum.h"
-#include "mappers/NROM.h"
+#include "mappers/MapperIncludes.h"
 
 class Cartridge final : public Component
 {
@@ -34,6 +33,8 @@ private:
 	Header header;
 
 	std::shared_ptr<BaseMapper> mapper;
+
+	template<typename Mapper> void MapperFactory() { this->mapper = std::make_shared<Mapper>(); }
 
 	void ParseRomHeader(u8* header_arr);
 	void ConstructMapper();
