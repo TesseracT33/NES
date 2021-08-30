@@ -54,7 +54,7 @@ void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
 	odd_frame = false;
-	ppu_cycle_counter = 0;
+	scanline_cycle_counter = 0;
 }
 
 
@@ -85,20 +85,20 @@ void PPU::Update()
 	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
 	for (int i = 0; i < 3; i++)
 	{
-		if (ppu_cycle_counter == 0)
+		if (scanline_cycle_counter == 0)
 		{
 			// idle cycle on every scanline (?)
-			ppu_cycle_counter = 1;
+			scanline_cycle_counter = 1;
 			continue;
 		}
 
 		if (current_scanline == pre_render_scanline) // == -1
 		{
-			if (ppu_cycle_counter == 1)
+			if (scanline_cycle_counter == 1)
 			{
 				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
 			}
-			else if (ppu_cycle_counter >= 280 && ppu_cycle_counter <= 304)
+			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
 			{
 				if (PPUCTRL_PPU_master)
 				{
@@ -110,9 +110,9 @@ void PPU::Update()
 		}
 		else if (current_scanline < post_render_scanline) // < 240
 		{
-			if (ppu_cycle_counter <= 256)
+			if (scanline_cycle_counter <= 256)
 			{
-				if (ppu_cycle_counter == 1)
+				if (scanline_cycle_counter == 1)
 				{
 					// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64 (each write taking two cycles).
 					// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time (?)
@@ -124,27 +124,27 @@ void PPU::Update()
 
 				// On odd cycles, update the bg tile fetching (each step takes 2 cycles, starting at cycle 1).
 				// On even cycles, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both operations are done on even cycles.
-				if (ppu_cycle_counter & 1)
+				if (scanline_cycle_counter & 1)
 					UpdateBGTileFetching();
 				else if (PPUMASK_sprite_enable || PPUMASK_bg_enable) // Sprite evaluation occurs if either the sprite layer or background layer is enabled
 					DoSpriteEvaluation();
 
-				if (ppu_cycle_counter > 1)
+				if (scanline_cycle_counter > 1)
 				{
 					// Increment the coarse X scroll at cycles 8, 16, ..., 256
 					// todo: they say "if rendering is enabled"
-					if (ppu_cycle_counter % 8 == 0)
+					if (scanline_cycle_counter % 8 == 0)
 						reg.increment_coarse_x();
 					// Update the bg shift registers at cycles 9, 17, ..., 249
-					else if (ppu_cycle_counter % 8 == 1)
+					else if (scanline_cycle_counter % 8 == 1)
 						UpdateBGShiftRegs();
 				}
 			}
-			else if (ppu_cycle_counter <= 320)
+			else if (scanline_cycle_counter <= 320)
 			{
 				static unsigned sprite_index = 0;
 
-				if (ppu_cycle_counter == 257)
+				if (scanline_cycle_counter == 257)
 				{
 					tile_fetcher.SetSpriteTileFetchingActive();
 					UpdateBGShiftRegs(); // Update the bg shift registers at cycle 257
@@ -157,12 +157,12 @@ void PPU::Update()
 				// On cycle 1-4: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM
 				// On cycle 9 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data
 				// Not sure if all of this precise timing is necessary. However, the switch stmnt should make it fairly performant anyways
-				switch ((ppu_cycle_counter - 257) % 8)
+				switch ((scanline_cycle_counter - 257) % 8)
 				{
 				case 0: break;
 				case 1: 
 					tile_fetcher.tile_num = secondary_oam[4 * sprite_index + 1]; 
-					if (ppu_cycle_counter >= 266) UpdateSpriteShiftRegs(sprite_index - 1); // the pattern data for the previous sprite is loaded
+					if (scanline_cycle_counter >= 266) UpdateSpriteShiftRegs(sprite_index - 1); // the pattern data for the previous sprite is loaded
 					break;
 				case 2: 
 					sprite_attribute_latch[sprite_index] = secondary_oam[4 * sprite_index + 2];
@@ -178,18 +178,18 @@ void PPU::Update()
 			}
 			else // <= 340 (or 341, for even-numbered frames). 
 			{
-				if (ppu_cycle_counter == 321)
+				if (scanline_cycle_counter == 321)
 				{
 					tile_fetcher.SetBGTileFetchingActive();
 					UpdateSpriteShiftRegs(7); // the last sprite pattern data to be loaded (sprite index == 7)
 				}
 
 			    // todo: UpdateTileFetcher will be called on cycle 341, is it correct ?
-				if (ppu_cycle_counter & 1)
+				if (scanline_cycle_counter & 1)
 					UpdateBGTileFetching();
 
 				// Increment the coarse X scroll at cycles 328 and 336, and update the bg shift registers at cycles 329 and 337
-				switch (ppu_cycle_counter)
+				switch (scanline_cycle_counter)
 				{
 				case 328: case 336: reg.increment_coarse_x(); break; // todo: they say "if rendering is enabled"
 				case 329: case 337: UpdateBGShiftRegs(); break;
@@ -198,7 +198,7 @@ void PPU::Update()
 			}
 
 			if (current_scanline > pre_render_scanline && current_scanline < post_render_scanline &&
-				ppu_cycle_counter > 0 && ppu_cycle_counter <= 256)
+				scanline_cycle_counter > 0 && scanline_cycle_counter <= 256)
 			{
 				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
 				ShiftPixel();
@@ -206,24 +206,30 @@ void PPU::Update()
 		}
 		else if (current_scanline == post_render_scanline + 1) // == 241
 		{
-			if (ppu_cycle_counter == 1)
+			if (scanline_cycle_counter == 1)
 			{
 				PPUSTATUS |= PPUSTATUS_vblank_mask;
-				// todo: set VBlank NMI
+				CheckNMIInterrupt();
 			}
 		}
 
-		ppu_cycle_counter = (ppu_cycle_counter + 1) % (current_scanline == pre_render_scanline && odd_frame ? 340 : 341);
+		// Increment the scanline cycle counter.
+		// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
+		// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
+		scanline_cycle_counter++;
+		if (current_scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
+			scanline_cycle_counter %= 340;
+		else
+			scanline_cycle_counter %= 341;
 		
-		switch (ppu_cycle_counter)
+		switch (scanline_cycle_counter)
 		{
 		case 0:
 			PrepareForNewScanline(); 
 			break;
 
 		case 256:
-			// todo: the condition is 'rendering enabled', not sure what it means
-			if (PPUCTRL_PPU_master)
+			if (RenderingIsEnabled())
 			{
 				reg.increment_y();
 			}
@@ -254,6 +260,7 @@ u8 PPU::ReadRegister(u16 addr)
 	{
 		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
 		u8 PPUSTATUS_ret = PPUSTATUS & 0xE0 | value_last_written_to_ppu_reg & 0x1F;
+		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
 		reg.w = 0;
 		return PPUSTATUS_ret;
@@ -261,7 +268,7 @@ u8 PPU::ReadRegister(u16 addr)
 
 	case Bus::Addr::OAMDATA: // $2004
 		// during cycles 1-64, secondary OAM is initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
-		if (ppu_cycle_counter >= 1 && ppu_cycle_counter <= 64)
+		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
 			return 0xFF;
 		return OAMDATA;
 
@@ -297,12 +304,8 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	{
 	case Bus::Addr::PPUCTRL: // $2000
 		//if (!cpu->all_ppu_regs_writable) return;
-
-		if (!PPUCTRL_NMI_enable && (data & PPUCTRL_NMI_enable_mask) && PPUSTATUS_vblank && this->IsInVblank())
-		{
-			// todo: generate NMI signal
-		}
 		PPUCTRL = data;
+		CheckNMIInterrupt();
 		reg.t = reg.t & ~(3 << 10) | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
@@ -380,6 +383,14 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	}
 
 	}
+}
+
+
+void PPU::CheckNMIInterrupt()
+{
+	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are true.
+	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank)
+		cpu->RequestNMIInterrupt();
 }
 
 
@@ -527,6 +538,12 @@ void PPU::RenderGraphics()
 
 	SDL_FreeSurface(surface);
 	SDL_DestroyTexture(texture);
+}
+
+
+bool PPU::RenderingIsEnabled()
+{
+	return PPUMASK_bg_enable || PPUMASK_sprite_enable;
 }
 
 

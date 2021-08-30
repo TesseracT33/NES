@@ -76,10 +76,10 @@ void CPU::Update()
 		return;
 	}
 
-	if (IRQ_is_being_serviced)
+	if (interrupt_is_being_serviced)
 	{
-		if (--cycles_until_IRQ_service_stops == 0)
-			IRQ_is_being_serviced = false;
+		if (--cycles_until_interrupt_service_stops == 0)
+			interrupt_is_being_serviced = false;
 		else
 			return;
 	}
@@ -90,10 +90,16 @@ void CPU::Update()
 	}
 	else
 	{
-		if (!flags.I && IRQ == 0)
-			ServiceIRQ();
+		// Check for pending interrupts (NMI and IRQ)
+		if (NMI_signal_raised || (IRQ_signal_active && !flags.I))
+			ServiceInterrupt();
+
 		BeginInstruction();
 	}
+
+	#ifdef DEBUG
+		cpu_cycle_counter++;
+	#endif
 }
 
 
@@ -113,6 +119,13 @@ void CPU::BeginInstruction()
 	curr_instr.instr_executing = true;
 	curr_instr.cycle = 1;
 	curr_instr.additional_cycles = 0;
+
+	#ifdef DEBUG
+		char buf[100]{};
+		sprintf(buf, "#instr %i \t #cycle %i \t PC: $%04X \t OP: $%02X \t S: $%02X \t A: $%02X \t X: $%02X \t Y: $%02X",
+			instruction_counter++, cpu_cycle_counter, (int)(PC - 1), (int)curr_instr.opcode, (int)S, (int)A, (int)X, (int)Y);
+		ofs << buf << std::endl;
+	#endif
 }
 
 
@@ -505,22 +518,39 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 }
 
 
-void CPU::ServiceIRQ()
+void CPU::RequestNMIInterrupt()
 {
-	// todo: not sure if this would need to be divided into steps (from each cycle)?
-	PushWordToStack(PC);
-	PushByteToStack(GetStatusRegInterrupt());
-	PC = bus->Read(Bus::Addr::IRQ_BRK_VEC) | bus->Read(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
-	flags.I = 1;
-
-	IRQ_is_being_serviced = true;
-	cycles_until_IRQ_service_stops = IRQ_service_cycle_len;
+	NMI_signal_raised = true;
 }
 
 
-void CPU::ServiceNMI()
+void CPU::ServiceInterrupt()
 {
+	/* IRQ and NMI tick-by-tick execution
+	 #  address R/W description
+	--- ------- --- -----------------------------------------------
+	 1    PC     R  fetch opcode (and discard it - $00 (BRK) is forced into the opcode register instead)
+	 2    PC     R  read next instruction byte (actually the same as above, since PC increment is suppressed. Also discarded.)
+	 3  $0100,S  W  push PCH on stack, decrement S
+	 4  $0100,S  W  push PCL on stack, decrement S
+	*** At this point, the signal status determines which interrupt vector is used ***
+	 5  $0100,S  W  push P on stack (with B flag *clear*), decrement S
+	 6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
+	 7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
+	*/
+	// TODO: do cycle 1, 2
+	PushWordToStack(PC);
+	// If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
+	if (NMI_signal_raised)
+		PC = bus->Read(Bus::Addr::NMI_VEC) | bus->Read(Bus::Addr::NMI_VEC + 1) << 8;
+	else
+		PC = bus->Read(Bus::Addr::IRQ_BRK_VEC) | bus->Read(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
 
+	PushByteToStack(GetStatusRegInterrupt());
+	flags.I = 1;
+
+	interrupt_is_being_serviced = true;
+	cycles_until_interrupt_service_stops = 7;
 }
 
 
@@ -528,7 +558,7 @@ void CPU::ADC()
 {
 	u8 op = curr_instr.read_addr + flags.C;
 	flags.V = ((A & 0x7F) + (curr_instr.read_addr & 0x7F) + flags.C > 0x7F)
-	        ^ ((A & 0xFF) + (curr_instr.read_addr & 0xFF) + flags.C > 0xFF);
+	        ^ ((A       ) + (curr_instr.read_addr       ) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
 	A += op;
 	flags.Z = A == 0;
@@ -604,11 +634,12 @@ void CPU::BPL()
 
 void CPU::BRK()
 {
-	ServiceIRQ();
+	// TODO: check if correct
+	ServiceInterrupt();
 	flags.B = 1;
 	// If the interrupt servicing is forced from the BRK instruction,
     // the interrupt servicing takes one less cycle to perform (6 instead of 7)
-	cycles_until_IRQ_service_stops--;
+	cycles_until_interrupt_service_stops--;
 }
 
 
@@ -748,9 +779,8 @@ void CPU::JMP()
 
 void CPU::JSR()
 {
-	PushWordToStack(PC);
+	PushWordToStack(PC - 1);
 	PC = curr_instr.addr;
-	// todo: doc says "The JSR instruction pushes the address (minus one)". 'minus one' meaning?
 }
 
 
@@ -836,14 +866,7 @@ void CPU::PLA()
 
 void CPU::PLP()
 {
-	u8 P = PullByteFromStack();
-	flags.C = P & 0x01;
-	flags.Z = P & 0x02;
-	flags.I = P & 0x04;
-	flags.D = P & 0x08;
-	flags.B = P & 0x10;
-	flags.V = P & 0x40;
-	flags.N = P & 0x80;
+	SetStatusReg(PullByteFromStack());
 	curr_instr.additional_cycles = 2;
 }
 
@@ -874,14 +897,7 @@ void CPU::ROR()
 
 void CPU::RTI()
 {
-	u8 P = PullByteFromStack();
-	flags.C = P & 0x01;
-	flags.Z = P & 0x02;
-	flags.I = P & 0x04;
-	flags.D = P & 0x08;
-	flags.B = P & 0x10;
-	flags.V = P & 0x40;
-	flags.N = P & 0x80;
+	SetStatusReg(PullByteFromStack());
 	PC = PullWordFromStack();
 	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
 	//    all instr with implied addressing take 2 cycles.
@@ -891,7 +907,7 @@ void CPU::RTI()
 
 void CPU::RTS()
 {
-	PC = PullWordFromStack();
+	PC = PullWordFromStack() + 1;
 	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
 	//    all instr with implied addressing take 2 cycles.
 	curr_instr.additional_cycles = 4;
@@ -902,7 +918,7 @@ void CPU::SBC()
 {
 	u8 op = (0xFF - curr_instr.read_addr) + flags.C;
 	flags.V = ((A & 0x7F) + ((u8)(0xFF - curr_instr.read_addr) & 0x7F) + flags.C > 0x7F)
-	        ^ ((A & 0xFF) + ((u8)(0xFF - curr_instr.read_addr) & 0xFF) + flags.C > 0xFF);
+	        ^ ((A       ) + ((u8)(0xFF - curr_instr.read_addr)       ) + flags.C > 0xFF);
 	flags.C = !(A + op > 0xFF);
 	A += op;
 	flags.Z = A == 0;

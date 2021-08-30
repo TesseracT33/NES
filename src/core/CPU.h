@@ -7,9 +7,17 @@
 #include "Component.h"
 
 #define DEBUG
+#define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
 
 class CPU final : public Component
 {
+
+#ifdef DEBUG
+	std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
+	unsigned instruction_counter = 1;
+	unsigned cpu_cycle_counter = 8;
+#endif
+
 public:
 	CPU();
 
@@ -22,6 +30,7 @@ public:
 	void Power();
 	void Update();
 
+	void RequestNMIInterrupt();
 	void Set_OAM_DMA_Active();
 
 	void State(Serialization::BaseFunctor& functor) override;
@@ -132,15 +141,14 @@ private:
 	bool odd_cpu_cycle;
 
 	// interrupt-related
+	bool NMI_signal_raised = false;
+	bool IRQ_signal_active = false;
 	bool IRQ;
-	bool IRQ_is_being_serviced = false;
-	const unsigned IRQ_service_cycle_len = 7;
-	unsigned cycles_until_IRQ_service_stops;
+	bool interrupt_is_being_serviced = false;
+	unsigned cycles_until_interrupt_service_stops;
 
 	bool oam_dma_transfer_active = false;
 	unsigned oam_dma_cycles_until_finished;
-
-	bool NMI;
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	unsigned cpu_clocks_since_reset = 0;
@@ -170,8 +178,7 @@ private:
 	void StepIndexedIndirect();
 	void StepIndirectIndexed();
 
-	void ServiceIRQ();
-	void ServiceNMI();
+	void ServiceInterrupt();
 
 	void BuildInstrTypeTable();
 

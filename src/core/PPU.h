@@ -114,13 +114,12 @@ private:
 	u8 ppuaddr_first_byte_written;
 	u16 ppuaddr_written_addr;
 
-	bool NMI_occured, NMI_output;
 	bool ppuscroll_written_to, ppuaddr_written_to;
 
 	int current_scanline = -1; // includes -1 (pre-render scanline), 0-239 (visible scanlines) and 240 (post-render scanline)
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
-	unsigned ppu_cycle_counter;
+	unsigned scanline_cycle_counter;
 
 	u8 secondary_oam[32];
 
@@ -192,8 +191,11 @@ private:
 	u8 framebuffer[framebuffer_size]{};
 	unsigned frame_buffer_pos = 0;
 
+	bool RenderingIsEnabled();
+
 	void ResetGraphics();
 
+	void CheckNMIInterrupt();
 	void DoSpriteEvaluation();
 	void FetchSpriteDataFromSecondaryOAM();
 	u8 GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type);
