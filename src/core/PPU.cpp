@@ -97,6 +97,7 @@ void PPU::Update()
 			if (scanline_cycle_counter == 1)
 			{
 				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
+				CheckNMIInterrupt();
 			}
 			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
 			{
@@ -262,6 +263,7 @@ u8 PPU::ReadRegister(u16 addr)
 		u8 PPUSTATUS_ret = PPUSTATUS & 0xE0 | value_last_written_to_ppu_reg & 0x1F;
 		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
+		CheckNMIInterrupt();
 		reg.w = 0;
 		return PPUSTATUS_ret;
 	}
@@ -391,6 +393,8 @@ void PPU::CheckNMIInterrupt()
 	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are true.
 	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank)
 		cpu->SetNMILow();
+	else
+		cpu->SetNMIHigh();
 }
 
 
