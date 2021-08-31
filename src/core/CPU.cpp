@@ -59,6 +59,7 @@ void CPU::Reset()
 	all_ppu_regs_writable = false;
 	NMI_signal_active = false;
 	IRQ_num_inputs = 0;
+	set_I_on_next_update = clear_I_on_next_update = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
@@ -72,6 +73,17 @@ void CPU::Update()
 
 	if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		all_ppu_regs_writable = true;
+
+	if (set_I_on_next_update)
+	{
+		flags.I = 1;
+		set_I_on_next_update = false;
+	}
+	else if (clear_I_on_next_update)
+	{
+		flags.I = 0;
+		clear_I_on_next_update = false;
+	}
 
 	if (oam_dma_transfer_active)
 	{
@@ -725,7 +737,8 @@ void CPU::CLD()
 
 void CPU::CLI()
 {
-	flags.I = 0;
+	// CLI clears the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
+	clear_I_on_next_update = true;
 }
 
 
@@ -922,7 +935,15 @@ void CPU::PLA()
 
 void CPU::PLP()
 {
+	// PLP changes the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
+	bool I_tmp = flags.I;
 	SetStatusReg(PullByteFromStack());
+	if (flags.I)
+		set_I_on_next_update = true;
+	else
+		clear_I_on_next_update = true;
+	flags.I = I_tmp;
+
 	curr_instr.additional_cycles = 2;
 }
 
@@ -996,7 +1017,8 @@ void CPU::SED()
 
 void CPU::SEI()
 {
-	flags.I = 1;
+	// SEI sets the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
+	set_I_on_next_update = true;
 }
 
 

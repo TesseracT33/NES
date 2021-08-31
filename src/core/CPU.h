@@ -148,6 +148,7 @@ private:
 	enum class InterruptType { NMI, IRQ, BRK };
 	InterruptType handled_interrupt_type; // the type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
 	bool NMI_signal_active = false;
+	bool clear_I_on_next_update = false, set_I_on_next_update = false; // refers to the I flag in the status register
 	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down
 
 	bool oam_dma_transfer_active = false;
