@@ -66,6 +66,10 @@ void CPU::Reset()
 
 void CPU::Update()
 {
+	#ifdef DEBUG
+		cpu_cycle_counter++;
+	#endif
+
 	if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		all_ppu_regs_writable = true;
 
@@ -79,27 +83,37 @@ void CPU::Update()
 	if (interrupt_is_being_serviced)
 	{
 		if (--cycles_until_interrupt_service_stops == 0)
+		{
 			interrupt_is_being_serviced = false;
-		else
-			return;
+			if (handled_interrupt_type == InterruptType::NMI)
+				NMI_signal_raised = false;
+			// todo: IRQ signal disable?
+		}
+		return;
 	}
 
+	// If an instruction is currently being executed
 	if (curr_instr.instr_executing)
 	{
+		// Continue the execution of the instruction
 		std::invoke(curr_instr.addr_mode_fun, this);
 	}
 	else
 	{
-		// Check for pending interrupts (NMI and IRQ)
-		if (NMI_signal_raised || (IRQ_signal_active && !flags.I))
-			ServiceInterrupt();
+		// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
+		// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
+		if (!interrupt_serviced_on_last_update)
+		{
+			if (NMI_signal_raised)
+				ServiceInterrupt(InterruptType::NMI);
+			else if (IRQ_signal_active && !flags.I)
+				ServiceInterrupt(InterruptType::IRQ);
+			return;
+		}
 
 		BeginInstruction();
+		interrupt_serviced_on_last_update = false;
 	}
-
-	#ifdef DEBUG
-		cpu_cycle_counter++;
-	#endif
 }
 
 
@@ -524,7 +538,7 @@ void CPU::RequestNMIInterrupt()
 }
 
 
-void CPU::ServiceInterrupt()
+void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 {
 	/* IRQ and NMI tick-by-tick execution
 	 #  address R/W description
@@ -538,19 +552,38 @@ void CPU::ServiceInterrupt()
 	 6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
 	 7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
 	*/
-	// TODO: do cycle 1, 2
+	
+	// Note: what happens in cycle 1 and 2 does not need to be emulated (beyond the timing)
 	PushWordToStack(PC);
-	// If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
-	if (NMI_signal_raised)
+
+	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
+	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
+	if (asserted_interrupt_type == InterruptType::NMI || NMI_signal_raised)
+	{
 		PC = bus->Read(Bus::Addr::NMI_VEC) | bus->Read(Bus::Addr::NMI_VEC + 1) << 8;
+		handled_interrupt_type = InterruptType::NMI;
+	}
 	else
+	{
 		PC = bus->Read(Bus::Addr::IRQ_BRK_VEC) | bus->Read(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
+		if (asserted_interrupt_type == InterruptType::IRQ || IRQ_signal_active && !flags.I)
+			handled_interrupt_type = InterruptType::IRQ;
+		else
+			handled_interrupt_type = InterruptType::BRK;
+	}
 
 	PushByteToStack(GetStatusRegInterrupt());
 	flags.I = 1;
 
-	interrupt_is_being_serviced = true;
-	cycles_until_interrupt_service_stops = 7;
+	interrupt_is_being_serviced = interrupt_serviced_on_last_update = true;
+	cycles_until_interrupt_service_stops = 6; // Not 7; the current cycle will already have passed
+
+	if (handled_interrupt_type == InterruptType::BRK)
+	{
+		// If the interrupt servicing is forced from the BRK instruction, the B flag is also set, and the interrupt servicing takes one less cycle to perform than otherwise
+		flags.B = 1;
+		cycles_until_interrupt_service_stops--;
+	}
 }
 
 
@@ -634,12 +667,7 @@ void CPU::BPL()
 
 void CPU::BRK()
 {
-	// TODO: check if correct
-	ServiceInterrupt();
-	flags.B = 1;
-	// If the interrupt servicing is forced from the BRK instruction,
-    // the interrupt servicing takes one less cycle to perform (6 instead of 7)
-	cycles_until_interrupt_service_stops--;
+	ServiceInterrupt(InterruptType::BRK);
 }
 
 

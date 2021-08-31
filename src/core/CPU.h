@@ -15,7 +15,7 @@ class CPU final : public Component
 #ifdef DEBUG
 	std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
 	unsigned instruction_counter = 1;
-	unsigned cpu_cycle_counter = 8;
+	unsigned cpu_cycle_counter = 7;
 #endif
 
 public:
@@ -141,10 +141,13 @@ private:
 	bool odd_cpu_cycle;
 
 	// interrupt-related
+	enum class InterruptType { NMI, IRQ, BRK };
+	InterruptType handled_interrupt_type; // the type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
 	bool NMI_signal_raised = false;
 	bool IRQ_signal_active = false;
 	bool IRQ;
 	bool interrupt_is_being_serviced = false;
+	bool interrupt_serviced_on_last_update = false;
 	unsigned cycles_until_interrupt_service_stops;
 
 	bool oam_dma_transfer_active = false;
@@ -178,7 +181,7 @@ private:
 	void StepIndexedIndirect();
 	void StepIndirectIndexed();
 
-	void ServiceInterrupt();
+	void ServiceInterrupt(InterruptType asserted_interrupt_type);
 
 	void BuildInstrTypeTable();
 
