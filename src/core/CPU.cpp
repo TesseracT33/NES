@@ -627,6 +627,7 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 }
 
 
+// Add the contents of a memory location to the accumulator together with the carry bit. If overflow occurs the carry bit is set.
 void CPU::ADC()
 {
 	u8 op = curr_instr.read_addr + flags.C;
@@ -639,6 +640,7 @@ void CPU::ADC()
 }
 
 
+// Logical AND between the accumulator and the contents of a memory location.
 void CPU::AND()
 {
 	u8 op = curr_instr.read_addr;
@@ -648,6 +650,7 @@ void CPU::AND()
 }
 
 
+// Shift all bits of the accumulator or the contents of a memory location one bit left. Bit 0 is cleared and bit 7 is placed in the carry flag.
 void CPU::ASL()
 {
 	u8 target = curr_instr.read_addr;
@@ -660,24 +663,28 @@ void CPU::ASL()
 }
 
 
+// If the carry flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BCC()
 {
 	Branch(!flags.C);
 }
 
 
+// If the carry flag is set then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BCS()
 {
 	Branch(flags.C);
 }
 
 
+// If the zero flag is set then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BEQ()
 {
 	Branch(flags.Z);
 }
 
 
+// Check the logical AND between the accumulator and the contents of a memory location, and set the status flags accordingly.
 void CPU::BIT()
 {
 	u8 op = curr_instr.read_addr;
@@ -687,54 +694,63 @@ void CPU::BIT()
 }
 
 
+// If the negative flag is set then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BMI()
 {
 	Branch(flags.N);
 }
 
 
+// If the zero flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BNE()
 {
 	Branch(!flags.Z);
 }
 
 
+// If the negative flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BPL()
 {
 	Branch(!flags.N);
 }
 
 
+// Force the generation of an interrupt request. Additionally, the break flag is set.
 void CPU::BRK()
 {
 	ServiceInterrupt(InterruptType::BRK);
 }
 
 
+// If the overflow flag is clear then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BVC()
 {
 	Branch(!flags.V);
 }
 
 
+// If the overflow flag is set then add the relative displacement to the program counter to cause a branch to a new location.
 void CPU::BVS()
 {
 	Branch(flags.V);
 }
 
 
+// Clear the carry flag.
 void CPU::CLC()
 {
 	flags.C = 0;
 }
 
 
+// Clear the decimal mode flag.
 void CPU::CLD()
 {
 	flags.D = 0;
 }
 
 
+// Clear the interrupt disable flag.
 void CPU::CLI()
 {
 	// CLI clears the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
@@ -742,12 +758,14 @@ void CPU::CLI()
 }
 
 
+// Clear the overflow flag.
 void CPU::CLV()
 {
 	flags.V = 0;
 }
 
 
+// Compare the contents of the accumulator with the contents of a memory location (essentially performing the subtraction A-M without storing the result).
 void CPU::CMP()
 {
 	u8 M = curr_instr.read_addr;
@@ -758,6 +776,7 @@ void CPU::CMP()
 }
 
 
+// Compare the contents of the X register with a the contents of a memory location (essentially performing the subtraction X-M without storing the result).
 void CPU::CPX()
 {
 	u8 M = curr_instr.read_addr;
@@ -768,6 +787,7 @@ void CPU::CPX()
 }
 
 
+// Compare the contents of the Y register with a the contents of memory location (essentially performing the subtraction Y-M without storing the result)
 void CPU::CPY()
 {
 	u8 M = curr_instr.read_addr;
@@ -778,6 +798,7 @@ void CPU::CPY()
 }
 
 
+// Subtract one from the value held at a specified memory location.
 void CPU::DEC()
 {
 	u8 M = curr_instr.read_addr;
@@ -788,6 +809,7 @@ void CPU::DEC()
 }
 
 
+// Subtract one from the X register.
 void CPU::DEX()
 {
 	X--;
@@ -796,6 +818,7 @@ void CPU::DEX()
 }
 
 
+// Subtract one from the Y register.
 void CPU::DEY()
 {
 	Y--;
@@ -804,6 +827,7 @@ void CPU::DEY()
 }
 
 
+// Logical XOR between the accumulator and the contents of a memory location.
 void CPU::EOR()
 {
 	u8 op = curr_instr.read_addr;
@@ -813,6 +837,7 @@ void CPU::EOR()
 }
 
 
+// Add one to the value held at a specified memory location.
 void CPU::INC()
 {
 	u8 M = curr_instr.read_addr;
@@ -823,6 +848,7 @@ void CPU::INC()
 }
 
 
+// Add one to the X register.
 void CPU::INX()
 {
 	X++;
@@ -831,6 +857,7 @@ void CPU::INX()
 }
 
 
+// Add one to the Y register.
 void CPU::INY()
 {
 	Y++;
@@ -839,6 +866,7 @@ void CPU::INY()
 }
 
 
+// Set the program counter to the address specified by the operand.
 void CPU::JMP()
 {
 	PC = curr_instr.addr;
@@ -846,6 +874,7 @@ void CPU::JMP()
 }
 
 
+// Push the program counter (minus one) on to the stack and set the program counter to the target memory address.
 void CPU::JSR()
 {
 	PushWordToStack(PC - 1);
@@ -853,6 +882,7 @@ void CPU::JSR()
 }
 
 
+// Load a byte of memory into the accumulator.
 void CPU::LDA()
 {
 	u8 M = curr_instr.read_addr;
@@ -862,6 +892,7 @@ void CPU::LDA()
 }
 
 
+// Load a byte of memory into the X register.
 void CPU::LDX()
 {
 	u8 M = curr_instr.read_addr;
@@ -871,6 +902,7 @@ void CPU::LDX()
 }
 
 
+// Load a byte of memory into the Y register.
 void CPU::LDY()
 {
 	u8 M = curr_instr.read_addr;
@@ -880,6 +912,7 @@ void CPU::LDY()
 }
 
 
+// Perform a logical shift one place to the right of the accumulator or the contents of a memory location. The bit that was in bit 0 is shifted into the carry flag. Bit 7 is set to zero.
 void CPU::LSR()
 {
 	u8 target = curr_instr.read_addr;
@@ -891,12 +924,14 @@ void CPU::LSR()
 }
 
 
+// No operation
 void CPU::NOP()
 {
 
 }
 
 
+// Logical OR between the accumulator and the contents of a memory location.
 void CPU::ORA()
 {
 	u8 M = curr_instr.read_addr;
@@ -906,6 +941,7 @@ void CPU::ORA()
 }
 
 
+// Push a copy of the accumulator on to the stack.
 void CPU::PHA()
 {
 	PushByteToStack(A);
@@ -915,6 +951,7 @@ void CPU::PHA()
 }
 
 
+// Push a copy of the status register on to the stack (with bit 4 set).
 void CPU::PHP()
 {
 	PushByteToStack(GetStatusRegInstr(&CPU::PHP));
@@ -922,6 +959,7 @@ void CPU::PHP()
 }
 
 
+// Pull an 8-bit value from the stack and into the accumulator.
 void CPU::PLA()
 {
 	A = PullByteFromStack();
@@ -933,6 +971,7 @@ void CPU::PLA()
 }
 
 
+// Pull an 8-bit value from the stack and into the staus register.
 void CPU::PLP()
 {
 	// PLP changes the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
@@ -948,6 +987,7 @@ void CPU::PLP()
 }
 
 
+// Move each of the bits in either the accumulator or the value held at a memory location one place to the left. Bit 0 is filled with the current value of the carry flag whilst the old bit 7 becomes the new carry flag value.
 void CPU::ROL()
 {
 	u8 target = curr_instr.read_addr;
@@ -960,6 +1000,7 @@ void CPU::ROL()
 }
 
 
+// Move each of the bits in either the accumulator or the value held at a memory location one place to the right. Bit 7 is filled with the current value of the carry flag whilst the old bit 0 becomes the new carry flag value.
 void CPU::ROR()
 {
 	u8 target = curr_instr.read_addr;
@@ -972,6 +1013,7 @@ void CPU::ROR()
 }
 
 
+// Return from interrupt; pull the status register and program counter from the stack.
 void CPU::RTI()
 {
 	SetStatusReg(PullByteFromStack());
@@ -982,6 +1024,7 @@ void CPU::RTI()
 }
 
 
+// Return from subrouting; pull the program counter (minus one) from the stack.
 void CPU::RTS()
 {
 	PC = PullWordFromStack() + 1;
@@ -991,6 +1034,7 @@ void CPU::RTS()
 }
 
 
+// Subtract the contents of a memory location to the accumulator together with the NOT of the carry bit. If overflow occurs the carry bit is cleared.
 void CPU::SBC()
 {
 	u8 op = (0xFF - curr_instr.read_addr) + flags.C;
@@ -1003,18 +1047,21 @@ void CPU::SBC()
 }
 
 
+// Set the carry flag.
 void CPU::SEC()
 {
 	flags.C = 1;
 }
 
 
+// Set the decimal mode flag.
 void CPU::SED()
 {
 	flags.D = 1;
 }
 
 
+// Set the interrupt disable flag.
 void CPU::SEI()
 {
 	// SEI sets the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
@@ -1022,24 +1069,28 @@ void CPU::SEI()
 }
 
 
+// Store the contents of the accumulator into memory.
 void CPU::STA()
 {
 	bus->Write(curr_instr.addr, A);
 }
 
 
+// Store the contents of the X register into memory.
 void CPU::STX()
 {
 	bus->Write(curr_instr.addr, X);
 }
 
 
+// Store the contents of the Y register into memory.
 void CPU::STY()
 {
 	bus->Write(curr_instr.addr, Y);
 }
 
 
+// Copy the current contents of the accumulator into the X register.
 void CPU::TAX()
 {
 	X = A;
@@ -1048,6 +1099,7 @@ void CPU::TAX()
 }
 
 
+// Copy the current contents of the accumulator into the Y register.
 void CPU::TAY()
 {
 	Y = A;
@@ -1056,6 +1108,7 @@ void CPU::TAY()
 }
 
 
+// Copy the current contents of the stack register into the X register.
 void CPU::TSX()
 {
 	X = S;
@@ -1064,6 +1117,7 @@ void CPU::TSX()
 }
 
 
+// Copy the current contents of the X register into the accumulator.
 void CPU::TXA()
 {
 	A = X;
@@ -1072,6 +1126,7 @@ void CPU::TXA()
 }
 
 
+// Copy the current contents of the X register into the stack register.
 void CPU::TXS()
 {
 	S = X;
@@ -1080,6 +1135,7 @@ void CPU::TXS()
 }
 
 
+// Copy the current contents of the Y register into the accumulator.
 void CPU::TYA()
 {
 	A = Y;
@@ -1088,12 +1144,14 @@ void CPU::TYA()
 }
 
 
+// Unofficial instruction;
 void CPU::AHX()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::ALR()
 {
 	AND();
@@ -1101,6 +1159,7 @@ void CPU::ALR()
 }
 
 
+// Unofficial instruction;
 void CPU::ANC()
 {
 	AND();
@@ -1108,18 +1167,21 @@ void CPU::ANC()
 }
 
 
+// Unofficial instruction;
 void CPU::ARR()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::AXS()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::DCP()
 {
 	DEC();
@@ -1127,12 +1189,14 @@ void CPU::DCP()
 }
 
 
+// Unofficial instruction;
 void CPU::DLC()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::ISC()
 {
 	INC();
@@ -1140,18 +1204,21 @@ void CPU::ISC()
 }
 
 
+// Unofficial instruction;
 void CPU::LAS()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::LAX()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::RLA()
 {
 	ROL();
@@ -1159,6 +1226,7 @@ void CPU::RLA()
 }
 
 
+// Unofficial instruction;
 void CPU::RRA()
 {
 	ROR();
@@ -1166,6 +1234,7 @@ void CPU::RRA()
 }
 
 
+// Unofficial instruction;
 void CPU::SAX()
 {
 	u8 new_target = A & X;
@@ -1173,18 +1242,21 @@ void CPU::SAX()
 }
 
 
+// Unofficial instruction;
 void CPU::SHX()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::SHY()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::SLO()
 {
 	ASL();
@@ -1192,6 +1264,7 @@ void CPU::SLO()
 }
 
 
+// Unofficial instruction;
 void CPU::SRE()
 {
 	LSR();
@@ -1199,12 +1272,14 @@ void CPU::SRE()
 }
 
 
+// Unofficial instruction;
 void CPU::STP()
 {
 
 }
 
 
+// Unofficial instruction;
 void CPU::TAS()
 {
 	S = A;
@@ -1213,6 +1288,7 @@ void CPU::TAS()
 }
 
 
+// Unofficial instruction;
 void CPU::XAA()
 {
 
