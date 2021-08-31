@@ -21,6 +21,10 @@ public:
 	u8 Read(u16 addr) override;
 	void Write(u16 addr, u8 data) override;
 
+	// Reads and writes, but also advances the state machine by one cycle
+	u8 ReadCycle(u16 addr) override;
+	void WriteCycle(u16 addr, u8 data) override;
+
 	void State(Serialization::BaseFunctor& functor) override;
 
 private:

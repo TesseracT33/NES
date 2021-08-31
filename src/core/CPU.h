@@ -30,7 +30,11 @@ public:
 	void Power();
 	void Update();
 
-	void RequestNMIInterrupt();
+	void SetIRQLow();
+	void SetIRQHigh();
+	void SetNMILow();
+	void SetNMIHigh();
+
 	void Set_OAM_DMA_Active();
 
 	void State(Serialization::BaseFunctor& functor) override;
@@ -143,12 +147,8 @@ private:
 	// interrupt-related
 	enum class InterruptType { NMI, IRQ, BRK };
 	InterruptType handled_interrupt_type; // the type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
-	bool NMI_signal_raised = false;
-	bool IRQ_signal_active = false;
-	bool IRQ;
-	bool interrupt_is_being_serviced = false;
-	bool interrupt_serviced_on_last_update = false;
-	unsigned cycles_until_interrupt_service_stops;
+	bool NMI_signal_active = false;
+	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down
 
 	bool oam_dma_transfer_active = false;
 	unsigned oam_dma_cycles_until_finished;

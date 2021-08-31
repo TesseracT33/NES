@@ -50,8 +50,6 @@ void CPU::Power()
 		bus->Write(addr, 0);
 	bus->Write(0x4015, 0);
 	bus->Write(0x4017, 0);
-
-	IRQ = 1;
 }
 
 
@@ -59,8 +57,10 @@ void CPU::Reset()
 {
 	cpu_clocks_since_reset = 0;
 	all_ppu_regs_writable = false;
+	NMI_signal_active = false;
+	IRQ_num_inputs = 0;
 
-	PC = bus->Read(0xFFFC) | bus->Read(0xFFFD) << 8;
+	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
 
 
@@ -80,18 +80,6 @@ void CPU::Update()
 		return;
 	}
 
-	if (interrupt_is_being_serviced)
-	{
-		if (--cycles_until_interrupt_service_stops == 0)
-		{
-			interrupt_is_being_serviced = false;
-			if (handled_interrupt_type == InterruptType::NMI)
-				NMI_signal_raised = false;
-			// todo: IRQ signal disable?
-		}
-		return;
-	}
-
 	// If an instruction is currently being executed
 	if (curr_instr.instr_executing)
 	{
@@ -100,19 +88,14 @@ void CPU::Update()
 	}
 	else
 	{
+		BeginInstruction();
+
 		// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
 		// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
-		if (!interrupt_serviced_on_last_update)
-		{
-			if (NMI_signal_raised)
-				ServiceInterrupt(InterruptType::NMI);
-			else if (IRQ_signal_active && !flags.I)
-				ServiceInterrupt(InterruptType::IRQ);
-			return;
-		}
-
-		BeginInstruction();
-		interrupt_serviced_on_last_update = false;
+		if (NMI_signal_active)
+			ServiceInterrupt(InterruptType::NMI);
+		else if (IRQ_num_inputs > 0 && !flags.I)
+			ServiceInterrupt(InterruptType::IRQ);
 	}
 }
 
@@ -532,57 +515,102 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 }
 
 
-void CPU::RequestNMIInterrupt()
+void CPU::SetIRQLow()
 {
-	NMI_signal_raised = true;
+	// todo: probably needs some code that prevents this var from being increment twice by the same component?
+	IRQ_num_inputs++;
+}
+
+
+void CPU::SetIRQHigh()
+{
+	IRQ_num_inputs--;
+}
+
+
+void CPU::SetNMILow()
+{
+	NMI_signal_active = true;
+}
+
+
+void CPU::SetNMIHigh()
+{
+	NMI_signal_active = false;
 }
 
 
 void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 {
 	/* IRQ and NMI tick-by-tick execution
-	 #  address R/W description
-	--- ------- --- -----------------------------------------------
-	 1    PC     R  fetch opcode (and discard it - $00 (BRK) is forced into the opcode register instead)
-	 2    PC     R  read next instruction byte (actually the same as above, since PC increment is suppressed. Also discarded.)
-	 3  $0100,S  W  push PCH on stack, decrement S
-	 4  $0100,S  W  push PCL on stack, decrement S
-	*** At this point, the signal status determines which interrupt vector is used ***
-	 5  $0100,S  W  push P on stack (with B flag *clear*), decrement S
-	 6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
-	 7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
-	*/
-	
-	// Note: what happens in cycle 1 and 2 does not need to be emulated (beyond the timing)
-	PushWordToStack(PC);
+	  #  address R/W description
+	 --- ------- --- -----------------------------------------------
+	  1    PC     R  fetch opcode (and discard it - $00 (BRK) is forced into the opcode register instead)
+	  2    PC     R  read next instruction byte (actually the same as above, since PC increment is suppressed. Also discarded.)
+	  3  $0100,S  W  push PCH on stack, decrement S
+	  4  $0100,S  W  push PCL on stack, decrement S
+	 *** At this point, the signal status determines which interrupt vector is used ***
+	  5  $0100,S  W  push P on stack (with B flag *clear*), decrement S
+	  6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
+	  7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
 
-	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
-	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
-	if (asserted_interrupt_type == InterruptType::NMI || NMI_signal_raised)
+	 For BRK: the first two cycles differ as follows:
+	  1    PC     R  fetch opcode, increment PC
+	  2    PC     R  read next instruction byte (and throw it away), increment PC
+	*/
+
+	// Cycles 1-2
+	if (asserted_interrupt_type == InterruptType::BRK)
 	{
-		PC = bus->Read(Bus::Addr::NMI_VEC) | bus->Read(Bus::Addr::NMI_VEC + 1) << 8;
-		handled_interrupt_type = InterruptType::NMI;
+		// note: the first read and increment of PC has already been handled in the BRK() function
+		bus->ReadCycle(PC++);
 	}
 	else
 	{
-		PC = bus->Read(Bus::Addr::IRQ_BRK_VEC) | bus->Read(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
-		if (asserted_interrupt_type == InterruptType::IRQ || IRQ_signal_active && !flags.I)
+		bus->ReadCycle(PC);
+		bus->ReadCycle(PC);
+	}
+
+	// Cycles 3-4
+	bus->WriteCycle(0x0100 | --S, PC >> 8);
+	bus->WriteCycle(0x0100 | --S, PC & 0xFF);
+
+	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
+	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
+	if (asserted_interrupt_type == InterruptType::NMI || NMI_signal_active)
+	{
+		handled_interrupt_type = InterruptType::NMI;
+		NMI_signal_active = false;
+	}
+	else
+	{
+		if (asserted_interrupt_type == InterruptType::IRQ || IRQ_num_inputs > 0 && !flags.I)
 			handled_interrupt_type = InterruptType::IRQ;
 		else
 			handled_interrupt_type = InterruptType::BRK;
 	}
 
-	PushByteToStack(GetStatusRegInterrupt());
-	flags.I = 1;
+	// cycle 5
+	bus->WriteCycle(0x0100 | --S, GetStatusRegInterrupt());
 
-	interrupt_is_being_serviced = interrupt_serviced_on_last_update = true;
-	cycles_until_interrupt_service_stops = 6; // Not 7; the current cycle will already have passed
+	// cycles 6-7
+	if (handled_interrupt_type == InterruptType::NMI)
+	{
+		PC = PC & 0xFF00 | bus->ReadCycle(Bus::Addr::NMI_VEC);
+		PC = PC & 0x00FF | bus->ReadCycle(Bus::Addr::NMI_VEC + 1) << 8;
+	}
+	else
+	{
+		PC = PC & 0xFF00 | bus->ReadCycle(Bus::Addr::IRQ_BRK_VEC);
+		PC = PC & 0x00FF | bus->ReadCycle(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
+	}
+	flags.I = 1; // it's OK if this is set in cycle 7 instead of 6; the flag isn't used until after this function returns
 
 	if (handled_interrupt_type == InterruptType::BRK)
 	{
-		// If the interrupt servicing is forced from the BRK instruction, the B flag is also set, and the interrupt servicing takes one less cycle to perform than otherwise
+		// If the interrupt servicing is forced from the BRK instruction, the B flag is also set
+		// According to http://obelisk.me.uk/6502/reference.html#BRK, the flag should be set after pushing the processor status on the stack, and not before
 		flags.B = 1;
-		cycles_until_interrupt_service_stops--;
 	}
 }
 

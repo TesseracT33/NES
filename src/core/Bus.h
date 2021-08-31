@@ -43,11 +43,15 @@ public:
 
 		// interrupt vectors
 		NMI_VEC     = 0xFFFA,
-		RES_VEC     = 0xFFFC,
+		RESET_VEC   = 0xFFFC,
 		IRQ_BRK_VEC = 0xFFFE
 	};
 
 	virtual u8 Read(u16 addr) = 0;
 	virtual void Write(u16 addr, u8 data) = 0;
+
+	// Reads and writes, but also advances the state machine by one cycle
+	virtual u8 ReadCycle(u16 addr) = 0;
+	virtual void WriteCycle(u16 addr, u8 data) = 0;
 };
 

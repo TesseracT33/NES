@@ -390,7 +390,7 @@ void PPU::CheckNMIInterrupt()
 {
 	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are true.
 	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank)
-		cpu->RequestNMIInterrupt();
+		cpu->SetNMILow();
 }
 
 

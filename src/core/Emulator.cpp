@@ -141,8 +141,8 @@ void Emulator::MainLoop()
 		cycle_counter = 0;
 		while (cycle_counter++ < 50000)
 		{
-			apu.Update();
 			cpu.Update();
+			apu.Update();
 			ppu.Update();
 		}
 

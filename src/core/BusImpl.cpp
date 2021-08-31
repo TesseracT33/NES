@@ -83,6 +83,25 @@ void BusImpl::Write(u16 addr, u8 data)
 	}
 }
 
+
+u8 BusImpl::ReadCycle(u16 addr)
+{
+	u8 read = Read(addr);
+	apu->Update();
+	ppu->Update();
+	return read;
+}
+
+
+void BusImpl::WriteCycle(u16 addr, u8 data)
+{
+	Write(addr, data);
+	apu->Update();
+	ppu->Update();
+}
+
+
 void BusImpl::State(Serialization::BaseFunctor& functor)
 {
+
 }
