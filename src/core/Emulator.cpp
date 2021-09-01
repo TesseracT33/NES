@@ -23,14 +23,12 @@ void Emulator::ConnectSystemComponents()
 	bus.apu = &apu;
 	bus.cartridge = &cartridge;
 	bus.cpu = &cpu;
+	bus.joypad = &joypad;
 	bus.ppu = &ppu;
 
 	cartridge.ppu = &ppu;
 
 	cpu.bus = &bus;
-
-	joypad.bus = &bus;
-	joypad.cpu = &cpu;
 
 	ppu.bus = &bus;
 	ppu.cpu = &cpu;

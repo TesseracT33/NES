@@ -31,7 +31,12 @@ u8 BusImpl::Read(u16 addr)
 	// APU & I/O Registers ($4000-$4017)
 	else if (addr <= 0x4017)
 	{
-		return memory.apu_io_regs[addr - 0x4000];
+		switch (addr)
+		{
+		case Bus::Addr::JOY1: 
+		case Bus::Addr::JOY2: return joypad->ReadReg(addr);
+		default: return memory.apu_io_regs[addr - 0x4000];
+		}
 	}
 
 	// APU Test Registers ($4018 - $401F)
@@ -67,7 +72,12 @@ void BusImpl::Write(u16 addr, u8 data)
 	// APU & I/O Registers ($4000-$4017)
 	else if (addr <= 0x4017)
 	{
-		memory.apu_io_regs[addr - 0x4000] = data;
+		switch (addr)
+		{
+		case Bus::Addr::JOY1: 
+		case Bus::Addr::JOY2: joypad->WriteReg(addr, data); break;
+		default: memory.apu_io_regs[addr - 0x4000] = data;
+		}
 	}
 
 	// APU Test Registers ($4018 - $401F)

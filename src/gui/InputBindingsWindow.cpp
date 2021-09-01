@@ -106,7 +106,7 @@ void InputBindingsWindow::OnKeyDown(wxKeyEvent& event)
 			{
 				const char* name = SDL_GetKeyName(sdl_keycode);
 				buttons_keyboard[index_of_awaited_input_button]->SetLabel(name);
-				joypad->UpdateBinding(static_cast<Joypad::Button>(index_of_awaited_input_button), sdl_keycode);
+				//joypad->UpdateBinding(static_cast<Joypad::Button>(index_of_awaited_input_button), sdl_keycode);
 				CheckForDuplicateBindings(name);
 				return;
 			}
@@ -131,7 +131,7 @@ void InputBindingsWindow::OnJoyDown(wxJoystickEvent& event)
 			{
 				const char* name = SDL_GetKeyName(sdl_keycode);
 				buttons_keyboard[index_of_awaited_input_button]->SetLabel(name);
-				joypad->UpdateBinding(static_cast<Joypad::Button>(index_of_awaited_input_button), sdl_keycode);
+				//joypad->UpdateBinding(static_cast<Joypad::Button>(index_of_awaited_input_button), sdl_keycode);
 				CheckForDuplicateBindings(name);
 				return;
 			}
@@ -159,14 +159,14 @@ void InputBindingsWindow::OnButtonLostFocus(wxFocusEvent& event)
 
 void InputBindingsWindow::OnResetKeyboard(wxCommandEvent& event)
 {
-	joypad->ResetBindings(Joypad::InputMethod::KEYBOARD);
+	//joypad->ResetBindings(Joypad::InputMethod::KEYBOARD);
 	GetAndSetButtonLabels();
 }
 
 
 void InputBindingsWindow::OnResetJoypad(wxCommandEvent& event)
 {
-	joypad->ResetBindings(Joypad::InputMethod::JOYPAD);
+	//joypad->ResetBindings(Joypad::InputMethod::JOYPAD);
 	GetAndSetButtonLabels();
 }
 
@@ -198,23 +198,23 @@ void InputBindingsWindow::OnCloseWindow(wxCloseEvent& event)
 
 void InputBindingsWindow::GetAndSetButtonLabels()
 {
-	buttons_keyboard[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::KEYBOARD));
-	buttons_keyboard[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::KEYBOARD));
+	//buttons_keyboard[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::KEYBOARD));
 
-	buttons_joypad[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::JOYPAD));
-	buttons_joypad[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::JOYPAD));
+	//buttons_joypad[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::JOYPAD));
 }
 
 

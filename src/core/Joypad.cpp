@@ -1,29 +1,98 @@
 #include "Joypad.h"
 
-using namespace Util;
-
-void Joypad::Initialize()
-{
-
-}
-
 
 void Joypad::Reset()
 {
-	buttons_currently_held = { 0, 0, 0, 0, 0, 0, 0, 0 };
+	strobe = 0;
+	for (int button = 0; button < num_buttons; button++)
+	{
+		for (int player = 0; player < 1; player++)
+		{
+			buttons_currently_held[button][player] = false;
+			buttons_held_on_last_latch[button][player] = false;
+		}
+	}
 	OpenGameControllers();
+}
+
+
+// Refers to the registers at addresses $4016 and $4017
+u8 Joypad::ReadReg(u16 addr)
+{
+	/* Behaviour when reading either $4016 or $4017, dependent on the recent history of what has been written to the LSB of $4016.
+	   '...' represents arbitrary bits written prior, and '*' is any number of duplication of the bit written before it.
+	   Source: http://archive.nes.science/nesdev-forums/f2/t1637.xhtml
+	   - Nothing  : Return 0 on every read. The actual behaviour is the same as the case '...10*', but the latched controller state should be that all buttons are inactive.
+	   - 0*       : Same as above.
+	   - ...1*    : Return the active status of the A button (as the LSB in the returned byte)
+	   - ...10*   : Return the status of the A button as it was when the 0 was written, then the same for B on the next read, etc.
+	                The full order is : A, B, SELECT, START, UP, DOWN, LEFT, RIGHT
+					After eight reads, 0x01 is returned on every following read
+	*/
+
+	Player player;
+	switch (addr)
+	{
+	case 0x4016: player = Player::ONE; break;
+	case 0x4017: player = Player::TWO; break;
+	default:; // todo: throw exception
+	}
+
+	static int button_return_index[2] = { 0, 0 };
+
+	u8 ret;
+	if (strobe == 1) // Case 3
+		ret = buttons_currently_held[Button::A][player] | 0x40;
+	else if (strobe_seq_completed) // Case 4
+	{
+		ret = button_return_index[player] < 8 ?
+			buttons_currently_held[button_return_index[player]][player] : 1;
+		button_return_index[player] = std::min(button_return_index[player] + 1, 8);
+	}
+	else // Case 1, 2
+	{
+		ret = 0;
+		button_return_index[0] = button_return_index[1] = 0;
+	}
+
+	// Every returned value is ANDed with $40, which is the upper byte of the address ($4016 or $4017)
+	// From https://wiki.nesdev.com/w/index.php?title=Standard_controller: 
+	//   "In the NES and Famicom, the top three (or five) bits are not driven, and so retain the bits of the previous byte on the bus. Usually this is the most significant byte of the address of the controller port—0x40"
+	return ret | 0x40;
+}
+
+
+void Joypad::WriteReg(u16 addr, u8 data)
+{
+	bool prev_strobe = strobe;
+	strobe = data & 1;
+	if (prev_strobe == 1 && strobe == 0)
+	{
+		memcpy(buttons_held_on_last_latch, buttons_currently_held, sizeof(bool) * num_buttons * 2);
+		strobe_seq_completed = true;
+	}
+	else if (strobe_seq_completed && strobe == 0)
+		return;
+	else
+		strobe_seq_completed = false;
 }
 
 
 void Joypad::OpenGameControllers()
 {
+	// todo: make the controller detection system better at some point
+	int num_joysticks_found = 0;
 	for (int i = 0; i < SDL_NumJoysticks(); i++)
 	{
 		if (SDL_IsGameController(i))
 		{
-			controller = SDL_GameControllerOpen(i);
+			controller[num_joysticks_found] = SDL_GameControllerOpen(i);
 			if (controller != nullptr)
-				return;
+			{
+				num_joysticks_found++;
+				if (num_joysticks_found == 2)
+					return;
+			}
 		}
 	}
 }
@@ -36,19 +105,20 @@ void Joypad::PollInput()
 		switch (event.type)
 		{
 		case SDL_KEYDOWN:
-			MatchInputToBindings(event.key.keysym.sym, InputEvent::PRESS, InputMethod::KEYBOARD);
+			// TODO: identify the player number...
+			MatchInputToBindings(event.key.keysym.sym, InputEvent::PRESS, InputMethod::KEYBOARD, Player::ONE);
 			break;
 
 		case SDL_KEYUP:
-			MatchInputToBindings(event.key.keysym.sym, InputEvent::RELEASE, InputMethod::KEYBOARD);
+			MatchInputToBindings(event.key.keysym.sym, InputEvent::RELEASE, InputMethod::KEYBOARD, Player::ONE);
 			break;
 
 		case SDL_CONTROLLERBUTTONDOWN:
-			MatchInputToBindings(event.cbutton.button, InputEvent::PRESS, InputMethod::JOYPAD);
+			MatchInputToBindings(event.cbutton.button, InputEvent::PRESS, InputMethod::JOYPAD, Player::ONE);
 			break;
 
 		case SDL_CONTROLLERBUTTONUP:
-			MatchInputToBindings(event.cbutton.button, InputEvent::RELEASE, InputMethod::JOYPAD);
+			MatchInputToBindings(event.cbutton.button, InputEvent::RELEASE, InputMethod::JOYPAD, Player::ONE);
 			break;
 
 		case SDL_CONTROLLERDEVICEADDED:
@@ -66,141 +136,85 @@ void Joypad::PollInput()
 }
 
 
-void Joypad::UpdateBinding(Button button, SDL_GameControllerButton bind)
+void Joypad::UpdateBinding(Button button, SDL_GameControllerButton bind, Player player)
 {
-	switch (button)
-	{
-	case Button::A: new_JoypadBindings.A = bind; break;
-	case Button::B: new_JoypadBindings.B = bind; break;
-	case Button::SELECT: new_JoypadBindings.SELECT = bind; break;
-	case Button::START: new_JoypadBindings.START = bind; break;
-	case Button::RIGHT: new_JoypadBindings.RIGHT = bind; break;
-	case Button::LEFT: new_JoypadBindings.LEFT = bind; break;
-	case Button::UP: new_JoypadBindings.UP = bind; break;
-	case Button::DOWN: new_JoypadBindings.DOWN = bind; break;
-	}
+	new_bindings[button][player] = Bind(bind, InputMethod::JOYPAD);
 }
 
 
-void Joypad::UpdateBinding(Button button, SDL_Keycode key)
+void Joypad::UpdateBinding(Button button, SDL_Keycode key, Player player)
 {
-	switch (button)
-	{
-	case Button::A: new_keyboard_bindings.A = key; break;
-	case Button::B: new_keyboard_bindings.B = key; break;
-	case Button::SELECT: new_keyboard_bindings.SELECT = key; break;
-	case Button::START: new_keyboard_bindings.START = key; break;
-	case Button::RIGHT: new_keyboard_bindings.RIGHT = key; break;
-	case Button::LEFT: new_keyboard_bindings.LEFT = key; break;
-	case Button::UP: new_keyboard_bindings.UP = key; break;
-	case Button::DOWN: new_keyboard_bindings.DOWN = key; break;
-	}
+	new_bindings[button][player] = Bind(key, InputMethod::KEYBOARD);
 }
 
 
 void Joypad::SaveBindings()
 {
-	joypad_bindings = new_JoypadBindings;
-	keyboard_bindings = new_keyboard_bindings;
+	for (int button = 0; button < num_buttons; button++)
+	{
+		for (int player = 0; player < 1; player++)
+		{
+			bindings[button][player] = new_bindings[button][player];
+		}
+	}
 }
 
 
 void Joypad::RevertBindingChanges()
 {
-	new_JoypadBindings = joypad_bindings;
-	new_keyboard_bindings = keyboard_bindings;
-}
-
-
-void Joypad::ResetBindings(InputMethod input_method)
-{
-	if (input_method == InputMethod::JOYPAD)
-		new_JoypadBindings = default_joypad_bindings;
-	else
-		new_keyboard_bindings = default_keyboard_bindings;
-}
-
-
-const char* Joypad::GetCurrentBindingString(Button button, InputMethod input_method)
-{
-	if (input_method == InputMethod::JOYPAD)
+	for (int button = 0; button < num_buttons; button++)
 	{
-		switch (button)
+		for (int player = 0; player < 1; player++)
 		{
-		case Button::A:      return SDL_GameControllerGetStringForButton(new_JoypadBindings.A);
-		case Button::B:      return SDL_GameControllerGetStringForButton(new_JoypadBindings.B);
-		case Button::SELECT: return SDL_GameControllerGetStringForButton(new_JoypadBindings.SELECT);
-		case Button::START:  return SDL_GameControllerGetStringForButton(new_JoypadBindings.START);
-		case Button::RIGHT:  return SDL_GameControllerGetStringForButton(new_JoypadBindings.RIGHT);
-		case Button::LEFT:   return SDL_GameControllerGetStringForButton(new_JoypadBindings.LEFT);
-		case Button::UP:     return SDL_GameControllerGetStringForButton(new_JoypadBindings.UP);
-		case Button::DOWN:   return SDL_GameControllerGetStringForButton(new_JoypadBindings.DOWN);
+			new_bindings[button][player] = bindings[button][player];
 		}
 	}
-	else
-	{
-		switch (button)
-		{
-		case Button::A:      return SDL_GetKeyName(new_keyboard_bindings.A);
-		case Button::B:      return SDL_GetKeyName(new_keyboard_bindings.B);
-		case Button::SELECT: return SDL_GetKeyName(new_keyboard_bindings.SELECT);
-		case Button::START:  return SDL_GetKeyName(new_keyboard_bindings.START);
-		case Button::RIGHT:  return SDL_GetKeyName(new_keyboard_bindings.RIGHT);
-		case Button::LEFT:   return SDL_GetKeyName(new_keyboard_bindings.LEFT);
-		case Button::UP:     return SDL_GetKeyName(new_keyboard_bindings.UP);
-		case Button::DOWN:   return SDL_GetKeyName(new_keyboard_bindings.DOWN);
-		}
-	}
-	return nullptr;
 }
 
 
-void Joypad::MatchInputToBindings(s32 button, InputEvent input_event, InputMethod input_method)
+void Joypad::ResetBindings(Player player)
+{
+	for (int button = 0; button < num_buttons; button++)
+		new_bindings[button][player] = Bind(default_keyboard_bindings[button]);
+}
+
+
+const char* Joypad::GetCurrentBindingString(Button button, Player player)
+{
+	if (new_bindings[button][player].type == InputMethod::JOYPAD)
+		return SDL_GameControllerGetStringForButton((SDL_GameControllerButton)new_bindings[button][player].button);
+	else
+		return SDL_GetKeyName((SDL_KeyCode)new_bindings[button][player].button);
+}
+
+
+void Joypad::MatchInputToBindings(s32 button, InputEvent input_event, InputMethod input_method, Player player)
 {
 	// 'button' can either be a SDL_Keycode (typedef s32) or an u8 (from a controller button event)
-	// Pressing two opposing d-pad directions simultaneously is disallowed
-	if (input_method == InputMethod::JOYPAD)
+	for (int i = 0; i < num_buttons; i++)
 	{
-		if (button == joypad_bindings.A)      buttons_currently_held.A = input_event;
-		else if (button == joypad_bindings.B)      buttons_currently_held.B = input_event;
-		else if (button == joypad_bindings.SELECT) buttons_currently_held.SELECT = input_event;
-		else if (button == joypad_bindings.START)  buttons_currently_held.START = input_event;
-
-		else if (button == joypad_bindings.RIGHT)  buttons_currently_held.RIGHT = input_event && !buttons_currently_held.LEFT;
-		else if (button == joypad_bindings.LEFT)   buttons_currently_held.LEFT = input_event && !buttons_currently_held.RIGHT;
-		else if (button == joypad_bindings.UP)     buttons_currently_held.UP = input_event && !buttons_currently_held.DOWN;
-		else if (button == joypad_bindings.DOWN)   buttons_currently_held.DOWN = input_event && !buttons_currently_held.UP;
-
-		else return;
+		if (button == bindings[i][player].button && bindings[i][player].type == input_method)
+		{
+			buttons_currently_held[i][player] = input_event;
+			return;
+		}
 	}
-	else
-	{
-		if (button == keyboard_bindings.A)      buttons_currently_held.A = input_event;
-		else if (button == keyboard_bindings.B)      buttons_currently_held.B = input_event;
-		else if (button == keyboard_bindings.SELECT) buttons_currently_held.SELECT = input_event;
-		else if (button == keyboard_bindings.START)  buttons_currently_held.START = input_event;
-
-		else if (button == keyboard_bindings.RIGHT)  buttons_currently_held.RIGHT = input_event;
-		else if (button == keyboard_bindings.LEFT)   buttons_currently_held.LEFT = input_event;
-		else if (button == keyboard_bindings.UP)     buttons_currently_held.UP = input_event;
-		else if (button == keyboard_bindings.DOWN)   buttons_currently_held.DOWN = input_event;
-
-		else return;
-	}
-
-	//UpdateP1OutputLines();
 }
 
 
 void Joypad::Configure(Serialization::BaseFunctor& functor)
 {
-	//functor.fun(&joypad_bindings, sizeof(joypad_bindings));
-	//functor.fun(&keyboard_bindings, sizeof(keyboard_bindings));
+	functor.fun(bindings, sizeof Bind * num_buttons * 2);
 }
 
 
 void Joypad::SetDefaultConfig()
 {
-	joypad_bindings = new_JoypadBindings = default_joypad_bindings;
-	keyboard_bindings = new_keyboard_bindings = default_keyboard_bindings;
+	for (int button = 0; button < num_buttons; button++)
+	{
+		for (int player = 0; player < 1; player++)
+		{
+			bindings[button][player] = default_keyboard_bindings[button];
+		}
+	}
 }

@@ -5,6 +5,7 @@
 #include "Cartridge.h"
 #include "Component.h"
 #include "CPU.h"
+#include "Joypad.h"
 #include "PPU.h"
 
 class BusImpl final : public Bus, public Component
@@ -13,6 +14,7 @@ public:
 	APU* apu;
 	Cartridge* cartridge;
 	CPU* cpu;
+	Joypad* joypad;
 	PPU* ppu;
 
 	void Initialize();
