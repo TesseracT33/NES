@@ -27,6 +27,9 @@ public:
 	u8 ReadCycle(u16 addr) override;
 	void WriteCycle(u16 addr, u8 data) override;
 
+	// Simply advance the state machine
+	void WaitCycle(unsigned cycles = 1) override;
+
 	void State(Serialization::BaseFunctor& functor) override;
 
 private:

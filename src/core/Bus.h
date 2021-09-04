@@ -53,5 +53,8 @@ public:
 	// Reads and writes, but also advances the state machine by one cycle
 	virtual u8 ReadCycle(u16 addr) = 0;
 	virtual void WriteCycle(u16 addr, u8 data) = 0;
+
+	// Simply advance the state machine
+	virtual void WaitCycle(unsigned cycles = 1) = 0;
 };
 

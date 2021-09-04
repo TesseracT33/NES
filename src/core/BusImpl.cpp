@@ -99,6 +99,7 @@ u8 BusImpl::ReadCycle(u16 addr)
 	u8 read = Read(addr);
 	apu->Update();
 	ppu->Update();
+	cpu->IncrementCycleCounter();
 	return read;
 }
 
@@ -108,6 +109,18 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 	Write(addr, data);
 	apu->Update();
 	ppu->Update();
+	cpu->IncrementCycleCounter();
+}
+
+
+void BusImpl::WaitCycle(unsigned cycles)
+{
+	for (unsigned i = 0; i < cycles; i++)
+	{
+		apu->Update();
+		ppu->Update();
+		cpu->IncrementCycleCounter();
+	}
 }
 
 

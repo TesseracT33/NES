@@ -1,24 +1,27 @@
 #pragma once
 
+#include <wx/msgdlg.h>
+
 #include <array>
 #include <functional>
 
 #include "Bus.h"
 #include "Component.h"
 
-#define DEBUG
+//#define DEBUG_LOG
 #define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
+
+#define DEBUG_COMPARE_NESTEST
+#define NESTEST_LOG_PATH "C:\\Users\\Christoffer\\source\\repos\\games\\nes\\nestest.log"
 
 class CPU final : public Component
 {
-
-#ifdef DEBUG
-	std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
-	unsigned instruction_counter = 1;
-	unsigned cpu_cycle_counter = 7;
-#endif
-
 public:
+	#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+		unsigned instruction_counter = 1;
+		unsigned cpu_cycle_counter = 6;
+	#endif
+
 	CPU();
 
 	Bus* bus;
@@ -35,6 +38,7 @@ public:
 	void SetNMILow();
 	void SetNMIHigh();
 
+	void IncrementCycleCounter();
 	void Set_OAM_DMA_Active();
 
 	void State(Serialization::BaseFunctor& functor) override;
@@ -78,7 +82,6 @@ private:
 		InstrType instr_type;
 		int cycle;
 		bool addition_overflow;
-		int additional_cycles;
 
 		u8 addr_lo, addr_hi;
 		u8 read_addr;
@@ -296,7 +299,8 @@ private:
 		{
 			s8 offset = (s8)curr_instr.addr_lo;
 			// +1 cycle if branch succeeds, +2 if to a new page
-			curr_instr.additional_cycles = (PC & 0xFF00) == ((u16)(PC + offset) & 0xFF00) ? 1 : 2;
+			unsigned additional_cycles = (PC & 0xFF00) == ((u16)(PC + offset) & 0xFF00) ? 1 : 2;
+			bus->WaitCycle(additional_cycles);
 			PC += offset;
 		}
 	}
@@ -341,5 +345,20 @@ private:
 		flags.Z = value & 0x02;
 		flags.C = value & 0x01;
 	}
+
+	////// Debugging-related //////
+#ifdef DEBUG_LOG
+	void Log_PrintLine();
+#endif
+
+#ifdef DEBUG_COMPARE_NESTEST
+	void NesTest_Compare();
+
+	struct NesTest
+	{
+		std::string current_line;
+		unsigned line_counter = 0;
+	} nestest;
+#endif
 };
 

@@ -14,9 +14,8 @@ void CPU::BuildInstrTypeTable()
 		// switch stmnt not possible, as 'instr' is not an integral or enum type
 		// this only gets executed at program startup anyways, so the poor performance does not matter
 		if (instr == &CPU::ADC || instr == &CPU::AND || instr == &CPU::BIT || instr == &CPU::CMP ||
-			instr == &CPU::CPX || instr == &CPU::CPY || instr == &CPU::EOR || instr == &CPU::JMP ||
-			instr == &CPU::JSR || instr == &CPU::LDA || instr == &CPU::LDX || instr == &CPU::LDY ||
-			instr == &CPU::ORA || instr == &CPU::SBC)
+			instr == &CPU::CPX || instr == &CPU::CPY || instr == &CPU::EOR || instr == &CPU::LDA || 
+			instr == &CPU::LDX || instr == &CPU::LDY || instr == &CPU::ORA || instr == &CPU::SBC)
 			return InstrType::Read;
 
 		if (instr == &CPU::STA || instr == &CPU::STX || instr == &CPU::STY)
@@ -62,12 +61,14 @@ void CPU::Reset()
 	set_I_on_next_update = clear_I_on_next_update = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
+	PC = 0xC000;
 }
 
 
+// Step one cpu cycle
 void CPU::Update()
 {
-	#ifdef DEBUG
+	#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
 		cpu_cycle_counter++;
 	#endif
 
@@ -112,6 +113,14 @@ void CPU::Update()
 }
 
 
+void CPU::IncrementCycleCounter()
+{
+#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+	cpu_cycle_counter++;
+#endif
+}
+
+
 void CPU::Set_OAM_DMA_Active()
 {
 	oam_dma_transfer_active = true;
@@ -125,35 +134,30 @@ void CPU::BeginInstruction()
 	curr_instr.addr_mode = GetAddressingModeFromOpcode(curr_instr.opcode);
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
+	curr_instr.instr_type = instr_type_table[curr_instr.opcode];
 	curr_instr.instr_executing = true;
 	curr_instr.cycle = 1;
-	curr_instr.additional_cycles = 0;
 
-	#ifdef DEBUG
-		char buf[100]{};
-		sprintf(buf, "#instr %i \t #cycle %i \t PC: $%04X \t OP: $%02X \t S: $%02X \t A: $%02X \t X: $%02X \t Y: $%02X",
-			instruction_counter++, cpu_cycle_counter, (int)(PC - 1), (int)curr_instr.opcode, (int)S, (int)A, (int)X, (int)Y);
-		ofs << buf << std::endl;
-	#endif
+#ifdef DEBUG_LOG
+	Log_PrintLine();
+#endif
+
+#ifdef DEBUG_COMPARE_NESTEST
+	NesTest_Compare();
+#endif
+
+
+#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+	instruction_counter++;
+#endif
 }
 
 
 void CPU::StepImplicit()
 {
-	// Some instructions using implicit addressing take longer than two cycles (remaining amount is stored in curr_instr.additional_cycles)
-	//    so we need to wait until these "finish".
-	static bool instr_invoked = false;
-
-	if (!instr_invoked)
-	{
-		std::invoke(curr_instr.instr, this);
-		if (curr_instr.additional_cycles == 0)
-			curr_instr.instr_executing = false;
-		else
-			instr_invoked = true;
-	}
-	else if (--curr_instr.additional_cycles == 0)
-		curr_instr.instr_executing = instr_invoked = false;
+	// Note: some instructions using implicit addressing take longer than two cycles. This is handled in the functions for those themselves
+	std::invoke(curr_instr.instr, this);
+	curr_instr.instr_executing = false;
 }
 
 
@@ -253,10 +257,15 @@ void CPU::StepAbsolute()
 
 	case 2:
 		curr_instr.addr_hi = bus->Read(PC++);
+		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
+		if (curr_instr.instr_type == InstrType::Implicit) // JMP, JSR
+		{
+			std::invoke(curr_instr.instr, this);
+			curr_instr.instr_executing = false;
+		}
 		return;
 
 	case 3:
-		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
 		if (curr_instr.instr_type != InstrType::Write)
 			curr_instr.read_addr = bus->Read(curr_instr.addr);
 		if (curr_instr.instr_type != InstrType::Read_modify_write)
@@ -332,26 +341,12 @@ void CPU::StepAbsoluteIndexed(u8& index_reg)
 void CPU::StepRelative()
 {
 	// TODO: unsure about timing
-	// Branch instructions (only these use relative addressing) take 2 + 1 or 2 + 2 cycles, depending on if the branch succeeds
-	// However, all branching logic is inside of the Branch() function (including changing PC, which probably happens on cycle 3 on real HW?)
-	// Not that it matters; neither the PC or the offset can be changed from the outside, if PC were changed in cycle 3 instead of 2.
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		std::invoke(curr_instr.instr, this);
-		if (curr_instr.additional_cycles == 0)
-			curr_instr.instr_executing = false;
-		return;
+	// Branch instructions (only these use relative addressing) take 2 + 1 or 2 + 2 cycles (+1 if branch succeeds, +2 if to a new page)
+	// However, all branching logic is inside of the Branch() function, including additional wait cycles
 
-	case 2:
-		if (--curr_instr.additional_cycles == 0)
-			curr_instr.instr_executing = false;
-		return;
-
-	case 3:
-		curr_instr.instr_executing = false;
-	}
+	curr_instr.addr_lo = bus->Read(PC++);
+	std::invoke(curr_instr.instr, this);
+	curr_instr.instr_executing = false;
 }
 
 
@@ -592,7 +587,6 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	if (asserted_interrupt_type == InterruptType::NMI || NMI_signal_active)
 	{
 		handled_interrupt_type = InterruptType::NMI;
-		NMI_signal_active = false;
 	}
 	else
 	{
@@ -610,6 +604,7 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	{
 		PC = PC & 0xFF00 | bus->ReadCycle(Bus::Addr::NMI_VEC);
 		PC = PC & 0x00FF | bus->ReadCycle(Bus::Addr::NMI_VEC + 1) << 8;
+		NMI_signal_active = false; // todo: it's not entirely clear if this is the right place for it
 	}
 	else
 	{
@@ -879,6 +874,9 @@ void CPU::JSR()
 {
 	PushWordToStack(PC - 1);
 	PC = curr_instr.addr;
+	// This instr takes 6 cycles, but due to the way that the StepAbsolute() function is built for instructions of type "implicit", all such instructions take 3 cycles.
+	// So we need to wait an additional 3 cycles
+	bus->WaitCycle(3);
 }
 
 
@@ -947,7 +945,7 @@ void CPU::PHA()
 	PushByteToStack(A);
 	// This instr takes 3 cycles, but due to the way that the StepImplied() function is built,
     //    all instr with implied addressing take 2 cycles.
-	curr_instr.additional_cycles = 1;
+	bus->WaitCycle();
 }
 
 
@@ -955,7 +953,7 @@ void CPU::PHA()
 void CPU::PHP()
 {
 	PushByteToStack(GetStatusRegInstr(&CPU::PHP));
-	curr_instr.additional_cycles = 1;
+	bus->WaitCycle();
 }
 
 
@@ -967,7 +965,7 @@ void CPU::PLA()
 	flags.N = A & 0x80;
 	// This instr takes 4 cycles, but due to the way that the StepImplied() function is built,
 	//    all instr with implied addressing take 2 cycles.
-	curr_instr.additional_cycles = 2;
+	bus->WaitCycle(2);
 }
 
 
@@ -983,7 +981,7 @@ void CPU::PLP()
 		clear_I_on_next_update = true;
 	flags.I = I_tmp;
 
-	curr_instr.additional_cycles = 2;
+	bus->WaitCycle(2);
 }
 
 
@@ -1020,7 +1018,7 @@ void CPU::RTI()
 	PC = PullWordFromStack();
 	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
 	//    all instr with implied addressing take 2 cycles.
-	curr_instr.additional_cycles = 4;
+	bus->WaitCycle(4);
 }
 
 
@@ -1030,7 +1028,7 @@ void CPU::RTS()
 	PC = PullWordFromStack() + 1;
 	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
 	//    all instr with implied addressing take 2 cycles.
-	curr_instr.additional_cycles = 4;
+	bus->WaitCycle(4);
 }
 
 
@@ -1144,7 +1142,7 @@ void CPU::TYA()
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; 
 void CPU::AHX()
 {
 
@@ -1305,3 +1303,64 @@ void CPU::State(Serialization::BaseFunctor& functor)
 	functor.fun(&PC, sizeof(u16));
 	functor.fun(&flags, sizeof(Flags));
 }
+
+
+#ifdef DEBUG_LOG
+void CPU::Log_PrintLine()
+{
+	static std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
+	char buf[100]{};
+	sprintf(buf, "#cycle %i \t PC: $%04X \t OP: $%02X \t S: $%02X  A: $%02X  X: $%02X  Y: $%02X  P: $%02X",
+		cpu_cycle_counter, (int)(PC - 1), (int)curr_instr.opcode, (int)S, (int)A, (int)X, (int)Y, (int)GetStatusRegInterrupt());
+	ofs << buf << std::endl;
+}
+#endif
+
+
+#ifdef DEBUG_COMPARE_NESTEST
+// NOTE: in nestest.log, I replace all occurances of "SP:" with "S:" to make testing easier
+void CPU::NesTest_Compare()
+{
+	// Get the next line in nestest.log
+	static std::ifstream ifs{ NESTEST_LOG_PATH, std::ifstream::in };
+	static bool end_of_file = false;
+	if (ifs.eof())
+	{
+		end_of_file = true;
+		return;
+	}
+	std::getline(ifs, nestest.current_line);
+	nestest.line_counter++;
+
+	// Test PC
+	std::string nestest_pc_str = nestest.current_line.substr(0, 4);
+	u16 nestest_pc = std::stoi(nestest_pc_str, nullptr, 16);
+	if (PC - 1 != nestest_pc)
+	{
+		wxMessageBox(wxString::Format("Incorrect PC at line %i; expected $%04X, got $%04X", nestest.line_counter, (int)nestest_pc, (int)(PC - 1)));
+		return;
+	}
+
+	// Test an 8-bit register.
+	// reg_str_repr == "A", "X" etc.   // reg_val == value of that register in our emu
+	auto TestByteReg = [&](std::string reg_str_repr, u8 reg_val)
+	{
+		size_t first_char_pos = nestest.current_line.find(reg_str_repr + ":") + 2;
+		std::string nestest_reg_str = nestest.current_line.substr(first_char_pos, 2);
+		u8 nestest_reg = std::stoi(nestest_reg_str, nullptr, 16);
+		if (reg_val != nestest_reg)
+		{
+			wxMessageBox(wxString::Format("Incorrect %s at line %i; expected $%02X, got $%02X", reg_str_repr, nestest.line_counter, (int)nestest_reg, (int)reg_val));
+			return false;
+		}
+		return true;
+	};
+
+	// Test A, X, Y, S, P
+	TestByteReg("A", A);
+	TestByteReg("X", X);
+	TestByteReg("Y", Y);
+	TestByteReg("S", S);
+	TestByteReg("P", GetStatusRegInterrupt());
+}
+#endif
