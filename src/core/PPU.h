@@ -48,9 +48,8 @@ private:
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
 
 	const unsigned default_scale = 5;
-
-	const signed pre_render_scanline = -1;
-	const signed post_render_scanline = 240;
+	const unsigned pre_render_scanline = 261;
+	const unsigned post_render_scanline = 240;
 
 	// https://wiki.nesdev.com/w/index.php/PPU_palettes
 	const SDL_Color palette[64] = { 

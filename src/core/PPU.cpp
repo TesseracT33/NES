@@ -46,7 +46,8 @@ void PPU::Power()
 	Reset();
 
 	OAMADDR = reg.v = reg.t = 0;
-	PPUSTATUS = PPUSTATUS & 0x1F | 0b10100000;
+	//PPUSTATUS = 0b10100000;
+	PPUSTATUS = 0;
 }
 
 
@@ -54,7 +55,8 @@ void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
 	odd_frame = false;
-	scanline_cycle_counter = 0;
+	scanline_cycle_counter = 27; // according to the Mesen debugger
+	current_scanline = 0;
 }
 
 
@@ -92,24 +94,7 @@ void PPU::Update()
 			continue;
 		}
 
-		if (current_scanline == pre_render_scanline) // == -1
-		{
-			if (scanline_cycle_counter == 1)
-			{
-				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
-				CheckNMIInterrupt();
-			}
-			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
-			{
-				if (PPUCTRL_PPU_master)
-				{
-					// Set bits 14-11 of 'v' to bits 14-11 of 't', and bits 9-5 of 'v' to bits 9-5 of 't'
-					// todo: Not clear if this should be done at every cycle in this interval or not
-					reg.v = reg.v & ~(0xF << 11) & ~(0x1F << 5) | reg.t & (0xF << 11) | reg.t & (0x1F << 5);
-				}
-			}
-		}
-		else if (current_scanline < post_render_scanline) // < 240
+		if (current_scanline < post_render_scanline) // < 240
 		{
 			if (scanline_cycle_counter <= 256)
 			{
@@ -198,7 +183,7 @@ void PPU::Update()
 				}
 			}
 
-			if (current_scanline > pre_render_scanline && current_scanline < post_render_scanline &&
+			if (current_scanline < post_render_scanline &&
 				scanline_cycle_counter > 0 && scanline_cycle_counter <= 256)
 			{
 				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
@@ -211,6 +196,23 @@ void PPU::Update()
 			{
 				PPUSTATUS |= PPUSTATUS_vblank_mask;
 				CheckNMIInterrupt();
+			}
+		}
+		else if (current_scanline == pre_render_scanline) // == 261
+		{
+			if (scanline_cycle_counter == 1)
+			{
+				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
+				CheckNMIInterrupt();
+			}
+			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
+			{
+				if (PPUCTRL_PPU_master)
+				{
+					// Set bits 14-11 of 'v' to bits 14-11 of 't', and bits 9-5 of 'v' to bits 9-5 of 't'
+					// todo: Not clear if this should be done at every cycle in this interval or not
+					reg.v = reg.v & ~(0xF << 11) & ~(0x1F << 5) | reg.t & (0xF << 11) | reg.t & (0x1F << 5);
+				}
 			}
 		}
 
@@ -830,7 +832,7 @@ void PPU::PrepareForNewFrame()
 
 void PPU::PrepareForNewScanline()
 {
-	current_scanline = (current_scanline + 1) % 261;
+	current_scanline = (current_scanline + 1) % (pre_render_scanline + 1);
 	if (current_scanline == 0)
 		PrepareForNewFrame();
 	pixel_x_pos = frame_buffer_pos = 0;
