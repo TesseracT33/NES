@@ -352,7 +352,8 @@ void CPU::StepRelative()
 
 void CPU::StepIndirect()
 {
-	// https://skilldrick.github.io/easy6502/#addressing
+	static u16 addr_tmp = 0;
+
 	switch (curr_instr.cycle++)
 	{
 	case 1:
@@ -364,15 +365,13 @@ void CPU::StepIndirect()
 		return;
 
 	case 3:
-	{
 		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
-		u8 addr_lo = bus->Read(curr_instr.addr);
-		u8 addr_hi = addr_lo + 1;
-		curr_instr.addr = addr_hi << 8 | addr_lo;
+		addr_tmp = bus->Read(curr_instr.addr);
 		return;
-	}
 
 	case 4:
+		addr_tmp |= bus->Read(curr_instr.addr + 1) << 8;
+		curr_instr.addr = addr_tmp;
 		std::invoke(curr_instr.instr, this);
 		curr_instr.instr_executing = false;
 	}
@@ -496,9 +495,9 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 	case 0x07: return AddrMode::Zero_page;
 	case 0x08: return AddrMode::Implicit;
 	case 0x09: return AddrMode::Immediate;
-	case 0x0A: return AddrMode::Accumulator;
+	case 0x0A: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Implicit : AddrMode::Accumulator;
 	case 0x0B: return AddrMode::Immediate;
-	case 0x0C: return (opcode == 0x6) ? AddrMode::Indirect : AddrMode::Absolute;
+	case 0x0C: return (opcode == 0x6C) ? AddrMode::Indirect : AddrMode::Absolute;
 	case 0x0D:
 	case 0x0E:
 	case 0x0F: return AddrMode::Absolute;
@@ -510,7 +509,7 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 	case 0x15: return AddrMode::Zero_page_X;
 	case 0x16:
 	case 0x17: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Zero_page_Y : AddrMode::Zero_page_X;
-	case 0x18: return (opcode == 0x98) ? AddrMode::Accumulator : AddrMode::Implicit;
+	case 0x18: return AddrMode::Implicit;
 	case 0x19: return AddrMode::Absolute_Y;
 	case 0x1A: return AddrMode::Implicit;
 	case 0x1B: return AddrMode::Absolute_Y;
@@ -579,8 +578,8 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	}
 
 	// Cycles 3-4
-	bus->WriteCycle(0x0100 | --S, PC >> 8);
-	bus->WriteCycle(0x0100 | --S, PC & 0xFF);
+	bus->WriteCycle(0x0100 | S--, PC >> 8);
+	bus->WriteCycle(0x0100 | S--, PC & 0xFF);
 
 	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
 	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
@@ -597,7 +596,7 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	}
 
 	// cycle 5
-	bus->WriteCycle(0x0100 | --S, GetStatusRegInterrupt());
+	bus->WriteCycle(0x0100 | S--, GetStatusRegInterrupt());
 
 	// cycles 6-7
 	if (handled_interrupt_type == InterruptType::NMI)
@@ -652,8 +651,7 @@ void CPU::ASL()
 	u8 new_target = target << 1 & 0xFF;
 	curr_instr.new_target = new_target;
 	flags.C = target & 0x80;
-	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
-		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
+	flags.Z = new_target == 0;
 	flags.N = new_target & 0x80;
 }
 
@@ -683,7 +681,7 @@ void CPU::BEQ()
 void CPU::BIT()
 {
 	u8 op = curr_instr.read_addr;
-	flags.Z = A & op;
+	flags.Z = (A & op) == 0;
 	flags.V = op & 0x40;
 	flags.N = op & 0x80;
 }
@@ -771,7 +769,7 @@ void CPU::CMP()
 }
 
 
-// Compare the contents of the X register with a the contents of a memory location (essentially performing the subtraction X-M without storing the result).
+// Compare the contents of the X register with the contents of a memory location (essentially performing the subtraction X-M without storing the result).
 void CPU::CPX()
 {
 	u8 M = curr_instr.read_addr;
@@ -782,7 +780,7 @@ void CPU::CPX()
 }
 
 
-// Compare the contents of the Y register with a the contents of memory location (essentially performing the subtraction Y-M without storing the result)
+// Compare the contents of the Y register with the contents of memory location (essentially performing the subtraction Y-M without storing the result)
 void CPU::CPY()
 {
 	u8 M = curr_instr.read_addr;
@@ -869,7 +867,7 @@ void CPU::JMP()
 }
 
 
-// Push the program counter (minus one) on to the stack and set the program counter to the target memory address.
+// Push the program counter (minus one) on to the and set the program counter to the target memory address.
 void CPU::JSR()
 {
 	PushWordToStack(PC - 1);
@@ -916,7 +914,7 @@ void CPU::LSR()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = target >> 1;
 	curr_instr.new_target = new_target;
-	flags.C = target & 0x80;
+	flags.C = target & 1;
 	flags.Z = new_target == 0;
 	flags.N = new_target & 0x80;
 }
@@ -1004,7 +1002,7 @@ void CPU::ROR()
 	u8 target = curr_instr.read_addr;
 	u8 new_target = target >> 1 | flags.C << 7;
 	curr_instr.new_target = new_target;
-	flags.C = target & 0x80;
+	flags.C = target & 1;
 	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
 		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
 	flags.N = new_target & 0x80;
@@ -1035,11 +1033,11 @@ void CPU::RTS()
 // Subtract the contents of a memory location to the accumulator together with the NOT of the carry bit. If overflow occurs the carry bit is cleared.
 void CPU::SBC()
 {
-	u8 op = (0xFF - curr_instr.read_addr) + flags.C;
+	u8 op = curr_instr.read_addr + (1 - flags.C);
 	flags.V = ((A & 0x7F) + ((u8)(0xFF - curr_instr.read_addr) & 0x7F) + flags.C > 0x7F)
 	        ^ ((A       ) + ((u8)(0xFF - curr_instr.read_addr)       ) + flags.C > 0xFF);
-	flags.C = !(A + op > 0xFF);
-	A += op;
+	flags.C = A > curr_instr.read_addr || A == curr_instr.read_addr && flags.C;
+	A -= op;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
 }
@@ -1124,12 +1122,10 @@ void CPU::TXA()
 }
 
 
-// Copy the current contents of the X register into the stack register.
+// Copy the current contents of the X register into the stack register (flags are not affected).
 void CPU::TXS()
 {
 	S = X;
-	flags.Z = S == 0;
-	flags.N = S & 0x80;
 }
 
 

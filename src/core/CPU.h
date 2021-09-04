@@ -272,24 +272,24 @@ private:
 	// Helper functions. Defined in the header to enable inlining
 	void PushByteToStack(u8 byte)
 	{
-		bus->Write(0x0100 | --S, byte);
+		bus->Write(0x0100 | S--, byte);
 	}
 
 	void PushWordToStack(u16 word)
 	{
-		bus->Write(0x0100 | --S, word >> 8);
-		bus->Write(0x0100 | --S, word & 0xFF);
+		bus->Write(0x0100 | S--, word >> 8);
+		bus->Write(0x0100 | S--, word & 0xFF);
 	}
 
 	u8 PullByteFromStack()
 	{
-		return bus->Read(0x0100 | S++);
+		return bus->Read(0x0100 | ++S);
 	}
 
 	u16 PullWordFromStack()
 	{
-		u8 lo = bus->Read(0x0100 | S++);
-		u8 hi = bus->Read(0x0100 | S++);
+		u8 lo = bus->Read(0x0100 | ++S);
+		u8 hi = bus->Read(0x0100 | ++S);
 		return hi << 8 | lo;
 	}
 
