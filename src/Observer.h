@@ -4,5 +4,6 @@
 class Observer
 {
 public:
-	virtual void UpdateFPSLabel(int fps) = 0;
+	virtual void UpdateFPSLabel() = 0;
+	unsigned frames_since_update = 0;
 };

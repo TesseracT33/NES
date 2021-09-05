@@ -12,6 +12,8 @@
 #include <wx/stdpaths.h>
 #include "SDL.h"
 
+#include <thread>
+
 #include "../Config.h"
 #include "../core/Emulator.h"
 #include "../Observer.h"
@@ -128,11 +130,9 @@ private:
 
 	bool full_screen_active = false;
 
-	int fps = 0; // current fps that is displayed in the window title
-
 	void Configure(Serialization::BaseFunctor& functor);
 	void SetDefaultConfig() override;
-	void UpdateFPSLabel(int fps) override;
+	void UpdateFPSLabel() override;
 
 	void ApplyGUISettings();
 	void ChooseGameDirDialog();

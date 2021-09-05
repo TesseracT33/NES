@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <limits>
 
+#include "../Observer.h"
 #include "../Types.h"
 
 #include "Bus.h"
@@ -19,6 +20,8 @@ class PPU final : public Component
 public:
 	Bus* bus;
 	CPU* cpu;
+
+	Observer* gui;
 
 	std::shared_ptr<BaseMapper> mapper;
 
@@ -47,7 +50,7 @@ private:
 	static const unsigned colour_channels = 3;
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
 
-	const unsigned default_scale = 5;
+	const unsigned default_scale = 3;
 	const unsigned pre_render_scanline = 261;
 	const unsigned post_render_scanline = 240;
 

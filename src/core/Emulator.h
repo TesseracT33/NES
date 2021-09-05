@@ -42,6 +42,7 @@ public:
 	void Configure(Serialization::BaseFunctor& functor) override;
 	void SetDefaultConfig() override;
 
+	void AddObserver(Observer* observer);
 	bool SetupSDLVideo(const void* window_handle);
 
 	void SetEmulationSpeed(unsigned speed);

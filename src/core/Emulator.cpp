@@ -97,6 +97,12 @@ void Emulator::SetDefaultConfig()
 }
 
 
+void Emulator::AddObserver(Observer* observer)
+{
+	this->gui = ppu.gui = observer;
+}
+
+
 bool Emulator::SetupSDLVideo(const void* window_handle)
 {
 	bool success = ppu.CreateRenderer(window_handle);
@@ -130,19 +136,19 @@ void Emulator::MainLoop()
 	emu_is_running = true;
 	emu_is_paused = false;
 	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
-	int frames_since_fps_update = 0; // same as above but no. of frames
 
 	while (emu_is_running && !emu_is_paused)
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
 
 		cycle_counter = 0;
-		while (cycle_counter++ < 50000)
+		while (cycle_counter++ < 29780)
 		{
 			cpu.Update();
 			apu.Update();
 			ppu.Update();
 		}
+		joypad.PollInput();
 
 		if (load_state_on_next_cycle)
 			LoadState();
@@ -152,24 +158,22 @@ void Emulator::MainLoop()
 		auto frame_end_t = std::chrono::steady_clock::now();
 		long long microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
 
-		if (!emulation_speed_uncapped)
-		{
-			while (microseconds_elapsed_this_frame < microseconds_per_frame_NTSC)
-			{
-				joypad.PollInput();
-				microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - frame_start_t).count();
-			}
-		}
+		//if (!emulation_speed_uncapped)
+		//{
+		//	while (microseconds_elapsed_this_frame < microseconds_per_frame_NTSC)
+		//	{
+		//		joypad.PollInput();
+		//		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - frame_start_t).count();
+		//	}
+		//}
 
 		// update fps on window title if it is time to do so (updated once every second)
 		frame_end_t = std::chrono::steady_clock::now();
 		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
-		frames_since_fps_update++;
 		microseconds_since_fps_update += microseconds_elapsed_this_frame;
 		if (microseconds_since_fps_update >= 1000000 && emu_is_running)
 		{
-			//gui->UpdateFPSLabel(frames_since_fps_update);
-			frames_since_fps_update = 0;
+			gui->UpdateFPSLabel();
 			microseconds_since_fps_update -= 1000000;
 		}
 	}

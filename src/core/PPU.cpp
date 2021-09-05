@@ -204,6 +204,7 @@ void PPU::Update()
 			{
 				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
 				CheckNMIInterrupt();
+				RenderGraphics();
 			}
 			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
 			{
@@ -544,6 +545,8 @@ void PPU::RenderGraphics()
 
 	SDL_FreeSurface(surface);
 	SDL_DestroyTexture(texture);
+
+	gui->frames_since_update++;
 }
 
 

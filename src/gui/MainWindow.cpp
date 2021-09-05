@@ -58,7 +58,7 @@ MainWindow::MainWindow() : wxFrame(nullptr, frameID, emulator_name, wxDefaultPos
 	SetupConfig();
 	ApplyGUISettings();
 
-	emulator.gui = this;
+	emulator.AddObserver(this);
 
 	SetupSDL();
 }
@@ -316,7 +316,7 @@ void MainWindow::UpdateWindowLabel(bool gameIsRunning)
 
 	if (gameIsRunning)
 		this->SetLabel(wxString::Format("%s | %s | %ix%i | FPS: %i",
-			emulator_name, wxFileName(active_rom_path).GetName(), 160 * scale, 144 * scale, fps));
+			emulator_name, wxFileName(active_rom_path).GetName(), 256 * scale, 240 * scale, frames_since_update));
 	else
 		this->SetLabel(emulator_name);
 }
@@ -701,10 +701,10 @@ void MainWindow::UpdateViewSizing()
 }
 
 
-void MainWindow::UpdateFPSLabel(int fps)
+void MainWindow::UpdateFPSLabel()
 {
-	this->fps = fps;
 	UpdateWindowLabel(true);
+	frames_since_update = 0;
 }
 
 
