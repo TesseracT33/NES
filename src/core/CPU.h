@@ -8,10 +8,10 @@
 #include "Bus.h"
 #include "Component.h"
 
-//#define DEBUG_LOG
+#define DEBUG_LOG
 #define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
 
-#define DEBUG_COMPARE_NESTEST
+//#define DEBUG_COMPARE_NESTEST
 #define NESTEST_LOG_PATH "C:\\Users\\Christoffer\\source\\repos\\games\\nes\\nestest.log"
 
 class CPU final : public Component
@@ -254,7 +254,6 @@ private:
 	void ARR();
 	void AXS();
 	void DCP();
-	void DLC();
 	void ISC();
 	void LAS();
 	void LAX();

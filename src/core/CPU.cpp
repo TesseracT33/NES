@@ -11,18 +11,27 @@ void CPU::BuildInstrTypeTable()
 {
 	auto GetInstrType = [&](instr_t instr)
 	{
-		// switch stmnt not possible, as 'instr' is not an integral or enum type
-		// this only gets executed at program startup anyways, so the poor performance does not matter
+		// A switch stmnt is not possible, as 'instr' is not an integral or enum type
+		// This function only gets executed at program startup anyways, so the poor performance does not matter
+		
+		// Note: some unofficial instructions (ALR, ARR, RLA, RRA) are the combination of two instructions, one of which is a read-modify-write instruction. 
+		// However, the addressing mode is immediate in these cases, meaning that the result of the r-m-w instruction won't be stored anywhere.
+		// The other instruction is a read instruction. Thus, such unofficial instructions can be set to be read instructions.
 		if (instr == &CPU::ADC || instr == &CPU::AND || instr == &CPU::BIT || instr == &CPU::CMP ||
 			instr == &CPU::CPX || instr == &CPU::CPY || instr == &CPU::EOR || instr == &CPU::LDA || 
-			instr == &CPU::LDX || instr == &CPU::LDY || instr == &CPU::ORA || instr == &CPU::SBC)
+			instr == &CPU::LDX || instr == &CPU::LDY || instr == &CPU::ORA || instr == &CPU::SBC ||
+			instr == &CPU::ALR || instr == &CPU::ANC || instr == &CPU::ARR || instr == &CPU::LAS ||
+			instr == &CPU::LAX || instr == &CPU::XAA)
 			return InstrType::Read;
 
-		if (instr == &CPU::STA || instr == &CPU::STX || instr == &CPU::STY)
+		if (instr == &CPU::STA || instr == &CPU::STX || instr == &CPU::STY || instr == &CPU::AHX || 
+			instr == &CPU::AXS || instr == &CPU::SAX || instr == &CPU::SHX || instr == &CPU::SHY || 
+			instr == &CPU::TAS)
 			return InstrType::Write;
 
 		if (instr == &CPU::ASL || instr == &CPU::DEC || instr == &CPU::INC || instr == &CPU::LSR ||
-			instr == &CPU::ROL || instr == &CPU::ROR)
+			instr == &CPU::ROL || instr == &CPU::ROR || instr == &CPU::DCP || instr == &CPU::ISC ||
+			instr == &CPU::RLA || instr == &CPU::RRA || instr == &CPU::SLO || instr == &CPU::SRE)
 			return InstrType::Read_modify_write;
 
 		return InstrType::Implicit;
@@ -370,7 +379,11 @@ void CPU::StepIndirect()
 		return;
 
 	case 4:
-		addr_tmp |= bus->Read(curr_instr.addr + 1) << 8;
+		// HW bug: if 'curr_instr.addr' is xyFF, then the upper byte of 'addr_tmp' is fetched from xy00, not (xy+1)00
+		if (curr_instr.addr_lo == 0xFF)
+			addr_tmp |= bus->Read(curr_instr.addr_hi << 8) << 8;
+		else
+			addr_tmp |= bus->Read(curr_instr.addr + 1) << 8;
 		curr_instr.addr = addr_tmp;
 		std::invoke(curr_instr.instr, this);
 		curr_instr.instr_executing = false;
@@ -863,11 +876,10 @@ void CPU::INY()
 void CPU::JMP()
 {
 	PC = curr_instr.addr;
-	// todo NB
 }
 
 
-// Push the program counter (minus one) on to the and set the program counter to the target memory address.
+// Push the program counter (minus one) on to stack the and set the program counter to the target memory address.
 void CPU::JSR()
 {
 	PushWordToStack(PC - 1);
@@ -1138,14 +1150,15 @@ void CPU::TYA()
 }
 
 
-// Unofficial instruction; 
+// Unofficial instruction; store A AND X AND (the high byte of addr + 1) at addr
 void CPU::AHX()
 {
-
+	u8 op = (curr_instr.addr >> 8) + 1;
+	bus->Write(curr_instr.addr, A & X & op);
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined AND and LSR
 void CPU::ALR()
 {
 	AND();
@@ -1153,7 +1166,7 @@ void CPU::ALR()
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; AND with immediate addressing, where the carry flag is set to bit 7 of the result (equal to the negative flag after the AND)
 void CPU::ANC()
 {
 	AND();
@@ -1161,131 +1174,141 @@ void CPU::ANC()
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined AND and ROR, but where the overflow and carry flags are set in particular ways
 void CPU::ARR()
 {
-
+	// TODO: set flags.V and flags.C as they should be
+	AND();
+	ROR();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; store A AND X at addr
 void CPU::AXS()
 {
-
+	bus->Write(curr_instr.addr, A & X);
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined DEC and CMP
 void CPU::DCP()
 {
 	DEC();
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
 	CMP();
 }
 
 
-// Unofficial instruction;
-void CPU::DLC()
-{
-
-}
-
-
-// Unofficial instruction;
+// Unofficial instruction; combined INC and SBC
 void CPU::ISC()
 {
 	INC();
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
 	SBC();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; fused LDA and TSX instruction, where M AND S are put into A, X, S
 void CPU::LAS()
 {
-
+	// TODO: not sure why S would be written to as well?
+	u8 AND = curr_instr.read_addr & S;
+	A = X = S = AND;
+	flags.Z = AND == 0;
+	flags.N = AND & 0x80;
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined LDA and LDX
 void CPU::LAX()
 {
-
+	LDA();
+	LDX();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined ROL and AND
 void CPU::RLA()
 {
 	ROL();
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
 	AND();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined ROR and ADC
 void CPU::RRA()
 {
 	ROR();
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
 	ADC();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; same thing as AXS but with different addressing modes allowed
 void CPU::SAX()
 {
-	u8 new_target = A & X;
-	curr_instr.new_target = new_target;
+	AXS();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; store X AND (high byte of addr + 1) at addr
 void CPU::SHX()
 {
-
+	u8 op = (curr_instr.addr >> 8) + 1;
+	bus->Write(curr_instr.addr, X & op);
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; store Y AND (high byte of addr + 1) at addr
 void CPU::SHY()
 {
-
+	u8 op = (curr_instr.addr >> 8) + 1;
+	bus->Write(curr_instr.addr, Y & op);
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined ASL and ORA
 void CPU::SLO()
 {
 	ASL();
-	ORA(); // order of setting A not correct?
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
+	ORA();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; combined LSR and EOR
 void CPU::SRE()
 {
 	LSR();
-	EOR(); // order of setting A not correct?
+	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
+	EOR();
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; STop the Processor. 
 void CPU::STP()
 {
-
+	wxMessageBox(wxString::Format("Unhandled instruction STP ($%02X) encountered.", curr_instr.opcode));
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; store A AND X in S and A AND X AND (high byte of addr + 1) at addr
 void CPU::TAS()
 {
-	S = A;
-	flags.Z = S == 0;
-	flags.N = S & 0x80;
+	S = A & X;
+	u8 op = (curr_instr.addr >> 8) + 1;
+	bus->Write(curr_instr.addr, A & X & op);
 }
 
 
-// Unofficial instruction;
+// Unofficial instruction; highly unstable instruction that stores (A OR CONST) AND X AND oper into A, where CONST depends on things such as the temperature!
 void CPU::XAA()
 {
-
+	// Use CONST = 0
+	A &= X & curr_instr.read_addr;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
