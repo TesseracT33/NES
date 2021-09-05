@@ -68,6 +68,7 @@ void CPU::Reset()
 	NMI_signal_active = false;
 	IRQ_num_inputs = 0;
 	set_I_on_next_update = clear_I_on_next_update = false;
+	stopped = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 	PC = 0xC000;
@@ -77,7 +78,9 @@ void CPU::Reset()
 // Step one cpu cycle
 void CPU::Update()
 {
-	#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+	if (stopped) return;
+
+	#ifdef DEBUG
 		cpu_cycle_counter++;
 	#endif
 
@@ -124,7 +127,7 @@ void CPU::Update()
 
 void CPU::IncrementCycleCounter()
 {
-#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+#ifdef DEBUG
 	cpu_cycle_counter++;
 #endif
 }
@@ -156,7 +159,7 @@ void CPU::BeginInstruction()
 #endif
 
 
-#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+#ifdef DEBUG
 	instruction_counter++;
 #endif
 }
@@ -267,7 +270,8 @@ void CPU::StepAbsolute()
 	case 2:
 		curr_instr.addr_hi = bus->Read(PC++);
 		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
-		if (curr_instr.instr_type == InstrType::Implicit) // JMP, JSR
+		// JSR, JMP instructions differently than other instructions with absolute addressing; they don't do the same reads and writes as others
+		if (curr_instr.opcode == 0x20 || curr_instr.opcode == 0x4C)
 		{
 			std::invoke(curr_instr.instr, this);
 			curr_instr.instr_executing = false;
@@ -318,7 +322,8 @@ void CPU::StepAbsoluteIndexed(u8& index_reg)
 
 		if (addition_overflow)
 			curr_instr.addr = ((curr_instr.addr_hi + 1) & 0xFF) << 8 | curr_instr.addr_lo;
-		else if (curr_instr.instr_type == InstrType::Read)
+		// According to nestest, NOPs with absolute indexed addressing should be 4 cycles long
+		else if (curr_instr.instr_type == InstrType::Read || curr_instr.instr_type == InstrType::Implicit)
 		{
 			std::invoke(curr_instr.instr, this);
 			curr_instr.instr_executing = false;
@@ -1289,7 +1294,7 @@ void CPU::SRE()
 // Unofficial instruction; STop the Processor. 
 void CPU::STP()
 {
-	wxMessageBox(wxString::Format("Unhandled instruction STP ($%02X) encountered.", curr_instr.opcode));
+	stopped = true;
 }
 
 
@@ -1342,10 +1347,10 @@ void CPU::NesTest_Compare()
 {
 	// Get the next line in nestest.log
 	static std::ifstream ifs{ NESTEST_LOG_PATH, std::ifstream::in };
-	static bool end_of_file = false;
 	if (ifs.eof())
 	{
-		end_of_file = true;
+		wxMessageBox("NesTest comparison passed. Stopping the cpu.");
+		this->stopped = true;
 		return;
 	}
 	std::getline(ifs, nestest.current_line);
@@ -1357,6 +1362,16 @@ void CPU::NesTest_Compare()
 	if (PC - 1 != nestest_pc)
 	{
 		wxMessageBox(wxString::Format("Incorrect PC at line %i; expected $%04X, got $%04X", nestest.line_counter, (int)nestest_pc, (int)(PC - 1)));
+		return;
+	}
+
+	// Test the cycle counter
+	size_t first_char_pos = nestest.current_line.find("CYC:") + 4;
+	std::string nestest_cyc_str = nestest.current_line.substr(first_char_pos);
+	unsigned nestest_cycles = std::stoi(nestest_cyc_str);
+	if (cpu_cycle_counter != nestest_cycles)
+	{
+		wxMessageBox(wxString::Format("Incorrect cycle count at line %i; expected %i, got %i", nestest.line_counter, nestest_cycles, cpu_cycle_counter));
 		return;
 	}
 

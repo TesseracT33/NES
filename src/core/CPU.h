@@ -8,16 +8,18 @@
 #include "Bus.h"
 #include "Component.h"
 
-#define DEBUG_LOG
+//#define DEBUG_LOG
 #define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
 
-//#define DEBUG_COMPARE_NESTEST
+#define DEBUG_COMPARE_NESTEST
 #define NESTEST_LOG_PATH "C:\\Users\\Christoffer\\source\\repos\\games\\nes\\nestest.log"
+
+#define DEBUG (DEBUG_LOG || DEBUG_COMPARE_NESTEST)
 
 class CPU final : public Component
 {
 public:
-	#ifdef DEBUG_LOG || DEBUG_COMPARE_NESTEST
+	#ifdef DEBUG
 		unsigned instruction_counter = 1;
 		unsigned cpu_cycle_counter = 6;
 	#endif
@@ -146,6 +148,7 @@ private:
 	struct Flags { bool N, V, B, D, I, Z, C; } flags;
 
 	bool odd_cpu_cycle;
+	bool stopped; // set to true by the STP instruction
 
 	// interrupt-related
 	enum class InterruptType { NMI, IRQ, BRK };
