@@ -18,6 +18,8 @@
 class PPU final : public Component
 {
 public:
+	~PPU();
+
 	Bus* bus;
 	CPU* cpu;
 
@@ -34,7 +36,7 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	inline bool IsInVblank() { return current_scanline >= 241; };
+	inline bool IsInVblank() { return current_scanline > post_render_scanline && current_scanline < pre_render_scanline; };
 
 	unsigned GetWindowScale() { return scale; }
 	wxSize GetWindowSize() { return wxSize(resolution_x * scale, resolution_y * scale); }
@@ -51,10 +53,11 @@ private:
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
 
 	const unsigned default_scale = 3;
+	const unsigned oam_size = 0x100;
 	const unsigned pre_render_scanline = 261;
 	const unsigned post_render_scanline = 240;
 
-	// https://wiki.nesdev.com/w/index.php/PPU_palettes
+	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
 	const SDL_Color palette[64] = { 
 		{ 84,  84,  84}, {  0,  30, 116}, {  8,  16, 144}, { 48,   0, 136}, { 68,   0, 100}, { 92,   0,  48}, { 84,   4,   0}, { 60,  24,   0},
 		{ 32,  42,   0}, {  8,  58,   0}, {  0,  64,   0}, {  0,  60,   0}, {  0,  50,  60}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0},
@@ -73,6 +76,16 @@ private:
 		u8 oam[0x100]{};
 	} memory;
 
+	struct SpriteEvaluation
+	{
+		unsigned num_sprites_copied = 0; // 0-8
+		u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
+		bool idle = false;
+		bool sprite_0_included = false;
+
+		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
+	} sprite_evaluation;
+
 	struct TileFetcher
 	{
 		// fetched data of the tile currently being fetched
@@ -80,7 +93,8 @@ private:
 		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
 		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
 
-		u8 attribute_table_quadrant;
+		u8 attribute_table_quadrant; // used only for background tiles
+		u8 y_pos; // used only for sprites
 
 		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
 
@@ -108,6 +122,8 @@ private:
 	u8 OAMDATA;
 	u8 OAMDMA;
 
+	u8 OAMADDR_at_cycle_65;
+
 	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
 
 	u8 scroll_x;
@@ -118,9 +134,9 @@ private:
 
 	bool ppuscroll_written_to, ppuaddr_written_to;
 
-	int current_scanline = -1; // includes -1 (pre-render scanline), 0-239 (visible scanlines) and 240 (post-render scanline)
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
+	unsigned current_scanline = 0;
 	unsigned scanline_cycle_counter;
 
 	u8 secondary_oam[32];
@@ -199,17 +215,16 @@ private:
 
 	void CheckNMIInterrupt();
 	void DoSpriteEvaluation();
-	void FetchSpriteDataFromSecondaryOAM();
 	u8 GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type);
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
-	void PushPixel(u8 colour);
+	void PushPixel(u8 nes_col);
 	void RenderGraphics();
 	void ShiftPixel();
 	void UpdateBGShiftRegs();
 	void UpdateSpriteShiftRegs(unsigned sprite_index);
 	void UpdateBGTileFetching();
-	void UpdateSpriteTileFetching(unsigned sprite_index);
+	void UpdateSpriteTileFetching();
 
 	u8 ReadMemory(u16 addr);
 	void WriteMemory(u16 addr, u8 data);

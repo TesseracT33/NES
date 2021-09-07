@@ -41,6 +41,13 @@
 #define PPUSTATUS_sprite_overflow      (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
 
 
+PPU::~PPU()
+{
+	SDL_DestroyRenderer(renderer);
+	SDL_DestroyWindow(window);
+}
+
+
 void PPU::Power()
 {
 	Reset();
@@ -89,55 +96,76 @@ void PPU::Update()
 	{
 		if (scanline_cycle_counter == 0)
 		{
-			// idle cycle on every scanline (?)
+			// idle cycle on every scanline
+			PrepareForNewScanline();
 			scanline_cycle_counter = 1;
 			continue;
 		}
 
-		if (current_scanline < post_render_scanline) // < 240
+		if (current_scanline < post_render_scanline) // scanline 0-239
 		{
-			if (scanline_cycle_counter <= 256)
+			if (scanline_cycle_counter <= 256) // Cycles 1-256
 			{
-				if (scanline_cycle_counter == 1)
+				switch (scanline_cycle_counter)
 				{
+				case 1:
 					// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64 (each write taking two cycles).
 					// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time (?)
 					for (int i = 0; i < 32; i++)
 						secondary_oam[i] = 0xFF;
 
 					tile_fetcher.SetBGTileFetchingActive();
-				}
-
-				// On odd cycles, update the bg tile fetching (each step takes 2 cycles, starting at cycle 1).
-				// On even cycles, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both operations are done on even cycles.
-				if (scanline_cycle_counter & 1)
 					UpdateBGTileFetching();
-				else if (PPUMASK_sprite_enable || PPUMASK_bg_enable) // Sprite evaluation occurs if either the sprite layer or background layer is enabled
-					DoSpriteEvaluation();
+					break;
 
-				if (scanline_cycle_counter > 1)
-				{
+				case 256:
+					DoSpriteEvaluation();
+					reg.increment_coarse_x();
+					reg.increment_y();
+					break;
+
+				case 65:
+					OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
+					sprite_evaluation.Reset();
+					[[fallthrough]];
+
+				default:
+					// On odd cycles, update the bg tile fetching (each step takes 2 cycles, starting at cycle 1).
+					// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65). Here, both operations are done on even cycles.
+					if (scanline_cycle_counter & 1)
+						UpdateBGTileFetching();
+					else if (scanline_cycle_counter >= 66 && RenderingIsEnabled())
+						DoSpriteEvaluation();
+
 					// Increment the coarse X scroll at cycles 8, 16, ..., 256
-					// todo: they say "if rendering is enabled"
-					if (scanline_cycle_counter % 8 == 0)
+					if (RenderingIsEnabled() && scanline_cycle_counter % 8 == 0)
 						reg.increment_coarse_x();
 					// Update the bg shift registers at cycles 9, 17, ..., 249
 					else if (scanline_cycle_counter % 8 == 1)
 						UpdateBGShiftRegs();
+					break;
 				}
+
+				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
+				// Shift one pixel per cycle during cycles 1-256 on scanlines 0-239
+				ShiftPixel();
 			}
-			else if (scanline_cycle_counter <= 320)
+			else if (scanline_cycle_counter <= 320) // Cycles 257-320
 			{
-				static unsigned sprite_index = 0;
+				OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanline + on the pre-render one
+
+				static unsigned sprite_index;
 
 				if (scanline_cycle_counter == 257)
 				{
 					tile_fetcher.SetSpriteTileFetchingActive();
 					UpdateBGShiftRegs(); // Update the bg shift registers at cycle 257
+					if (RenderingIsEnabled())
+						reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
 					sprite_index = 0;
 				}
 
-				// Consider an 8 cycle period (1-8) between cycles 257-320 (of which there are eight; one for each sprite)
+				// Consider an 8 cycle period (1-8) between cycles 257-320 (of which there are eight: one for each sprite)
 				// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
 				//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
 				// On cycle 1-4: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM
@@ -145,7 +173,9 @@ void PPU::Update()
 				// Not sure if all of this precise timing is necessary. However, the switch stmnt should make it fairly performant anyways
 				switch ((scanline_cycle_counter - 257) % 8)
 				{
-				case 0: break;
+				case 0:
+					tile_fetcher.y_pos = secondary_oam[4 * sprite_index]; 
+					break;
 				case 1: 
 					tile_fetcher.tile_num = secondary_oam[4 * sprite_index + 1]; 
 					if (scanline_cycle_counter >= 266) UpdateSpriteShiftRegs(sprite_index - 1); // the pattern data for the previous sprite is loaded
@@ -156,41 +186,45 @@ void PPU::Update()
 				case 3: 
 					sprite_x_pos_counter[sprite_index] = secondary_oam[4 * sprite_index + 3]; 
 					break;
-				case 4: UpdateSpriteTileFetching(sprite_index); break;
-				case 5: break;
-				case 6: UpdateSpriteTileFetching(sprite_index); break;
-				case 7: sprite_index++; break;
+				case 4:
+					UpdateSpriteTileFetching(); 
+					break;
+				case 5: 
+					break;
+				case 6:
+					UpdateSpriteTileFetching(); 
+					break;
+				case 7:
+					sprite_index++; 
+					break;
 				}
 			}
-			else // <= 340 (or 341, for even-numbered frames). 
+			else // Cycles 321-340
 			{
-				if (scanline_cycle_counter == 321)
-				{
-					tile_fetcher.SetBGTileFetchingActive();
-					UpdateSpriteShiftRegs(7); // the last sprite pattern data to be loaded (sprite index == 7)
-				}
-
-			    // todo: UpdateTileFetcher will be called on cycle 341, is it correct ?
-				if (scanline_cycle_counter & 1)
-					UpdateBGTileFetching();
-
+				// On odd cycles, do bg tile fetching.
 				// Increment the coarse X scroll at cycles 328 and 336, and update the bg shift registers at cycles 329 and 337
 				switch (scanline_cycle_counter)
 				{
-				case 328: case 336: reg.increment_coarse_x(); break; // todo: they say "if rendering is enabled"
-				case 329: case 337: UpdateBGShiftRegs(); break;
-				default: break;
+				case 321:
+					tile_fetcher.SetBGTileFetchingActive();
+					UpdateSpriteShiftRegs(7); // the last sprite pattern data to be loaded (sprite index == 7)
+					UpdateBGTileFetching();
+					break;
+				case 328: case 336: 
+					reg.increment_coarse_x();  // todo: they say "if rendering is enabled"
+					break; 
+				case 329: case 337: 
+					UpdateBGTileFetching();
+					UpdateBGShiftRegs();
+					break;
+				default: 
+					if (scanline_cycle_counter & 1)
+						UpdateBGTileFetching();
+					break;
 				}
 			}
-
-			if (current_scanline < post_render_scanline &&
-				scanline_cycle_counter > 0 && scanline_cycle_counter <= 256)
-			{
-				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
-				ShiftPixel();
-			}
 		}
-		else if (current_scanline == post_render_scanline + 1) // == 241
+		else if (current_scanline == post_render_scanline + 1) // scanline 241
 		{
 			if (scanline_cycle_counter == 1)
 			{
@@ -198,7 +232,7 @@ void PPU::Update()
 				CheckNMIInterrupt();
 			}
 		}
-		else if (current_scanline == pre_render_scanline) // == 261
+		else if (current_scanline == pre_render_scanline) // scanline 261
 		{
 			if (scanline_cycle_counter == 1)
 			{
@@ -206,13 +240,16 @@ void PPU::Update()
 				CheckNMIInterrupt();
 				RenderGraphics();
 			}
-			else if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304)
+			else
 			{
-				if (PPUCTRL_PPU_master)
+				if (scanline_cycle_counter >= 257 && scanline_cycle_counter <= 320)
 				{
-					// Set bits 14-11 of 'v' to bits 14-11 of 't', and bits 9-5 of 'v' to bits 9-5 of 't'
-					// todo: Not clear if this should be done at every cycle in this interval or not
-					reg.v = reg.v & ~(0xF << 11) & ~(0x1F << 5) | reg.t & (0xF << 11) | reg.t & (0x1F << 5);
+					OAMADDR = 0;
+				}
+				if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
+				{
+					// Copy the vertical bits of t to v
+					reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
 				}
 			}
 		}
@@ -220,30 +257,9 @@ void PPU::Update()
 		// Increment the scanline cycle counter.
 		// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
 		// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
-		scanline_cycle_counter++;
-		if (current_scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
-			scanline_cycle_counter %= 340;
-		else
-			scanline_cycle_counter %= 341;
-		
-		switch (scanline_cycle_counter)
-		{
-		case 0:
-			PrepareForNewScanline(); 
-			break;
-
-		case 256:
-			if (RenderingIsEnabled())
-			{
-				reg.increment_y();
-			}
-			break;
-
-		case 257:
-			// Set bit 10 of 'v' to bit 10 of 't', and bits 4-0 of 'v' to bits 4-0 of 't'
-			reg.v = reg.v & ~(1 << 10) & ~0x1F | reg.t & (1 << 10) | reg.t & 0x1F;
-			break;
-		}
+		scanline_cycle_counter = (scanline_cycle_counter + 1) % 341;
+		if (scanline_cycle_counter == 340 && current_scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
+			scanline_cycle_counter = 0;
 	}
 }
 
@@ -272,25 +288,23 @@ u8 PPU::ReadRegister(u16 addr)
 	}
 
 	case Bus::Addr::OAMDATA: // $2004
-		// during cycles 1-64, secondary OAM is initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
+		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
 		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
 			return 0xFF;
 		return OAMDATA;
 
 	case Bus::Addr::PPUDATA  : // $2007
-		if (current_scanline >= post_render_scanline || (!PPUMASK_bg_enable && !PPUMASK_sprite_enable)) // Outside of rendering
+		// Outside of rendering, read the value and add either 1 or 32 to v.
+		// During rendering, return $FF (?), and increment both coarse x and y.
+		if (IsInVblank() || !RenderingIsEnabled()) 
 		{
 			u16 v = reg.v;
 			reg.v += PPUCTRL_incr_mode ? 32 : 1;
 			return ReadMemory(v);
 		}
-		else // Rendering; current_scanline < post_render_scanline && (PPUMASK_bg_enable || PPUMASK_sprite_enable)
-		{
-			// Update v in an odd way, where a coarse X increment and a Y increment is triggered simultaneously
-			reg.increment_coarse_x();
-			reg.increment_y();
-			return 0xFF;
-		}
+		reg.increment_coarse_x();
+		reg.increment_y();
+		return 0xFF;
 
 	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
 		;
@@ -327,7 +341,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::OAMDATA: // $2004
-		if (current_scanline < post_render_scanline && (PPUMASK_bg_enable || PPUMASK_sprite_enable))
+		if ((current_scanline < post_render_scanline || current_scanline == pre_render_scanline) && RenderingIsEnabled())
 		{
 			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
 			OAMADDR += 0b100; // todo: correct?
@@ -371,20 +385,26 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::PPUDATA: // $2007
-		if (this->IsInVblank() || (!PPUMASK_bg_enable && !PPUMASK_sprite_enable))
+		// Outside of rendering, write the value and add either 1 or 32 to v.
+		// During rendering, the write is not done (?), and both coarse x and y are incremented.
+		if (this->IsInVblank() || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v, data);
 			reg.v += PPUCTRL_incr_mode ? 32 : 1;
+		}
+		else
+		{
+			reg.increment_coarse_x();
+			reg.increment_y();
 		}
 		return;
 
 	case Bus::Addr::OAMDMA: // $4014
 	{
-		// perform OAM DMA transfer. it is technically performed by the cpu, so the cpu will stop executing instructions during this time
-		const u16 start_addr = OAMADDR << 8;
-		for (u16 addr = start_addr; addr <= start_addr + 0xFF; addr++)
-			memory.oam[addr & 0xFF] = bus->Read(addr);
-		cpu->Set_OAM_DMA_Active();
+		// Perform OAM DMA transfer. Writing $XX will upload 256 bytes of data from CPU page $XX00-$XXFF to the internal PPU OAM.
+		// It is done by the cpu, so the cpu will stop executing instructions during this time
+		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
+		cpu->StartOAMDMATransfer(data, memory.oam);
 	}
 
 	}
@@ -403,48 +423,54 @@ void PPU::CheckNMIInterrupt()
 
 void PPU::DoSpriteEvaluation()
 {
-	static unsigned num_sprites_copied = 0;
-	static u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
-	static bool idle = false;
-
 	auto increment_n = [&]()
 	{
-		if (++n == 64)
+		if (++sprite_evaluation.n == 64)
 		{
-			idle = true;
+			sprite_evaluation.idle = true;
 		}
 	};
 
 	auto increment_m = [&]()
 	{
-		if (++m == 4)
+		if (++sprite_evaluation.m == 4)
 		{
-			m = 0;
-			if (n == 0)
-				sprite_0_included = true;
+			sprite_evaluation.m = 0;
+			if (sprite_evaluation.n == 0)
+				sprite_evaluation.sprite_0_included = true;
 			increment_n();
-			num_sprites_copied++;
+			sprite_evaluation.num_sprites_copied++;
 		}
 	};
 
-	if (idle) return;
+	if (sprite_evaluation.idle) return;
 
-	u8 read_oam = memory.oam[4 * n + m];
-
-	if (num_sprites_copied < 8)
+	// Fetch the next entry in OAM
+	// The value of OAMADDR as it were at dot 65 is used as an offset to the address here.
+	// If OAMADDR is unaligned and does not point to the y position (first byte) of an OAM entry, then whatever it points to will be reinterpreted as a y position, and the following bytes will be similarly reinterpreted.
+	// When the end of OAM is reached, no more sprites will be found.
+	unsigned addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.n + sprite_evaluation.m;
+	if (addr >= oam_size)
 	{
-		secondary_oam[num_sprites_copied + m] = read_oam;
+		sprite_evaluation.idle = true;
+		return;
+	}
+	u8 read_oam_entry = memory.oam[addr];
 
-		if (m == 0)
+	if (sprite_evaluation.num_sprites_copied < 8)
+	{
+		secondary_oam[sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = read_oam_entry;
+
+		if (sprite_evaluation.m == 0)
 		{
-			// check if the y-pos of the current sprite ('read_oam' = oam[4 * n + 0]) is in range
-			if (read_oam >= current_scanline && read_oam < current_scanline + (PPUCTRL_sprite_height ? 16 : 8))
+			// Check if the y-pos of the current sprite ('read_oam_entry' = oam[offset + 4 * n + 0]) is in range
+			if (read_oam_entry >= current_scanline && read_oam_entry < current_scanline + (PPUCTRL_sprite_height ? 16 : 8))
 			{
-				m = 1;
+				sprite_evaluation.m = 1;
 			}
 			else
 			{
-				m = 0;
+				sprite_evaluation.m = 0;
 				increment_n();
 			}
 		}
@@ -455,13 +481,13 @@ void PPU::DoSpriteEvaluation()
 	}
 	else
 	{
-		if (read_oam >= current_scanline && read_oam < current_scanline + (PPUCTRL_sprite_height ? 16 : 8))
+		if (read_oam_entry >= current_scanline && read_oam_entry < current_scanline + (PPUCTRL_sprite_height ? 16 : 8))
 		{
 			PPUSTATUS |= PPUSTATUS_sprite_overflow_mask;
 			// On real hw, the ppu will continue scanning oam after setting the sprite overflow flag.
 			// However, none of it will have an effect on anything other than n and m, so we may as well start idling from here.
 			// Note also that the sprite overflow flag is not writeable by the cpu, and cleared only on the pre-render scanline
-			idle = true;
+			sprite_evaluation.idle = true;
 		}
 		else
 		{
@@ -473,52 +499,29 @@ void PPU::DoSpriteEvaluation()
 }
 
 
-void PPU::FetchSpriteDataFromSecondaryOAM()
-{
-	static unsigned sprite_index = 0;
-	static unsigned cycle_counter = 0;
-
-	switch (cycle_counter)
-	{
-	case 0: sprites.y_pos       [sprite_index] = secondary_oam[4 * sprite_index    ]; break;
-	case 1: sprites.pattern_data[sprite_index] = secondary_oam[4 * sprite_index + 1]; break;
-	case 2: sprites.attr        [sprite_index] = secondary_oam[4 * sprite_index + 2]; break;
-	case 3: sprites.x_pos       [sprite_index] = secondary_oam[4 * sprite_index + 3]; break;
-	}
-
-	if (++cycle_counter == 8)
-	{
-		cycle_counter = 0;
-		sprite_index = (sprite_index + 1) % 8;
-	}
-
-	// todo: fill data for empty slots
-}
-
-
-// Get an actual NES color (indexed 0-63) from a bg or sprite color id, given palette attribute data
+// Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given palette attribute data
 u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type)
 {
-	// if the color ID is 0, then the 'universal background color', located at $3F00, is always used.
+	// If the color ID is 0, then the 'universal background color', located at $3F00, is always used.
+	// This is equal to palette_ram[0]
 	if (col_id == 0)
-		return ReadMemory(0x3F00) & 0x3F;
-	else
-	{
-		// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the 'bg_palette_attr_reg' variable)
-		// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
-		// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
-		u8 palette_id = palette_attr_data & 3;
-		return ReadMemory(0x3F01 + 0x10 * (tile_type == TileType::BG) + 4 * palette_id) & 0x3F;
-	}
+		return memory.palette_ram[0] & 0x3F;
+	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the 'bg_palette_attr_reg' variable)
+	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
+	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
+	u8 palette_id = palette_attr_data & 3;
+	return memory.palette_ram[1 + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)] & 0x3F;
 }
 
 
-void PPU::PushPixel(u8 colour)
+void PPU::PushPixel(u8 nes_col)
 {
-	const SDL_Color& col = palette[colour];
-	framebuffer[frame_buffer_pos    ] = col.r;
-	framebuffer[frame_buffer_pos + 1] = col.g;
-	framebuffer[frame_buffer_pos + 2] = col.b;
+	// From the nes colour (0-63), get an RGB24 colour from the predefined palette
+	// The palette from https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02 was used for this
+	const SDL_Color& sdl_col = palette[nes_col];
+	framebuffer[frame_buffer_pos    ] = sdl_col.r;
+	framebuffer[frame_buffer_pos + 1] = sdl_col.g;
+	framebuffer[frame_buffer_pos + 2] = sdl_col.b;
 	frame_buffer_pos += 3;
 
 	pixel_x_pos++;
@@ -662,8 +665,6 @@ void PPU::UpdateBGTileFetching()
 	{
 	case TileFetcher::Step::fetch_nametable_byte:
 	{
-		reg.increment_coarse_x();
-
 		/* Composition of the nametable address:
 		  10 NN YYYYY XXXXX
 		  || || ||||| +++++-- Coarse X scroll
@@ -703,7 +704,7 @@ void PPU::UpdateBGTileFetching()
 	{
 		/* Composition of the pattern table address for BG tiles and 8x8 sprites:
 		  H RRRR CCCC P yyy
-		  | |||| |||| | +++-- Fine Y scroll, the row number within a tile
+		  | |||| |||| | +++-- The row number within a tile. For BG tiles: fine Y scroll. For sprites: sprite_y_pos - fine_y_scroll
 		  | |||| |||| +------ Bit plane (0: "lower"; 1: "upper")
 		  | |||| ++++-------- Tile column
 		  | ++++------------- Tile row
@@ -728,15 +729,17 @@ void PPU::UpdateBGTileFetching()
 }
 
 
-void PPU::UpdateSpriteTileFetching(unsigned sprite_index)
+void PPU::UpdateSpriteTileFetching()
 {
+	// TODO: If there are less than 8 sprites on the next scanline, then dummy fetches to tile $FF occur for the left-over sprites, because of the dummy sprite data in the secondary OAM
+	//       This data is then discarded, and the sprites are loaded with a transparent set of values instead.
 	switch (tile_fetcher.step)
 	{
 	case TileFetcher::Step::fetch_pattern_table_tile_low:
 	{
 		/* Composition of the pattern table adress for 8x16 sprites:
 		  H RRRR CCC S P yyy
-		  | |||| ||| | | +++-- Fine Y scroll, the row number within a tile
+		  | |||| ||| | | +++-- The row number within a tile: sprite_y_pos - fine_y_scroll. TODO probably not correct
 		  | |||| ||| | +------ Bit plane (0: "lower"; 1: "upper")
 		  | |||| ||| +-------- Sprite tile half (0: "top"; 1: "bottom") TODO: check if it isn't the reverse
 		  | |||| +++---------- Tile column
@@ -748,13 +751,17 @@ void PPU::UpdateSpriteTileFetching(unsigned sprite_index)
 		// todo: fix; should not be "reg.v >> 12" for sprites
 		if (PPUCTRL_sprite_height)  // 8x16 sprites
 		{
+			u8 row_num = 0; // TODO
 			addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12;
 			// Check if we are on the top or bottom tile of the 8x16 sprite
 			if (reg.v & 0x20) // i.e. the course Y scroll is odd, meaning that we are on the bottom tile
 				addr |= 0x10;
 		}
 		else // 8x8 sprites
-			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | (reg.v >> 12);
+		{
+			u8 row_num = tile_fetcher.y_pos - (reg.v >> 12); // 0-7
+			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | row_num;
+		}
 
 		tile_fetcher.pattern_table_tile_low = ReadMemory(addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
@@ -791,27 +798,19 @@ u8 PPU::ReadMemory(u16 addr)
 	{
 		return mapper->ReadCHR(addr);
 	}
-	// $2000-$2FFF - Nametables; internal ppu vram
-	else if (addr <= 0x2FFF)
-	{
-		return memory.vram[addr - 0x2000];
-	}
-	// $3000-$3EFF - Mirrors of $2000-$2EFF
+	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		return memory.vram[addr - 0x3000];
+		return memory.vram[addr & 0xFFF];
 	}
-	else if (addr <= 0x3F1F)
+	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
+	else if (addr <= 0x3FFF)
 	{
 		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
 		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
 		if ((addr & 0b10011) == 0b10000)
-			return memory.palette_ram[addr - 0x3F00 - 0x10];
-		return memory.palette_ram[addr - 0x3F00];
-	}
-	else if (addr <= 0x3FFF)
-	{
-
+			addr -= 0x10;
+		return memory.palette_ram[addr & 0x1F];
 	}
 	else
 	{
@@ -823,13 +822,32 @@ u8 PPU::ReadMemory(u16 addr)
 
 void PPU::WriteMemory(u16 addr, u8 data)
 {
-
+	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
+	if (addr <= 0x1FFF)
+	{
+		mapper->WriteCHR(addr, data);
+	}
+	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
+	else if (addr <= 0x3EFF)
+	{
+		memory.vram[addr & 0xFFF] = data;
+	}
+	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
+	else if (addr <= 0x3FFF)
+	{
+		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
+		if ((addr & 0b10011) == 0b10000)
+			addr -= 0x10;
+		memory.palette_ram[addr & 0x1F] = data;
+	}
 }
 
 
 void PPU::PrepareForNewFrame()
 {
 	odd_frame = !odd_frame;
+	frame_buffer_pos = 0;
 }
 
 
@@ -838,7 +856,7 @@ void PPU::PrepareForNewScanline()
 	current_scanline = (current_scanline + 1) % (pre_render_scanline + 1);
 	if (current_scanline == 0)
 		PrepareForNewFrame();
-	pixel_x_pos = frame_buffer_pos = 0;
+	pixel_x_pos = 0;
 }
 
 
@@ -846,7 +864,7 @@ void PPU::SetWindowSize(wxSize size)
 {
 	unsigned width = size.GetWidth(), height = size.GetHeight();
 
-	if (width > 0 && height)
+	if (width > 0 && height > 0)
 	{
 		scale_temp = std::min(width / resolution_x, height / resolution_y);
 		pixel_offset_x_temp = 0.5 * (width - scale_temp * resolution_x);

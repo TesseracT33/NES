@@ -11,7 +11,7 @@
 //#define DEBUG_LOG
 #define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
 
-#define DEBUG_COMPARE_NESTEST
+//#define DEBUG_COMPARE_NESTEST
 #define NESTEST_LOG_PATH "C:\\Users\\Christoffer\\source\\repos\\games\\nes\\nestest.log"
 
 #define DEBUG (DEBUG_LOG || DEBUG_COMPARE_NESTEST)
@@ -40,8 +40,9 @@ public:
 	void SetNMILow();
 	void SetNMIHigh();
 
-	void IncrementCycleCounter();
-	void Set_OAM_DMA_Active();
+	void IncrementCycleCounter(unsigned cycles = 0);
+	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr);
+	void UpdateOAMDMATransfer();
 
 	void State(Serialization::BaseFunctor& functor) override;
 
@@ -157,8 +158,11 @@ private:
 	bool clear_I_on_next_update = false, set_I_on_next_update = false; // refers to the I flag in the status register
 	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down
 
-	bool oam_dma_transfer_active = false;
-	unsigned oam_dma_cycles_until_finished;
+	// OAMDMA-related
+	bool oam_dma_transfer_active;
+	u8* oam_start_ptr;
+	u16 oam_dma_base_addr;
+	unsigned oam_dma_bytes_copied;
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	unsigned cpu_clocks_since_reset = 0;

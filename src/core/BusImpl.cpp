@@ -65,8 +65,7 @@ void BusImpl::Write(u16 addr, u8 data)
 	else if (addr <= 0x3FFF)
 	{
 		// wrap address to between 0x2000-0x2007 
-		addr = 0x2000 + (addr & 7);
-		ppu->WriteRegister(addr, data);
+		ppu->WriteRegister(0x2000 + (addr & 7), data);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -96,11 +95,11 @@ void BusImpl::Write(u16 addr, u8 data)
 
 u8 BusImpl::ReadCycle(u16 addr)
 {
-	u8 read = Read(addr);
+	u8 val_ret = Read(addr);
 	apu->Update();
 	ppu->Update();
 	cpu->IncrementCycleCounter();
-	return read;
+	return val_ret;
 }
 
 
@@ -119,8 +118,8 @@ void BusImpl::WaitCycle(unsigned cycles)
 	{
 		apu->Update();
 		ppu->Update();
-		cpu->IncrementCycleCounter();
 	}
+	cpu->IncrementCycleCounter(cycles);
 }
 
 

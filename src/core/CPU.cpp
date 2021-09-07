@@ -69,15 +69,17 @@ void CPU::Reset()
 	IRQ_num_inputs = 0;
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
+	oam_dma_transfer_active = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
-	PC = 0xC000;
 }
 
 
 // Step one cpu cycle
 void CPU::Update()
 {
+	IncrementCycleCounter();
+
 	if (stopped) return;
 
 	#ifdef DEBUG
@@ -100,13 +102,10 @@ void CPU::Update()
 
 	if (oam_dma_transfer_active)
 	{
-		if (--oam_dma_cycles_until_finished == 0)
-			oam_dma_transfer_active = false;
-		return;
+		UpdateOAMDMATransfer();
 	}
-
 	// If an instruction is currently being executed
-	if (curr_instr.instr_executing)
+	else if (curr_instr.instr_executing)
 	{
 		// Continue the execution of the instruction
 		std::invoke(curr_instr.addr_mode_fun, this);
@@ -125,18 +124,34 @@ void CPU::Update()
 }
 
 
-void CPU::IncrementCycleCounter()
+void CPU::IncrementCycleCounter(unsigned cycles)
 {
 #ifdef DEBUG
-	cpu_cycle_counter++;
+	cpu_cycle_counter += cycles;
 #endif
+
+	if (cycles & 1)
+		odd_cpu_cycle = !odd_cpu_cycle;
 }
 
 
-void CPU::Set_OAM_DMA_Active()
+void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr)
 {
 	oam_dma_transfer_active = true;
-	oam_dma_cycles_until_finished = odd_cpu_cycle ? 514 : 513;
+	oam_dma_base_addr = page << 8;
+	this->oam_start_ptr = oam_start_ptr;
+	oam_dma_bytes_copied = 0;
+
+	// Before the DMA transfer starts, there is/are one or two wait cycles, depending on if the current cpu cycle is even or odd
+	bus->WaitCycle(odd_cpu_cycle ? 2 : 1);
+}
+
+
+void CPU::UpdateOAMDMATransfer()
+{
+	*(oam_start_ptr + oam_dma_bytes_copied) = bus->ReadCycle(oam_dma_base_addr + oam_dma_bytes_copied);
+	if (++oam_dma_bytes_copied == 0x100)
+		oam_dma_transfer_active = false;
 }
 
 
@@ -157,7 +172,6 @@ void CPU::BeginInstruction()
 #ifdef DEBUG_COMPARE_NESTEST
 	NesTest_Compare();
 #endif
-
 
 #ifdef DEBUG
 	instruction_counter++;
@@ -652,7 +666,7 @@ void CPU::ADC()
 }
 
 
-// Logical AND between the accumulator and the contents of a memory location.
+// Bitwise AND between the accumulator and the contents of a memory location.
 void CPU::AND()
 {
 	u8 op = curr_instr.read_addr;
@@ -695,7 +709,7 @@ void CPU::BEQ()
 }
 
 
-// Check the logical AND between the accumulator and the contents of a memory location, and set the status flags accordingly.
+// Check the bitwise AND between the accumulator and the contents of a memory location, and set the status flags accordingly.
 void CPU::BIT()
 {
 	u8 op = curr_instr.read_addr;
@@ -838,7 +852,7 @@ void CPU::DEY()
 }
 
 
-// Logical XOR between the accumulator and the contents of a memory location.
+// Bitwise XOR between the accumulator and the contents of a memory location.
 void CPU::EOR()
 {
 	u8 op = curr_instr.read_addr;
@@ -944,7 +958,7 @@ void CPU::NOP()
 }
 
 
-// Logical OR between the accumulator and the contents of a memory location.
+// Bitwise OR between the accumulator and the contents of a memory location.
 void CPU::ORA()
 {
 	u8 M = curr_instr.read_addr;
@@ -1342,7 +1356,7 @@ void CPU::Log_PrintLine()
 
 
 #ifdef DEBUG_COMPARE_NESTEST
-// NOTE: in nestest.log, I replace all occurances of "SP:" with "S:" to make testing easier
+// NOTE: in nestest.log, I replaced all occurances of "SP:" with "S:" to make testing easier. Also, the last, empty line is removed.
 void CPU::NesTest_Compare()
 {
 	// Get the next line in nestest.log
