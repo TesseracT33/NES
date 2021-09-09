@@ -61,7 +61,7 @@ void BusImpl::Write(u16 addr, u8 data)
 		memory.ram[addr & 0x7FF] = data; // wrap address to between 0-0x7FF
 	}
 
-	// PPU Registers($2000 - $3FFF)
+	// PPU Registers ($2000 - $3FFF)
 	else if (addr <= 0x3FFF)
 	{
 		// wrap address to between 0x2000-0x2007 
@@ -85,7 +85,7 @@ void BusImpl::Write(u16 addr, u8 data)
 		//unused
 	}
 
-	// Cartridge Space($4020 - $FFFF)
+	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
 		cartridge->Write(addr, data);
@@ -96,6 +96,7 @@ void BusImpl::Write(u16 addr, u8 data)
 u8 BusImpl::ReadCycle(u16 addr)
 {
 	u8 val_ret = Read(addr);
+	Logging::Update(cpu, ppu);
 	apu->Update();
 	ppu->Update();
 	cpu->IncrementCycleCounter();
@@ -106,6 +107,7 @@ u8 BusImpl::ReadCycle(u16 addr)
 void BusImpl::WriteCycle(u16 addr, u8 data)
 {
 	Write(addr, data);
+	Logging::Update(cpu, ppu);
 	apu->Update();
 	ppu->Update();
 	cpu->IncrementCycleCounter();

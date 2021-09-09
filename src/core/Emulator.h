@@ -11,6 +11,8 @@
 #include "../Observer.h"
 #include "../Snapshottable.h"
 
+#include "../debug/Logging.h"
+
 #include "APU.h"
 #include "BusImpl.h"
 #include "Cartridge.h"
@@ -83,7 +85,7 @@ private:
 
 	std::vector<Snapshottable*> snapshottable_components{};
 
-	void AddComponents();
+	void CreateComponentVector();
 	//void BuildComponentVector();
 	void ConnectSystemComponents();
 };

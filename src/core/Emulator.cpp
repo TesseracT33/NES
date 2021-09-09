@@ -3,12 +3,12 @@
 
 Emulator::Emulator()
 {
-	AddComponents();
+	CreateComponentVector();
 	ConnectSystemComponents();
 }
 
 
-void Emulator::AddComponents()
+void Emulator::CreateComponentVector()
 {
 	components.push_back(&apu);
 	components.push_back(&bus);
@@ -144,6 +144,8 @@ void Emulator::MainLoop()
 		cycle_counter = 0;
 		while (cycle_counter++ < 29780)
 		{
+			Logging::Update(&cpu, &ppu);
+
 			cpu.Update();
 			apu.Update();
 			ppu.Update();

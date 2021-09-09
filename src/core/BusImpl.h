@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../debug/Logging.h"
+
 #include "APU.h"
 #include "Bus.h"
 #include "Cartridge.h"

@@ -5,23 +5,19 @@
 #include <array>
 #include <functional>
 
+#include "../debug/Toggles.h"
+
 #include "Bus.h"
 #include "Component.h"
 
-//#define DEBUG_LOG
-#define DEBUG_LOG_PATH "F:\\nes_cpu_debug.txt"
-
-//#define DEBUG_COMPARE_NESTEST
-#define NESTEST_LOG_PATH "C:\\Users\\Christoffer\\source\\repos\\games\\nes\\nestest.log"
-
-#define DEBUG (DEBUG_LOG || DEBUG_COMPARE_NESTEST)
+// https://www.masswerk.at/6502/6502_instruction_set.html
+// http://www.6502.org/tutorials/65c02opcodes.html
 
 class CPU final : public Component
 {
 public:
 	#ifdef DEBUG
-		unsigned instruction_counter = 1;
-		unsigned cpu_cycle_counter = 6;
+		unsigned cpu_cycle_counter = 0;
 	#endif
 
 	CPU();
@@ -47,6 +43,8 @@ public:
 	void State(Serialization::BaseFunctor& functor) override;
 
 private:
+	friend class Logging;
+
 	enum class AddrMode
 	{
 		Implicit,
@@ -175,6 +173,19 @@ private:
 	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 
 	void BeginInstruction();
+
+	u8 ReadCycle(u16 addr) { return bus->ReadCycle(addr); }
+	void WriteCycle(u16 addr, u8 data) { bus->WriteCycle(addr, data); }
+
+	void ReadInstrCycle() {
+		curr_instr.read_addr = bus->ReadCycle(curr_instr.addr);
+		std::invoke(curr_instr.instr, this);
+	}
+	void WriteInstrCycle() {
+		std::invoke(curr_instr.instr, this);
+	}
+
+	void InstrCycle() { std::invoke(curr_instr.instr, this); }
 
 	void StepImplicit();
 	void StepAccumulator();
@@ -332,13 +343,13 @@ private:
 	u8 GetStatusRegInstr(instr_t instr) const
 	{
 		bool bit4 = (instr == &CPU::BRK || instr == &CPU::PHP);
-		return flags.N << 7 | flags.V << 6 | 1 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
+		return flags.N << 7 | flags.V << 6 | 0 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
 	// called when an interrupt is being serviced and the status register is pushed to the stack
 	u8 GetStatusRegInterrupt() const
 	{
-		return flags.N << 7 | flags.V << 6 | 1 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
+		return flags.N << 7 | flags.V << 6 | 0 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
 	void SetStatusReg(u8 value)
@@ -352,19 +363,6 @@ private:
 		flags.C = value & 0x01;
 	}
 
-	////// Debugging-related //////
-#ifdef DEBUG_LOG
-	void Log_PrintLine();
-#endif
-
-#ifdef DEBUG_COMPARE_NESTEST
-	void NesTest_Compare();
-
-	struct NesTest
-	{
-		std::string current_line;
-		unsigned line_counter = 0;
-	} nestest;
-#endif
+	u8 GetOpcode() { return bus->Read(PC); } // assists with trace logging
 };
 

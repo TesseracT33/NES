@@ -19,8 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\debug\Logging.h" />
     <ClInclude Include="src\core\mappers\MapperIncludes.h" />
     <ClInclude Include="src\core\mappers\UxROM.h" />
+    <ClInclude Include="src\debug\Toggles.h" />
     <ClInclude Include="src\Snapshottable.h" />
     <ClInclude Include="src\gui\InputBindingsWindow.h" />
     <ClInclude Include="src\Observer.h" />
@@ -48,6 +50,7 @@
     <ClInclude Include="src\Utils.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\debug\Logging.cpp" />
     <ClCompile Include="src\gui\InputBindingsWindow.cpp" />
     <ClCompile Include="src\Serialization.cpp" />
     <ClCompile Include="src\Config.cpp" />

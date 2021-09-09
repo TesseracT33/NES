@@ -9,6 +9,8 @@
 #include "../Observer.h"
 #include "../Types.h"
 
+#include "../debug/Toggles.h"
+
 #include "Bus.h"
 #include "Component.h"
 #include "CPU.h"
@@ -47,6 +49,8 @@ public:
 	void SetDefaultConfig() override;
 
 private:
+	friend class Logging;
+
 	static const unsigned resolution_x = 256;
 	static const unsigned resolution_y = 240;
 	static const unsigned colour_channels = 3;

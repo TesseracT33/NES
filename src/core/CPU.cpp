@@ -17,6 +17,7 @@ void CPU::BuildInstrTypeTable()
 		// Note: some unofficial instructions (ALR, ARR, RLA, RRA) are the combination of two instructions, one of which is a read-modify-write instruction. 
 		// However, the addressing mode is immediate in these cases, meaning that the result of the r-m-w instruction won't be stored anywhere.
 		// The other instruction is a read instruction. Thus, such unofficial instructions can be set to be read instructions.
+		// TODO: are these instructions actually the correct length (timing)?
 		if (instr == &CPU::ADC || instr == &CPU::AND || instr == &CPU::BIT || instr == &CPU::CMP ||
 			instr == &CPU::CPX || instr == &CPU::CPY || instr == &CPU::EOR || instr == &CPU::LDA || 
 			instr == &CPU::LDX || instr == &CPU::LDY || instr == &CPU::ORA || instr == &CPU::SBC ||
@@ -164,18 +165,6 @@ void CPU::BeginInstruction()
 	curr_instr.instr_type = instr_type_table[curr_instr.opcode];
 	curr_instr.instr_executing = true;
 	curr_instr.cycle = 1;
-
-#ifdef DEBUG_LOG
-	Log_PrintLine();
-#endif
-
-#ifdef DEBUG_COMPARE_NESTEST
-	NesTest_Compare();
-#endif
-
-#ifdef DEBUG
-	instruction_counter++;
-#endif
 }
 
 
@@ -1341,74 +1330,3 @@ void CPU::State(Serialization::BaseFunctor& functor)
 	functor.fun(&PC, sizeof(u16));
 	functor.fun(&flags, sizeof(Flags));
 }
-
-
-#ifdef DEBUG_LOG
-void CPU::Log_PrintLine()
-{
-	static std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
-	char buf[100]{};
-	sprintf(buf, "#cycle %i \t PC: $%04X \t OP: $%02X \t S: $%02X  A: $%02X  X: $%02X  Y: $%02X  P: $%02X",
-		cpu_cycle_counter, (int)(PC - 1), (int)curr_instr.opcode, (int)S, (int)A, (int)X, (int)Y, (int)GetStatusRegInterrupt());
-	ofs << buf << std::endl;
-}
-#endif
-
-
-#ifdef DEBUG_COMPARE_NESTEST
-// NOTE: in nestest.log, I replaced all occurances of "SP:" with "S:" to make testing easier. Also, the last, empty line is removed.
-void CPU::NesTest_Compare()
-{
-	// Get the next line in nestest.log
-	static std::ifstream ifs{ NESTEST_LOG_PATH, std::ifstream::in };
-	if (ifs.eof())
-	{
-		wxMessageBox("NesTest comparison passed. Stopping the cpu.");
-		this->stopped = true;
-		return;
-	}
-	std::getline(ifs, nestest.current_line);
-	nestest.line_counter++;
-
-	// Test PC
-	std::string nestest_pc_str = nestest.current_line.substr(0, 4);
-	u16 nestest_pc = std::stoi(nestest_pc_str, nullptr, 16);
-	if (PC - 1 != nestest_pc)
-	{
-		wxMessageBox(wxString::Format("Incorrect PC at line %i; expected $%04X, got $%04X", nestest.line_counter, (int)nestest_pc, (int)(PC - 1)));
-		return;
-	}
-
-	// Test the cycle counter
-	size_t first_char_pos = nestest.current_line.find("CYC:") + 4;
-	std::string nestest_cyc_str = nestest.current_line.substr(first_char_pos);
-	unsigned nestest_cycles = std::stoi(nestest_cyc_str);
-	if (cpu_cycle_counter != nestest_cycles)
-	{
-		wxMessageBox(wxString::Format("Incorrect cycle count at line %i; expected %i, got %i", nestest.line_counter, nestest_cycles, cpu_cycle_counter));
-		return;
-	}
-
-	// Test an 8-bit register.
-	// reg_str_repr == "A", "X" etc.   // reg_val == value of that register in our emu
-	auto TestByteReg = [&](std::string reg_str_repr, u8 reg_val)
-	{
-		size_t first_char_pos = nestest.current_line.find(reg_str_repr + ":") + 2;
-		std::string nestest_reg_str = nestest.current_line.substr(first_char_pos, 2);
-		u8 nestest_reg = std::stoi(nestest_reg_str, nullptr, 16);
-		if (reg_val != nestest_reg)
-		{
-			wxMessageBox(wxString::Format("Incorrect %s at line %i; expected $%02X, got $%02X", reg_str_repr, nestest.line_counter, (int)nestest_reg, (int)reg_val));
-			return false;
-		}
-		return true;
-	};
-
-	// Test A, X, Y, S, P
-	TestByteReg("A", A);
-	TestByteReg("X", X);
-	TestByteReg("Y", Y);
-	TestByteReg("S", S);
-	TestByteReg("P", GetStatusRegInterrupt());
-}
-#endif
