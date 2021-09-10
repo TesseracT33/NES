@@ -5,7 +5,9 @@
 
 #include "Toggles.h"
 
-// Could have been a namespace since all members are static, but then I can't make it a friend of e.g. CPU
+// This class is used either for making a trace log of the emulator as it goes along (used with DEBUG_LOG),
+// or for, at each cpu instruction step, comparing the emulator state to that of the emulator Mesen (used with DEBUG_COMPARE_MESEN).
+// Of course, this relies on a Mesen trace log, whose path is given in Toggles.h
 class Logging
 {
 public:
@@ -20,13 +22,7 @@ private:
 #endif
 
 #ifdef DEBUG_COMPARE_MESEN
-	static void CompareMesenLog(CPU* cpu, PPU* ppu);
-
-	static struct Mesen
-	{
-		std::string current_line;
-		unsigned line_counter = 0;
-		const unsigned cpu_cycle_offset = 8;
-	} mesen;
+	static void CompareMesenLogLine(CPU* cpu, PPU* ppu);
+	static const unsigned mesen_cpu_cycle_offset = 8;
 #endif
 };
