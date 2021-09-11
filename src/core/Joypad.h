@@ -48,6 +48,8 @@ private:
 
 	bool strobe = 0;
 	bool strobe_seq_completed = false;
+	
+	int button_return_index[2] = { 0, 0 }; // The index of the button to be returned on the next read to this register, for each player
 
 	SDL_GameController* controller[2];
 	SDL_Joystick* joystick[2];

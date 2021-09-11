@@ -27,7 +27,7 @@ void CPU::Reset()
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
 	oam_dma_transfer_pending = false;
-	odd_cpu_cycle = true; // Not defined as false, for everytime that ReadCycle/WriteCycle is called, odd_cpu_cycle is inverted before doing the read/write.
+	odd_cpu_cycle = false; // Not defined as false, for everytime that ReadCycle/WriteCycle is called, odd_cpu_cycle is inverted before doing the read/write.
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
@@ -87,8 +87,7 @@ void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr)
 
 void CPU::PerformOAMDMATransfer()
 {
-	if (odd_cpu_cycle)
-		WaitCycle();
+	WaitCycle(odd_cpu_cycle ? 2 : 1);
 
 	// 512 cycles
 	for (u16 i = 0; i < 0x100; i++)
@@ -640,10 +639,10 @@ void CPU::JMP()
 }
 
 
-// Push the program counter on to stack the and set the program counter to the target memory address.
+// Push the program counter (minus one) on to stack the and set the program counter to the target memory address.
 void CPU::JSR()
 {
-	PushWordToStack(PC);
+	PushWordToStack(PC - 1);
 	PC = curr_instr.addr;
 	WaitCycle();
 }
@@ -764,8 +763,9 @@ void CPU::ROL()
 {
 	if (curr_instr.addr_mode == AddrMode::Accumulator)
 	{
-		flags.C = A & 0x80;
+		bool new_carry = A & 0x80;
 		A = A << 1 | flags.C;
+		flags.C = new_carry;
 		flags.Z = A == 0;
 		flags.N = A & 0x80;
 	}
@@ -773,10 +773,11 @@ void CPU::ROL()
 	{
 		u8 M = ReadCycle(curr_instr.addr);
 		WriteCycle(curr_instr.addr, M);
+		bool new_carry = M & 0x80;
 		u8 new_M = M << 1 | flags.C;
 		WriteCycle(curr_instr.addr, new_M);
-		flags.C = M & 0x80;
-		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.C = new_carry;
+		flags.Z = new_M == 0;
 		flags.N = new_M & 0x80;
 	}
 }
@@ -787,19 +788,21 @@ void CPU::ROR()
 {
 	if (curr_instr.addr_mode == AddrMode::Accumulator)
 	{
-		flags.C = A & 1;
+		bool new_carry = A & 1;
 		A = A >> 1 | flags.C << 7;
-		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.C = new_carry;
+		flags.Z = A == 0;
 		flags.N = A & 0x80;
 	}
 	else
 	{
 		u8 M = ReadCycle(curr_instr.addr);
 		WriteCycle(curr_instr.addr, M);
+		bool new_carry = M & 1;
 		u8 new_M = M >> 1 | flags.C << 7;
 		WriteCycle(curr_instr.addr, new_M);
-		flags.C = M & 1;
-		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.C = new_carry;
+		flags.Z = new_M == 0;
 		flags.N = new_M & 0x80;
 	}
 }
@@ -814,10 +817,10 @@ void CPU::RTI()
 }
 
 
-// Return from subroutine; pull the program counter from the stack.
+// Return from subroutine; pull the program counter (minus one) from the stack.
 void CPU::RTS()
 {
-	PC = PullWordFromStack();
+	PC = PullWordFromStack() + 1;
 	WaitCycle(2);
 }
 
@@ -1050,9 +1053,10 @@ void CPU::RLA()
 	// ROL
 	u8 M = ReadCycle(curr_instr.addr);
 	WriteCycle(curr_instr.addr, M);
+	bool new_carry = M & 0x80;
 	u8 new_M = M << 1 | flags.C;
 	WriteCycle(curr_instr.addr, new_M);
-	flags.C = M & 0x80;
+	flags.C = new_carry;
 	// AND
 	A &= new_M;
 	flags.Z = A == 0;

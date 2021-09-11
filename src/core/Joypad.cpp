@@ -35,14 +35,12 @@ u8 Joypad::ReadRegister(u16 addr)
 	{
 	case 0x4016: player = Player::ONE; break;
 	case 0x4017: player = Player::TWO; break;
-	default:; // todo: throw exception
+	default: break; // todo: throw exception
 	}
-
-	static int button_return_index[2] = { 0, 0 };
 
 	u8 ret;
 	if (strobe == 1) // Case 3
-		ret = buttons_currently_held[Button::A][player] | 0x40;
+		ret = buttons_currently_held[Button::A][player];
 	else if (strobe_seq_completed) // Case 4
 	{
 		ret = button_return_index[player] < 8 ?
@@ -52,7 +50,6 @@ u8 Joypad::ReadRegister(u16 addr)
 	else // Case 1, 2
 	{
 		ret = 0;
-		button_return_index[0] = button_return_index[1] = 0;
 	}
 
 	// Every returned value is ANDed with $40, which is the upper byte of the address ($4016 or $4017)
@@ -74,7 +71,10 @@ void Joypad::WriteRegister(u16 addr, u8 data)
 	else if (strobe_seq_completed && strobe == 0)
 		return;
 	else
+	{
 		strobe_seq_completed = false;
+		button_return_index[0] = button_return_index[1] = 0;
+	}
 }
 
 

@@ -321,23 +321,22 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	// Writes to the following registers are ignored if earlier than ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR. This also means that the PPUSCROLL/PPUADDR latch will not toggle
 	// The other registers work immediately: PPUSTATUS, OAMADDR, OAMDATA ($2004), PPUDATA, and OAMDMA ($4014).
 	
-	value_last_written_to_ppu_reg = data;
-	
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL: // $2000
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUCTRL = data;
+		PPUCTRL = value_last_written_to_ppu_reg = data;
 		CheckNMIInterrupt();
 		reg.t = reg.t & ~(3 << 10) | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
 	case Bus::Addr::PPUMASK: // $2001
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUMASK = data;
+		PPUMASK = value_last_written_to_ppu_reg = data;
 		return;
 
 	case Bus::Addr::PPUSTATUS: // $2002
+		value_last_written_to_ppu_reg = data;
 		return; // not writable, except that bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
 
 	case Bus::Addr::OAMADDR: // $2003
@@ -358,7 +357,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUSCROLL: // $2005
 		//if (!cpu->all_ppu_regs_writable) return;
-
+		value_last_written_to_ppu_reg = data;
 		if (reg.w == 0) // Update x-scroll registers
 		{
 			reg.t = reg.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
@@ -374,7 +373,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUADDR: // $2006
 		//if (!cpu->all_ppu_regs_writable) return;
-
+		value_last_written_to_ppu_reg = data;
 		if (reg.w == 0)
 		{
 			reg.t = reg.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
@@ -391,6 +390,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUDATA: // $2007
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
+		value_last_written_to_ppu_reg = data; // Todo: not 100 % if this counts as a "ppu register"
 		if (this->IsInVblank() || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v, data);
