@@ -44,7 +44,9 @@ private:
 		const std::string& sub_str, int emu_value, size_t value_size);
 
 #ifdef DEBUG_LOG
+	static std::ofstream log_ofs;
 	static void LogLine();
+	static void LogNMILine();
 #endif
 
 #ifdef DEBUG_COMPARE_MESEN

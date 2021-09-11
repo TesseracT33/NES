@@ -1,6 +1,11 @@
 #include "Logging.h"
 
 
+#ifdef DEBUG_LOG
+std::ofstream Logging::log_ofs{ DEBUG_LOG_PATH, std::ofstream::out };
+#endif
+
+
 Logging::APUState Logging::apu_state{};
 Logging::CPUState Logging::cpu_state{};
 Logging::PPUState Logging::ppu_state{};
@@ -75,12 +80,23 @@ bool Logging::TestString(const std::string& log_line, unsigned line_num,
 #ifdef DEBUG_LOG
 void Logging::LogLine()
 {
-	static std::ofstream ofs{ DEBUG_LOG_PATH, std::ofstream::out };
+	if (cpu_state.NMI)
+	{
+		log_ofs << "<<< NMI handled >>>" << std::endl;
+		return;
+	}
+
 	char buf[100]{};
 	sprintf(buf, "#cycle %u \t PC:%04X \t OP:%02X \t SP:%02X  A:%02X  X:%02X  Y:%02X  P:%02X",
 		cpu_state.cpu_cycle_counter, (int)cpu_state.PC, (int)cpu_state.opcode, (int)cpu_state.SP, 
 		(int)cpu_state.A, (int)cpu_state.X, (int)cpu_state.Y, (int)cpu_state.P);
-	ofs << buf << std::endl;
+	log_ofs << buf << std::endl;
+}
+
+
+void Logging::LogNMILine()
+{
+	log_ofs << "NMI handled" << std::endl;
 }
 #endif
 
