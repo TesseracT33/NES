@@ -33,9 +33,12 @@ u8 BusImpl::Read(u16 addr)
 	{
 		switch (addr)
 		{
-		case Bus::Addr::JOY1: 
-		case Bus::Addr::JOY2: return joypad->ReadReg(addr);
-		default: return memory.apu_io_regs[addr - 0x4000];
+		case Bus::Addr::OAMADDR: // $4014
+			return ppu->ReadRegister(addr);
+		case Bus::Addr::JOY1: // $4016
+		case Bus::Addr::JOY2: // $4017
+			return joypad->ReadRegister(addr);
+		default: return apu->ReadRegister(addr);
 		}
 	}
 
@@ -73,9 +76,15 @@ void BusImpl::Write(u16 addr, u8 data)
 	{
 		switch (addr)
 		{
-		case Bus::Addr::JOY1: 
-		case Bus::Addr::JOY2: joypad->WriteReg(addr, data); break;
-		default: memory.apu_io_regs[addr - 0x4000] = data;
+		case Bus::Addr::OAMDMA: // $4014
+			ppu->WriteRegister(addr, data);
+			break;
+		case Bus::Addr::JOY1: // $4016
+		case Bus::Addr::JOY2: // $4017
+			joypad->WriteRegister(addr, data);
+			break;
+		default: apu->WriteRegister(addr, data);
+			break;
 		}
 	}
 

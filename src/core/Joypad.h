@@ -16,8 +16,8 @@ public:
 	enum InputEvent { RELEASE = 0, PRESS = 1 };
 	enum Player { ONE = 0, TWO = 1 };
 
-	u8 ReadReg(u16 addr);
-	void WriteReg(u16 addr, u8 data);
+	u8 ReadRegister(u16 addr);
+	void WriteRegister(u16 addr, u8 data);
 
 	const char* GetCurrentBindingString(Button button, Player player);
 	void OpenGameControllers();

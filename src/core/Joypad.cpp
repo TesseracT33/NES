@@ -17,7 +17,7 @@ void Joypad::Reset()
 
 
 // Refers to the registers at addresses $4016 and $4017
-u8 Joypad::ReadReg(u16 addr)
+u8 Joypad::ReadRegister(u16 addr)
 {
 	/* Behaviour when reading either $4016 or $4017, dependent on the recent history of what has been written to the LSB of $4016.
 	   '...' represents arbitrary bits written prior, and '*' is any number of duplication of the bit written before it.
@@ -62,7 +62,7 @@ u8 Joypad::ReadReg(u16 addr)
 }
 
 
-void Joypad::WriteReg(u16 addr, u8 data)
+void Joypad::WriteRegister(u16 addr, u8 data)
 {
 	bool prev_strobe = strobe;
 	strobe = data & 1;
