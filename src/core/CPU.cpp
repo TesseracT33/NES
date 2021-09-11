@@ -27,7 +27,7 @@ void CPU::Reset()
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
 	oam_dma_transfer_pending = false;
-	odd_cpu_cycle = false; // Not defined as false, for everytime that ReadCycle/WriteCycle is called, odd_cpu_cycle is inverted before doing the read/write.
+	odd_cpu_cycle = false; 
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
@@ -102,15 +102,15 @@ void CPU::PerformOAMDMATransfer()
 
 void CPU::ExecuteInstruction()
 {
+#ifdef DEBUG
+	LogState(Action::Instruction);
+#endif
+
 	curr_instr.opcode = ReadCycle(PC++);
 	curr_instr.addr_mode = GetAddressingModeFromOpcode(curr_instr.opcode);
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
 	curr_instr.page_crossing_possible = curr_instr.page_crossed = false;
-
-#ifdef DEBUG
-	LogState(Action::Instruction);
-#endif
 
 	std::invoke(curr_instr.addr_mode_fun, this);
 }
@@ -1181,6 +1181,6 @@ void CPU::State(Serialization::BaseFunctor& functor)
 void CPU::LogState(Action action)
 {
 	bool nmi = action == Action::NMI;
-	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), curr_instr.opcode, SP, PC - 1, bus->total_cpu_cycle_counter - 1, nmi);
+	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), bus->Read(PC), SP, PC, bus->total_cpu_cycle_counter, nmi);
 	bus->update_logging_on_next_cycle = true;
 }

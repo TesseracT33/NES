@@ -62,7 +62,7 @@ void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
 	odd_frame = false;
-	scanline_cycle_counter = 27; // according to the Mesen debugger
+	scanline_cycle_counter = 27; // Todo: why 27? No idea, that's where Mesen starts (as is evident in its debugger)
 	current_scanline = 0;
 }
 
@@ -101,7 +101,6 @@ void PPU::Update()
 		if (scanline_cycle_counter == 0)
 		{
 			// idle cycle on every scanline
-			PrepareForNewScanline();
 			scanline_cycle_counter = 1;
 			continue;
 		}
@@ -264,6 +263,8 @@ void PPU::Update()
 		scanline_cycle_counter = (scanline_cycle_counter + 1) % 341;
 		if (scanline_cycle_counter == 340 && current_scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
 			scanline_cycle_counter = 0;
+		if (scanline_cycle_counter == 0)
+			PrepareForNewScanline();
 	}
 }
 
@@ -892,5 +893,5 @@ void PPU::SetDefaultConfig()
 
 void PPU::LogState()
 {
-	Logging::ReportPpuState();
+	Logging::ReportPpuState(current_scanline, scanline_cycle_counter);
 }

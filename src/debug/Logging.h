@@ -18,10 +18,15 @@ class Logging
 public:
 	static void ReportApuState();
 	static void ReportCpuState(u8 A, u8 X, u8 Y, u8 P, u8 opcode, u16 SP, u16 PC, unsigned cpu_cycle_counter, bool NMI);
-	static void ReportPpuState();
+	static void ReportPpuState(unsigned scanline, unsigned ppu_cycle_counter);
 	static void Update();
 
 private:
+	enum class NumberFormat
+	{
+		uint8_hex, uint16_hex, uint32_dec, uint64_dec
+	};
+
 	static struct APUState
 	{
 		// todo
@@ -37,11 +42,12 @@ private:
 
 	static struct PPUState
 	{
-		// todo
+		unsigned scanline;
+		unsigned ppu_cycle_counter;
 	} ppu_state;
 
 	static bool TestString(const std::string& log_line, unsigned line_num,
-		const std::string& sub_str, int emu_value, size_t value_size);
+		const std::string& sub_str, int emu_value, NumberFormat num_format);
 
 #ifdef DEBUG_LOG
 	static std::ofstream log_ofs;
@@ -51,6 +57,5 @@ private:
 
 #ifdef DEBUG_COMPARE_MESEN
 	static void CompareMesenLogLine();
-	static const unsigned mesen_cpu_cycle_offset = 8;
 #endif
 };

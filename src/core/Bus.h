@@ -62,7 +62,7 @@ public:
 	unsigned cpu_cycle_counter;
 
 #ifdef DEBUG
-	unsigned total_cpu_cycle_counter = 0;
+	unsigned total_cpu_cycle_counter = 8; // Todo: why 8? No idea, that's where Mesen starts (as is evident in its debugger)
 	bool update_logging_on_next_cycle = false;
 #endif
 };

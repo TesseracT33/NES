@@ -31,9 +31,10 @@ void Logging::ReportCpuState(u8 A, u8 X, u8 Y, u8 P, u8 opcode, u16 SP, u16 PC, 
 }
 
 
-void Logging::ReportPpuState()
+void Logging::ReportPpuState(unsigned scanline, unsigned ppu_cycle_counter)
 {
-	// todo
+	Logging::ppu_state.scanline = scanline;
+	Logging::ppu_state.ppu_cycle_counter = ppu_cycle_counter;
 }
 
 
@@ -50,25 +51,37 @@ void Logging::Update()
 
 
 // Test the value of 'sub_str' as it is found on a Mesen trace log line 'log_line'.
-// 'emu_value' is the corresponding value in our emu (should be either uint8 or uint16), 
-// and 'value_size' is the data size of this value (should be either 1 or 2). 
+// 'emu_value' is the corresponding value in our emu (should be either uint8 or uint16)
 bool Logging::TestString(const std::string& log_line, unsigned line_num, 
-	const std::string& substr, int emu_value, size_t value_size)
+	const std::string& substr, int emu_value, NumberFormat num_format)
 {
 	// Find the corresponding numerical value of 'sub_str', wherever it occurs on the line (e.g. A:FF)
-	size_t first_char_pos_of_val = log_line.find(substr + ":") + substr.length() + 1;
-	std::string val_str = log_line.substr(first_char_pos_of_val, 2 * value_size);
-	int val = std::stoi(val_str, nullptr, 16);
+	size_t start_pos_of_val = log_line.find(substr + ":") + substr.length() + 1;
+	size_t end_pos_of_val = log_line.find(" ", start_pos_of_val);
+	std::string val_str;
+	if (end_pos_of_val == std::string::npos)
+		val_str = log_line.substr(start_pos_of_val);
+	else
+		val_str = log_line.substr(start_pos_of_val, end_pos_of_val - start_pos_of_val);
+
+	int base;
+	switch (num_format)
+	{
+	case NumberFormat::uint8_hex: case NumberFormat::uint16_hex: base = 16; break;
+	case NumberFormat::uint32_dec: case NumberFormat::uint64_dec: base = 10; break;
+	}
+	int val = std::stoi(val_str, nullptr, base);
 
 	// Compare the Mesen value against our emu value
 	if (val != emu_value)
 	{
 		const char* msg{};
-		switch (value_size)
+		switch (num_format)
 		{
-		case 1: msg = "Incorrect %s at line %u; expected $%02X, got $%02X"; break;
-		case 2: msg = "Incorrect %s at line %u; expected $%04X, got $%04X"; break;
-		default: throw std::runtime_error("Incorrectly sized argument 'value_size' given to Logging::TestString (expected 1 or 2, got " + value_size); break;
+		case NumberFormat::uint8_hex : msg = "Incorrect %s at line %u; expected $%02X, got $%02X"; break;
+		case NumberFormat::uint16_hex: msg = "Incorrect %s at line %u; expected $%04X, got $%04X"; break;
+		case NumberFormat::uint32_dec: msg = "Incorrect %s at line %u; expected %u, got %u"; break;
+		case NumberFormat::uint64_dec: msg = "Incorrect %s at line %u; expected %llu, got %llu"; break;
 		}
 		wxMessageBox(wxString::Format(msg, substr, line_num, val, emu_value));
 		return false;
@@ -87,9 +100,9 @@ void Logging::LogLine()
 	}
 
 	char buf[100]{};
-	sprintf(buf, "#cycle %u \t PC:%04X \t OP:%02X \t SP:%02X  A:%02X  X:%02X  Y:%02X  P:%02X",
+	sprintf(buf, "CPU cycle %u \t PC:%04X \t OP:%02X \t SP:%02X  A:%02X  X:%02X  Y:%02X  P:%02X  SL:%u  PPU cycle %u",
 		cpu_state.cpu_cycle_counter, (int)cpu_state.PC, (int)cpu_state.opcode, (int)cpu_state.SP, 
-		(int)cpu_state.A, (int)cpu_state.X, (int)cpu_state.Y, (int)cpu_state.P);
+		(int)cpu_state.A, (int)cpu_state.X, (int)cpu_state.Y, (int)cpu_state.P, ppu_state.scanline, ppu_state.ppu_cycle_counter);
 	log_ofs << buf << std::endl;
 }
 
@@ -121,7 +134,7 @@ void Logging::CompareMesenLogLine()
 	line_counter++;
 
 	// Some lines are of a different form: [NMI - Cycle: 206085]
-	// Test that an NMI occured here
+	// Check whether an NMI occured here
 	if (current_line.find("NMI") != std::string::npos)
 	{
 		if (!cpu_state.NMI)
@@ -141,20 +154,18 @@ void Logging::CompareMesenLogLine()
 	}
 
 	// Test cpu cycle
-	size_t first_char_pos = current_line.find("CPU Cycle:") + 10;
-	std::string mesen_cycle_str = current_line.substr(first_char_pos);
-	unsigned mesen_cycle = std::stol(mesen_cycle_str);
-	if (cpu_state.cpu_cycle_counter + mesen_cpu_cycle_offset != mesen_cycle)
-	{
-		wxMessageBox(wxString::Format("Incorrect cycle count at line %u; expected %u, got %u", line_counter, mesen_cycle, cpu_state.cpu_cycle_counter + mesen_cpu_cycle_offset));
-		return;
-	}
+	TestString(current_line, line_counter, "CPU Cycle", cpu_state.cpu_cycle_counter, NumberFormat::uint32_dec);
 
-	// Test registers
-	TestString(current_line, line_counter, "A", cpu_state.A, sizeof u8);
-	TestString(current_line, line_counter, "X", cpu_state.X, sizeof u8);
-	TestString(current_line, line_counter, "Y", cpu_state.Y, sizeof u8);
-	TestString(current_line, line_counter, "SP", cpu_state.SP, sizeof u8);
-	TestString(current_line, line_counter, "P", cpu_state.P, sizeof u8);
-}
+	// Test cpu registers
+	TestString(current_line, line_counter, "A", cpu_state.A, NumberFormat::uint8_hex);
+	TestString(current_line, line_counter, "X", cpu_state.X, NumberFormat::uint8_hex);
+	TestString(current_line, line_counter, "Y", cpu_state.Y, NumberFormat::uint8_hex);
+	TestString(current_line, line_counter, "SP", cpu_state.SP, NumberFormat::uint8_hex);
+	TestString(current_line, line_counter, "P", cpu_state.P, NumberFormat::uint8_hex);
+
+	// Test ppu cycle counter and scanline
+#ifdef DEBUG_COMPARE_MESEN_PPU
+	TestString(current_line, line_counter, "CYC", ppu_state.ppu_cycle_counter, NumberFormat::uint32_dec);
+	TestString(current_line, line_counter, "SL", ppu_state.scanline, NumberFormat::uint32_dec);
+#endif
 #endif
