@@ -2,6 +2,8 @@
 
 #include "../Types.h"
 
+#include "../debug/DebugOptions.h"
+
 class Bus
 {
 public:
@@ -56,5 +58,12 @@ public:
 
 	// Simply advance the state machine
 	virtual void WaitCycle(unsigned cycles = 1) = 0;
+
+	unsigned cpu_cycle_counter;
+
+#ifdef DEBUG
+	unsigned total_cpu_cycle_counter = 0;
+	bool update_logging_on_next_cycle = false;
+#endif
 };
 

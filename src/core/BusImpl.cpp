@@ -95,11 +95,12 @@ void BusImpl::Write(u16 addr, u8 data)
 
 u8 BusImpl::ReadCycle(u16 addr)
 {
-	u8 val_ret = Read(addr);
+	u8 val = Read(addr);
 	apu->Update();
 	ppu->Update();
-	cpu->IncrementCycleCounter();
-	return val_ret;
+	UpdateLogging();
+	cpu_cycle_counter++;
+	return val;
 }
 
 
@@ -108,7 +109,8 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 	Write(addr, data);
 	apu->Update();
 	ppu->Update();
-	cpu->IncrementCycleCounter();
+	UpdateLogging();
+	cpu_cycle_counter++;
 }
 
 
@@ -119,11 +121,25 @@ void BusImpl::WaitCycle(unsigned cycles)
 		apu->Update();
 		ppu->Update();
 	}
-	cpu->IncrementCycleCounter(cycles);
+	UpdateLogging(cycles);
+	cpu_cycle_counter += cycles;
 }
 
 
 void BusImpl::State(Serialization::BaseFunctor& functor)
 {
 
+}
+
+
+void BusImpl::UpdateLogging(unsigned cycles)
+{
+#ifdef DEBUG
+	if (update_logging_on_next_cycle)
+	{
+		Logging::Update();
+		update_logging_on_next_cycle = false;
+	}
+	total_cpu_cycle_counter += cycles;
+#endif DEBUG
 }

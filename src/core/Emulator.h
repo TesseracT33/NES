@@ -11,8 +11,6 @@
 #include "../Observer.h"
 #include "../Snapshottable.h"
 
-#include "../debug/Logging.h"
-
 #include "APU.h"
 #include "BusImpl.h"
 #include "Cartridge.h"

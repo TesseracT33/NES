@@ -5,7 +5,7 @@
 #include <array>
 #include <functional>
 
-#include "../debug/Toggles.h"
+#include "../debug/Logging.h"
 
 #include "Bus.h"
 #include "Component.h"
@@ -16,29 +16,21 @@
 class CPU final : public Component
 {
 public:
-	#ifdef DEBUG
-		unsigned cpu_cycle_counter = 0;
-	#endif
-
-	CPU();
-
 	Bus* bus;
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	bool all_ppu_regs_writable = false;
 
-	void Reset();
 	void Power();
-	void Update();
+	void Reset();
+	void Run();
 
 	void SetIRQLow();
 	void SetIRQHigh();
 	void SetNMILow();
 	void SetNMIHigh();
 
-	void IncrementCycleCounter(unsigned cycles = 0);
 	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr);
-	void UpdateOAMDMATransfer();
 
 	void State(Serialization::BaseFunctor& functor) override;
 
@@ -47,7 +39,7 @@ private:
 
 	enum class AddrMode
 	{
-		Implicit,
+		Implied,
 		Accumulator,
 		Immediate,
 		Zero_page,
@@ -62,33 +54,21 @@ private:
 		Indirect_indexed
 	};
 
-	enum InstrType
-	{
-		Implicit,
-		Read,
-		Write,
-		Read_modify_write
-	};
-
 	typedef void (CPU::* instr_t)();
 	typedef instr_t addr_mode_fun_t;
 
 	struct InstrDetails // properties of the instruction currently being executed
 	{
-		bool instr_executing;
 		u8 opcode;
 		instr_t instr;
 		AddrMode addr_mode;
 		addr_mode_fun_t addr_mode_fun;
-		InstrType instr_type;
-		int cycle;
-		bool addition_overflow;
 
-		u8 addr_lo, addr_hi;
+		bool page_crossing_possible;
+		bool page_crossed;
+
 		u8 read_addr;
 		u16 addr;
-
-		u8 new_target;
 	} curr_instr;
 
 	static const size_t num_instr = 0x100;
@@ -135,13 +115,13 @@ private:
 
 	const addr_mode_fun_t addr_mode_fun_table[13] =
 	{
-		&CPU::StepImplicit, &CPU::StepAccumulator, &CPU::StepImmediate, &CPU::StepZeroPage, &CPU::StepZeroPageX,
-		&CPU::StepZeroPageY, &CPU::StepAbsolute, &CPU::StepAbsoluteX, &CPU::StepAbsoluteY, &CPU::StepRelative,
-		&CPU::StepIndirect, &CPU::StepIndexedIndirect, &CPU::StepIndirectIndexed
+		&CPU::ExecuteImplied, &CPU::ExecuteAccumulator, &CPU::ExecuteImmediate, &CPU::ExecuteZeroPage, &CPU::ExecuteZeroPageX,
+		&CPU::ExecuteZeroPageY, &CPU::ExecuteAbsolute, &CPU::ExecuteAbsoluteX, &CPU::ExecuteAbsoluteY, &CPU::ExecuteRelative,
+		&CPU::ExecuteIndirect, &CPU::ExecuteIndexedIndirect, &CPU::ExecuteIndirectIndexed
 	};
 
 	u8 A, X, Y; // registers
-	u8 S; // stack pointer
+	u8 SP; // stack pointer
 	u16 PC; // program counter
 
 	struct Flags { bool N, V, B, D, I, Z, C; } flags;
@@ -157,55 +137,36 @@ private:
 	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down
 
 	// OAMDMA-related
-	bool oam_dma_transfer_active;
+	bool oam_dma_transfer_pending;
 	u8* oam_start_ptr;
 	u16 oam_dma_base_addr;
-	unsigned oam_dma_bytes_copied;
+	void PerformOAMDMATransfer();
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	unsigned cpu_clocks_since_reset = 0;
 	unsigned cpu_clocks_until_all_ppu_regs_writable = 29658;
 
-	// Maps opcodes to instruction types (Read, write, etc.). 
-	// Built in the ctor of CPU. Making it constexpr did not work smoothly
-	std::array<InstrType, num_instr> instr_type_table;
-
 	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 
-	void BeginInstruction();
+	void ExecuteInstruction();
 
-	u8 ReadCycle(u16 addr) { return bus->ReadCycle(addr); }
-	void WriteCycle(u16 addr, u8 data) { bus->WriteCycle(addr, data); }
-
-	void ReadInstrCycle() {
-		curr_instr.read_addr = bus->ReadCycle(curr_instr.addr);
-		std::invoke(curr_instr.instr, this);
-	}
-	void WriteInstrCycle() {
-		std::invoke(curr_instr.instr, this);
-	}
-
-	void InstrCycle() { std::invoke(curr_instr.instr, this); }
-
-	void StepImplicit();
-	void StepAccumulator();
-	void StepImmediate();
-	void StepZeroPage();
-	void StepZeroPageX() { StepZeroPageIndexed(X); }
-	void StepZeroPageY() { StepZeroPageIndexed(Y); }
-	void StepZeroPageIndexed(u8& index_reg);
-	void StepAbsolute();
-	void StepAbsoluteX() { StepAbsoluteIndexed(X); }
-	void StepAbsoluteY() { StepAbsoluteIndexed(Y); }
-	void StepAbsoluteIndexed(u8& index_reg);
-	void StepRelative();
-	void StepIndirect();
-	void StepIndexedIndirect();
-	void StepIndirectIndexed();
+	void ExecuteImplied();
+	void ExecuteAccumulator();
+	void ExecuteImmediate();
+	void ExecuteZeroPage();
+	void ExecuteZeroPageX() { ExecuteZeroPageIndexed(X); }
+	void ExecuteZeroPageY() { ExecuteZeroPageIndexed(Y); }
+	void ExecuteZeroPageIndexed(u8& index_reg);
+	void ExecuteAbsolute();
+	void ExecuteAbsoluteX() { ExecuteAbsoluteIndexed(X); }
+	void ExecuteAbsoluteY() { ExecuteAbsoluteIndexed(Y); }
+	void ExecuteAbsoluteIndexed(u8& index_reg);
+	void ExecuteRelative();
+	void ExecuteIndirect();
+	void ExecuteIndexedIndirect();
+	void ExecuteIndirectIndexed();
 
 	void ServiceInterrupt(InterruptType asserted_interrupt_type);
-
-	void BuildInstrTypeTable();
 
 	// official instructions
 	void ADC();
@@ -287,26 +248,45 @@ private:
 	void XAA();
 
 	// Helper functions. Defined in the header to enable inlining
+	u8 ReadCycle(u16 addr)
+	{
+		odd_cpu_cycle = !odd_cpu_cycle;
+		return bus->ReadCycle(addr);
+	}
+
+	void WriteCycle(u16 addr, u8 data)
+	{
+		odd_cpu_cycle = !odd_cpu_cycle;
+		bus->WriteCycle(addr, data);
+	}
+
+	void WaitCycle(unsigned cycles = 1)
+	{
+		if (cycles & 1)
+			odd_cpu_cycle = !odd_cpu_cycle;
+		bus->WaitCycle(cycles);
+	}
+
 	void PushByteToStack(u8 byte)
 	{
-		bus->Write(0x0100 | S--, byte);
+		WriteCycle(0x0100 | SP--, byte);
 	}
 
 	void PushWordToStack(u16 word)
 	{
-		bus->Write(0x0100 | S--, word >> 8);
-		bus->Write(0x0100 | S--, word & 0xFF);
+		WriteCycle(0x0100 | SP--, word >> 8);
+		WriteCycle(0x0100 | SP--, word & 0xFF);
 	}
 
 	u8 PullByteFromStack()
 	{
-		return bus->Read(0x0100 | ++S);
+		return ReadCycle(0x0100 | ++SP);
 	}
 
 	u16 PullWordFromStack()
 	{
-		u8 lo = bus->Read(0x0100 | ++S);
-		u8 hi = bus->Read(0x0100 | ++S);
+		u8 lo = ReadCycle(0x0100 | ++SP);
+		u8 hi = ReadCycle(0x0100 | ++SP);
 		return hi << 8 | lo;
 	}
 
@@ -314,29 +294,12 @@ private:
 	{
 		if (cond)
 		{
-			s8 offset = (s8)curr_instr.addr_lo;
+			s8 offset = curr_instr.addr;
 			// +1 cycle if branch succeeds, +2 if to a new page
 			unsigned additional_cycles = (PC & 0xFF00) == ((u16)(PC + offset) & 0xFF00) ? 1 : 2;
-			bus->WaitCycle(additional_cycles);
+			WaitCycle(additional_cycles);
 			PC += offset;
 		}
-	}
-
-	u8 Read_u8()
-	{
-		return bus->Read(PC++);
-	}
-
-	s8 Read_s8()
-	{
-		return (s8)bus->Read(PC++);
-	}
-
-	u16 Read_u16()
-	{
-		u8 lo = bus->Read(PC++);
-		u8 hi = bus->Read(PC++);
-		return hi << 8 | lo;
 	}
 
 	// called when an instruction wants access to the status register
@@ -363,6 +326,17 @@ private:
 		flags.C = value & 0x01;
 	}
 
-	u8 GetOpcode() { return bus->Read(PC); } // assists with trace logging
+	u8 GetReadInstrOperand()
+	{
+		if (curr_instr.addr_mode == AddrMode::Immediate)
+			return ReadCycle(PC++);
+		if (curr_instr.page_crossing_possible && !curr_instr.page_crossed) // Possible only if Absolute Indexed or Indirect Indexed addressing is used
+			return curr_instr.read_addr;
+		return ReadCycle(curr_instr.addr);
+	}
+
+	/// Debugging-related
+	enum class Action { Instruction, NMI };
+	void LogState(Action action);
 };
 

@@ -141,15 +141,9 @@ void Emulator::MainLoop()
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
 
-		cycle_counter = 0;
-		while (cycle_counter++ < 29780)
-		{
-			Logging::Update(&cpu, &ppu);
+		// // Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
+		cpu.Run();
 
-			cpu.Update();
-			apu.Update();
-			ppu.Update();
-		}
 		joypad.PollInput();
 
 		if (load_state_on_next_cycle)

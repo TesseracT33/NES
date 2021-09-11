@@ -91,6 +91,10 @@ bool PPU::CreateRenderer(const void* window_handle)
 
 void PPU::Update()
 {
+#ifdef DEBUG
+	LogState();
+#endif
+
 	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
 	for (int i = 0; i < 3; i++)
 	{
@@ -883,4 +887,10 @@ void PPU::Configure(Serialization::BaseFunctor& functor)
 void PPU::SetDefaultConfig()
 {
 	scale = default_scale;
+}
+
+
+void PPU::LogState()
+{
+	Logging::ReportPpuState();
 }

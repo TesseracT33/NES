@@ -1,50 +1,6 @@
 #include "CPU.h"
 
 
-CPU::CPU()
-{
-	BuildInstrTypeTable();
-}
-
-
-void CPU::BuildInstrTypeTable()
-{
-	auto GetInstrType = [&](instr_t instr)
-	{
-		// A switch stmnt is not possible, as 'instr' is not an integral or enum type
-		// This function only gets executed at program startup anyways, so the poor performance does not matter
-		
-		// Note: some unofficial instructions (ALR, ARR, RLA, RRA) are the combination of two instructions, one of which is a read-modify-write instruction. 
-		// However, the addressing mode is immediate in these cases, meaning that the result of the r-m-w instruction won't be stored anywhere.
-		// The other instruction is a read instruction. Thus, such unofficial instructions can be set to be read instructions.
-		// TODO: are these instructions actually the correct length (timing)?
-		if (instr == &CPU::ADC || instr == &CPU::AND || instr == &CPU::BIT || instr == &CPU::CMP ||
-			instr == &CPU::CPX || instr == &CPU::CPY || instr == &CPU::EOR || instr == &CPU::LDA || 
-			instr == &CPU::LDX || instr == &CPU::LDY || instr == &CPU::ORA || instr == &CPU::SBC ||
-			instr == &CPU::ALR || instr == &CPU::ANC || instr == &CPU::ARR || instr == &CPU::LAS ||
-			instr == &CPU::LAX || instr == &CPU::XAA)
-			return InstrType::Read;
-
-		if (instr == &CPU::STA || instr == &CPU::STX || instr == &CPU::STY || instr == &CPU::AHX || 
-			instr == &CPU::AXS || instr == &CPU::SAX || instr == &CPU::SHX || instr == &CPU::SHY || 
-			instr == &CPU::TAS)
-			return InstrType::Write;
-
-		if (instr == &CPU::ASL || instr == &CPU::DEC || instr == &CPU::INC || instr == &CPU::LSR ||
-			instr == &CPU::ROL || instr == &CPU::ROR || instr == &CPU::DCP || instr == &CPU::ISC ||
-			instr == &CPU::RLA || instr == &CPU::RRA || instr == &CPU::SLO || instr == &CPU::SRE)
-			return InstrType::Read_modify_write;
-
-		return InstrType::Implicit;
-	};
-
-	for (size_t i = 0; i < num_instr; i++)
-	{
-		instr_t instr = instr_table[i];
-		instr_type_table[i] = GetInstrType(instr);
-	}
-}
-
 
 void CPU::Power()
 {
@@ -54,7 +10,7 @@ void CPU::Power()
 
 	SetStatusReg(0x34);
 	A = X = Y = 0;
-	S = 0xFD;
+	SP = 0xFD;
 	for (u16 addr = 0x4000; addr <= 0x4013; addr++)
 		bus->Write(addr, 0);
 	bus->Write(0x4015, 0);
@@ -70,432 +26,215 @@ void CPU::Reset()
 	IRQ_num_inputs = 0;
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
-	oam_dma_transfer_active = false;
+	oam_dma_transfer_pending = false;
+	odd_cpu_cycle = true; // Not defined as false, for everytime that ReadCycle/WriteCycle is called, odd_cpu_cycle is inverted before doing the read/write.
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
 
 
-// Step one cpu cycle
-void CPU::Update()
+void CPU::Run()
 {
-	IncrementCycleCounter();
+	bus->cpu_cycle_counter = 0;
+	const unsigned cycle_run_len = 20000;
 
-	if (stopped) return;
-
-	#ifdef DEBUG
-		cpu_cycle_counter++;
-	#endif
-
-	if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
-		all_ppu_regs_writable = true;
-
-	if (set_I_on_next_update)
+	// Run the CPU for roughly a whole frame (exact timing is not important; synchronization is done by the APU).
+	while (bus->cpu_cycle_counter < cycle_run_len)
 	{
-		flags.I = 1;
-		set_I_on_next_update = false;
-	}
-	else if (clear_I_on_next_update)
-	{
-		flags.I = 0;
-		clear_I_on_next_update = false;
-	}
+		if (stopped)
+			WaitCycle(cycle_run_len - bus->cpu_cycle_counter);
 
-	if (oam_dma_transfer_active)
-	{
-		UpdateOAMDMATransfer();
+		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
+		//	all_ppu_regs_writable = true;
+
+		if (set_I_on_next_update)
+		{
+			flags.I = 1;
+			set_I_on_next_update = false;
+		}
+		else if (clear_I_on_next_update)
+		{
+			flags.I = 0;
+			clear_I_on_next_update = false;
+		}
+
+		if (oam_dma_transfer_pending)
+		{
+			PerformOAMDMATransfer();
+		}
+		else
+		{
+			ExecuteInstruction();
+
+			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
+			// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
+			if (NMI_signal_active)
+				ServiceInterrupt(InterruptType::NMI);
+			else if (IRQ_num_inputs > 0 && !flags.I)
+				ServiceInterrupt(InterruptType::IRQ);
+		}
 	}
-	// If an instruction is currently being executed
-	else if (curr_instr.instr_executing)
-	{
-		// Continue the execution of the instruction
-		std::invoke(curr_instr.addr_mode_fun, this);
-	}
-	else
-	{
-		BeginInstruction();
-
-		// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
-		// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
-		if (NMI_signal_active)
-			ServiceInterrupt(InterruptType::NMI);
-		else if (IRQ_num_inputs > 0 && !flags.I)
-			ServiceInterrupt(InterruptType::IRQ);
-	}
-}
-
-
-void CPU::IncrementCycleCounter(unsigned cycles)
-{
-#ifdef DEBUG
-	cpu_cycle_counter += cycles;
-#endif
-
-	if (cycles & 1)
-		odd_cpu_cycle = !odd_cpu_cycle;
 }
 
 
 void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr)
 {
-	oam_dma_transfer_active = true;
+	oam_dma_transfer_pending = true;
 	oam_dma_base_addr = page << 8;
 	this->oam_start_ptr = oam_start_ptr;
-	oam_dma_bytes_copied = 0;
-
-	// Before the DMA transfer starts, there is/are one or two wait cycles, depending on if the current cpu cycle is even or odd
-	bus->WaitCycle(odd_cpu_cycle ? 2 : 1);
 }
 
 
-void CPU::UpdateOAMDMATransfer()
+void CPU::PerformOAMDMATransfer()
 {
-	*(oam_start_ptr + oam_dma_bytes_copied) = bus->ReadCycle(oam_dma_base_addr + oam_dma_bytes_copied);
-	if (++oam_dma_bytes_copied == 0x100)
-		oam_dma_transfer_active = false;
+	if (odd_cpu_cycle)
+		WaitCycle();
+
+	// 512 cycles
+	for (u16 i = 0; i < 0x100; i++)
+	{
+		*(oam_start_ptr + i) = ReadCycle(oam_dma_base_addr + i);
+		WaitCycle();
+	}
+
+	oam_dma_transfer_pending = false;
 }
 
 
-void CPU::BeginInstruction()
+void CPU::ExecuteInstruction()
 {
-	curr_instr.opcode = bus->Read(PC++);
+	curr_instr.opcode = ReadCycle(PC++);
 	curr_instr.addr_mode = GetAddressingModeFromOpcode(curr_instr.opcode);
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
-	curr_instr.instr_type = instr_type_table[curr_instr.opcode];
-	curr_instr.instr_executing = true;
-	curr_instr.cycle = 1;
+	curr_instr.page_crossing_possible = curr_instr.page_crossed = false;
+
+#ifdef DEBUG
+	LogState(Action::Instruction);
+#endif
+
+	std::invoke(curr_instr.addr_mode_fun, this);
 }
 
 
-void CPU::StepImplicit()
+void CPU::ExecuteImplied()
 {
-	// Note: some instructions using implicit addressing take longer than two cycles. This is handled in the functions for those themselves
+	ReadCycle(PC);
 	std::invoke(curr_instr.instr, this);
-	curr_instr.instr_executing = false;
 }
 
 
-void CPU::StepAccumulator()
+void CPU::ExecuteAccumulator()
 {
-	// all instructions using the accumulator addressing mode take two cycles (first one is from when fetching the opcode)
-	curr_instr.read_addr = A;
+	ReadCycle(PC);
 	std::invoke(curr_instr.instr, this);
-	A = curr_instr.new_target;
-	curr_instr.instr_executing = false;
 }
 
 
-void CPU::StepImmediate()
+void CPU::ExecuteImmediate()
 {
-	// all instructions using the immediate addressing mode take two cycles (first one is from when fetching the opcode)
-	curr_instr.read_addr = bus->Read(PC++);
 	std::invoke(curr_instr.instr, this);
-	curr_instr.instr_executing = false;
 }
 
 
-void CPU::StepZeroPage()
+void CPU::ExecuteZeroPage()
 {
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
-
-	case 2:
-		curr_instr.addr = curr_instr.addr_lo;
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 3:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
-
-	case 4:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
-}
-
-
-void CPU::StepZeroPageIndexed(u8& index_reg)
-{
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
-
-	case 2:
-		curr_instr.addr = curr_instr.addr_lo;
-		bus->Read(curr_instr.addr);
-		curr_instr.addr = (curr_instr.addr + index_reg) & 0xFF;
-		return;
-
-	case 3:
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 4:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
-
-	case 5:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
-}
-
-
-void CPU::StepAbsolute()
-{
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
-
-	case 2:
-		curr_instr.addr_hi = bus->Read(PC++);
-		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
-		// JSR, JMP instructions differently than other instructions with absolute addressing; they don't do the same reads and writes as others
-		if (curr_instr.opcode == 0x20 || curr_instr.opcode == 0x4C)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 3:
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 4:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
-
-	case 5:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
-}
-
-
-void CPU::StepAbsoluteIndexed(u8& index_reg)
-{
-	static bool addition_overflow;
-
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
-
-	case 2:
-		curr_instr.addr_hi = bus->Read(PC++);
-		addition_overflow = curr_instr.addr_lo + index_reg > 0xFF;
-		curr_instr.addr_lo = curr_instr.addr_lo + index_reg;
-		return;
-
-	case 3:
-		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
-		curr_instr.read_addr = bus->Read(curr_instr.addr);
-
-		if (addition_overflow)
-			curr_instr.addr = ((curr_instr.addr_hi + 1) & 0xFF) << 8 | curr_instr.addr_lo;
-		// According to nestest, NOPs with absolute indexed addressing should be 4 cycles long
-		else if (curr_instr.instr_type == InstrType::Read || curr_instr.instr_type == InstrType::Implicit)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 4:
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 5:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
-
-	case 6:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
-}
-
-
-void CPU::StepRelative()
-{
-	// TODO: unsure about timing
-	// Branch instructions (only these use relative addressing) take 2 + 1 or 2 + 2 cycles (+1 if branch succeeds, +2 if to a new page)
-	// However, all branching logic is inside of the Branch() function, including additional wait cycles
-
-	curr_instr.addr_lo = bus->Read(PC++);
+	curr_instr.addr = ReadCycle(PC++);
 	std::invoke(curr_instr.instr, this);
-	curr_instr.instr_executing = false;
 }
 
 
-void CPU::StepIndirect()
+void CPU::ExecuteZeroPageIndexed(u8& index_reg)
 {
-	static u16 addr_tmp = 0;
+	curr_instr.addr = ReadCycle(PC++);
+	ReadCycle(curr_instr.addr);
+	curr_instr.addr = (curr_instr.addr + index_reg) & 0xFF;
 
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
-
-	case 2:
-		curr_instr.addr_hi = bus->Read(PC++);
-		return;
-
-	case 3:
-		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo;
-		addr_tmp = bus->Read(curr_instr.addr);
-		return;
-
-	case 4:
-		// HW bug: if 'curr_instr.addr' is xyFF, then the upper byte of 'addr_tmp' is fetched from xy00, not (xy+1)00
-		if (curr_instr.addr_lo == 0xFF)
-			addr_tmp |= bus->Read(curr_instr.addr_hi << 8) << 8;
-		else
-			addr_tmp |= bus->Read(curr_instr.addr + 1) << 8;
-		curr_instr.addr = addr_tmp;
-		std::invoke(curr_instr.instr, this);
-		curr_instr.instr_executing = false;
-	}
+	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::StepIndexedIndirect()
+void CPU::ExecuteAbsolute()
 {
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
+	u8 addr_lo = ReadCycle(PC++);
+	u8 addr_hi = ReadCycle(PC++);
+	curr_instr.addr = addr_hi << 8 | addr_lo;
 
-	case 2:
-		curr_instr.addr = curr_instr.addr_lo;
-		bus->Read(curr_instr.addr);
-		curr_instr.addr = (curr_instr.addr + X) & 0xFF;
-		return;
-
-	case 3:
-		curr_instr.read_addr = bus->Read(curr_instr.addr);
-		curr_instr.addr = (curr_instr.addr + 1) & 0xFF;
-		return;
-
-	case 4:
-		curr_instr.addr = bus->Read(curr_instr.addr) << 8 | curr_instr.read_addr;
-		return;
-
-	case 5:
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
-
-	case 6:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
-
-	case 7:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
+	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::StepIndirectIndexed()
+void CPU::ExecuteAbsoluteIndexed(u8& index_reg)
 {
-	static bool addition_overflow;
+	curr_instr.page_crossing_possible = true;
 
-	switch (curr_instr.cycle++)
-	{
-	case 1:
-		curr_instr.addr_lo = bus->Read(PC++);
-		return;
+	u8 addr_lo = ReadCycle(PC++);
+	u8 addr_hi = ReadCycle(PC++);
+	curr_instr.page_crossed = addr_lo + index_reg > 0xFF;
+	addr_lo += index_reg;
+	curr_instr.addr = addr_hi << 8 | addr_lo;
+	curr_instr.read_addr = ReadCycle(curr_instr.addr);
+	if (curr_instr.page_crossed)
+		curr_instr.addr = ((addr_hi + 1) & 0xFF) << 8 | addr_lo;
 
-	case 2:
-		curr_instr.read_addr = bus->Read(curr_instr.addr_lo);
-		curr_instr.addr_lo++;
-		return;
+	std::invoke(curr_instr.instr, this);
+}
 
-	case 3:
-		curr_instr.addr_hi = bus->Read(curr_instr.addr_lo);
-		addition_overflow = curr_instr.read_addr + Y > 0xFF;
-		curr_instr.addr_lo = curr_instr.read_addr + Y;
-		return;
 
-	case 4:
-		curr_instr.addr = curr_instr.addr_hi << 8 | curr_instr.addr_lo; // todo: not 100 % sure if correct
-		curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (addition_overflow)
-			curr_instr.addr = ((curr_instr.addr_hi + 1) & 0xFF) << 8 | curr_instr.addr_lo;
-		else if (curr_instr.instr_type == InstrType::Read)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
+void CPU::ExecuteRelative()
+{
+	curr_instr.addr = ReadCycle(PC++);
+	std::invoke(curr_instr.instr, this);
+}
 
-	case 5:
-		if (curr_instr.instr_type != InstrType::Write)
-			curr_instr.read_addr = bus->Read(curr_instr.addr);
-		if (curr_instr.instr_type != InstrType::Read_modify_write)
-		{
-			std::invoke(curr_instr.instr, this);
-			curr_instr.instr_executing = false;
-		}
-		return;
 
-	case 6:
-		bus->Write(curr_instr.addr, curr_instr.read_addr);
-		std::invoke(curr_instr.instr, this);
-		return;
+void CPU::ExecuteIndirect()
+{
+	u8 addr_lo = ReadCycle(PC++);
+	u8 addr_hi = ReadCycle(PC++);
+	curr_instr.addr = addr_hi << 8 | addr_lo;
+	u16 addr_tmp = ReadCycle(curr_instr.addr);
 
-	case 7:
-		bus->Write(curr_instr.addr, curr_instr.new_target);
-		curr_instr.instr_executing = false;
-	}
+	// HW bug: if 'curr_instr.addr' is xyFF, then the upper byte of 'addr_tmp' is fetched from xy00, not (xy+1)00
+	if (addr_lo == 0xFF)
+		addr_tmp |= ReadCycle(addr_hi << 8) << 8;
+	else
+		addr_tmp |= ReadCycle(curr_instr.addr + 1) << 8;
+	curr_instr.addr = addr_tmp;
+
+	std::invoke(curr_instr.instr, this);
+}
+
+
+void CPU::ExecuteIndexedIndirect()
+{
+	curr_instr.addr = ReadCycle(PC++);
+	ReadCycle(curr_instr.addr);
+	curr_instr.addr = (curr_instr.addr + X) & 0xFF;
+	curr_instr.read_addr = ReadCycle(curr_instr.addr);
+	curr_instr.addr = (curr_instr.addr + 1) & 0xFF;
+	curr_instr.addr = ReadCycle(curr_instr.addr) << 8 | curr_instr.read_addr;
+
+	std::invoke(curr_instr.instr, this);
+}
+
+
+void CPU::ExecuteIndirectIndexed()
+{
+	curr_instr.page_crossing_possible = true;
+
+	u8 addr_lo = ReadCycle(PC++);
+	curr_instr.read_addr = ReadCycle(addr_lo);
+	addr_lo++;
+	u8 addr_hi = ReadCycle(addr_lo);
+	curr_instr.page_crossed = curr_instr.read_addr + Y > 0xFF;
+	addr_lo = curr_instr.read_addr + Y;
+	curr_instr.addr = addr_hi << 8 | addr_lo;
+	curr_instr.read_addr = ReadCycle(curr_instr.addr);
+	if (curr_instr.page_crossed)
+		curr_instr.addr = ((addr_hi + 1) & 0xFF) << 8 | addr_lo;
+
+	std::invoke(curr_instr.instr, this);
 }
 
 
@@ -506,17 +245,17 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 	case 0x00:
 		if (opcode == 0x20)           return AddrMode::Absolute;
 		if ((opcode & ~0x1F) >= 0x80) return AddrMode::Immediate;
-		return AddrMode::Implicit;
+		return AddrMode::Implied;
 	case 0x01: return AddrMode::Indexed_indirect;
-	case 0x02: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implicit;
+	case 0x02: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implied;
 	case 0x03: return AddrMode::Indexed_indirect;
 	case 0x04:
 	case 0x05:
 	case 0x06:
 	case 0x07: return AddrMode::Zero_page;
-	case 0x08: return AddrMode::Implicit;
+	case 0x08: return AddrMode::Implied;
 	case 0x09: return AddrMode::Immediate;
-	case 0x0A: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Implicit : AddrMode::Accumulator;
+	case 0x0A: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Implied : AddrMode::Accumulator;
 	case 0x0B: return AddrMode::Immediate;
 	case 0x0C: return (opcode == 0x6C) ? AddrMode::Indirect : AddrMode::Absolute;
 	case 0x0D:
@@ -524,15 +263,15 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 	case 0x0F: return AddrMode::Absolute;
 	case 0x10: return AddrMode::Relative;
 	case 0x11: return AddrMode::Indirect_indexed;
-	case 0x12: return AddrMode::Implicit;
+	case 0x12: return AddrMode::Implied;
 	case 0x13: return AddrMode::Indirect_indexed;
 	case 0x14:
 	case 0x15: return AddrMode::Zero_page_X;
 	case 0x16:
 	case 0x17: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Zero_page_Y : AddrMode::Zero_page_X;
-	case 0x18: return AddrMode::Implicit;
+	case 0x18: return AddrMode::Implied;
 	case 0x19: return AddrMode::Absolute_Y;
-	case 0x1A: return AddrMode::Implicit;
+	case 0x1A: return AddrMode::Implied;
 	case 0x1B: return AddrMode::Absolute_Y;
 	case 0x1C:
 	case 0x1D: return AddrMode::Absolute_X;
@@ -569,6 +308,11 @@ void CPU::SetNMIHigh()
 
 void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 {
+#ifdef DEBUG
+	if (asserted_interrupt_type == InterruptType::NMI)
+		LogState(Action::NMI);
+#endif
+
 	/* IRQ and NMI tick-by-tick execution
 	  #  address R/W description
 	 --- ------- --- -----------------------------------------------
@@ -587,20 +331,15 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	*/
 
 	// Cycles 1-2
-	if (asserted_interrupt_type == InterruptType::BRK)
+	// note: the first two reads have already been handled in the BRK() function
+	if (asserted_interrupt_type != InterruptType::BRK)
 	{
-		// note: the first read and increment of PC has already been handled in the BRK() function
-		bus->ReadCycle(PC++);
-	}
-	else
-	{
-		bus->ReadCycle(PC);
-		bus->ReadCycle(PC);
+		ReadCycle(PC);
+		ReadCycle(PC);
 	}
 
 	// Cycles 3-4
-	bus->WriteCycle(0x0100 | S--, PC >> 8);
-	bus->WriteCycle(0x0100 | S--, PC & 0xFF);
+	PushWordToStack(PC);
 
 	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
 	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
@@ -617,19 +356,19 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	}
 
 	// cycle 5
-	bus->WriteCycle(0x0100 | S--, GetStatusRegInterrupt());
+	PushByteToStack(GetStatusRegInterrupt());
 
 	// cycles 6-7
 	if (handled_interrupt_type == InterruptType::NMI)
 	{
-		PC = PC & 0xFF00 | bus->ReadCycle(Bus::Addr::NMI_VEC);
-		PC = PC & 0x00FF | bus->ReadCycle(Bus::Addr::NMI_VEC + 1) << 8;
-		NMI_signal_active = false; // todo: it's not entirely clear if this is the right place for it
+		PC = PC & 0xFF00 | ReadCycle(Bus::Addr::NMI_VEC);
+		PC = PC & 0x00FF | ReadCycle(Bus::Addr::NMI_VEC + 1) << 8;
+		NMI_signal_active = false; // todo: it's not entirely clear if this is the right place to clear this
 	}
 	else
 	{
-		PC = PC & 0xFF00 | bus->ReadCycle(Bus::Addr::IRQ_BRK_VEC);
-		PC = PC & 0x00FF | bus->ReadCycle(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
+		PC = PC & 0xFF00 | ReadCycle(Bus::Addr::IRQ_BRK_VEC);
+		PC = PC & 0x00FF | ReadCycle(Bus::Addr::IRQ_BRK_VEC + 1) << 8;
 	}
 	flags.I = 1; // it's OK if this is set in cycle 7 instead of 6; the flag isn't used until after this function returns
 
@@ -645,9 +384,10 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 // Add the contents of a memory location to the accumulator together with the carry bit. If overflow occurs the carry bit is set.
 void CPU::ADC()
 {
-	u8 op = curr_instr.read_addr + flags.C;
-	flags.V = ((A & 0x7F) + (curr_instr.read_addr & 0x7F) + flags.C > 0x7F)
-	        ^ ((A       ) + (curr_instr.read_addr       ) + flags.C > 0xFF);
+	u8 M = GetReadInstrOperand();
+	u8 op = M + flags.C;
+	flags.V = ((A & 0x7F) + (M & 0x7F) + flags.C > 0x7F)
+	        ^ ((A       ) + (M       ) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
 	A += op;
 	flags.Z = A == 0;
@@ -658,8 +398,8 @@ void CPU::ADC()
 // Bitwise AND between the accumulator and the contents of a memory location.
 void CPU::AND()
 {
-	u8 op = curr_instr.read_addr;
-	A &= op;
+	u8 M = GetReadInstrOperand();
+	A &= M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
 }
@@ -668,12 +408,23 @@ void CPU::AND()
 // Shift all bits of the accumulator or the contents of a memory location one bit left. Bit 0 is cleared and bit 7 is placed in the carry flag.
 void CPU::ASL()
 {
-	u8 target = curr_instr.read_addr;
-	u8 new_target = target << 1 & 0xFF;
-	curr_instr.new_target = new_target;
-	flags.C = target & 0x80;
-	flags.Z = new_target == 0;
-	flags.N = new_target & 0x80;
+	if (curr_instr.addr_mode == AddrMode::Accumulator)
+	{
+		flags.C = A & 0x80;
+		A = A << 1 & 0xFF;
+		flags.Z = A == 0;
+		flags.N = A & 0x80;
+	}
+	else
+	{
+		u8 M = ReadCycle(curr_instr.addr);
+		WriteCycle(curr_instr.addr, M);
+		u8 new_M = M << 1 & 0xFF;
+		WriteCycle(curr_instr.addr, new_M);
+		flags.C = M & 0x80;
+		flags.Z = new_M == 0;
+		flags.N = new_M & 0x80;
+	}
 }
 
 
@@ -701,10 +452,10 @@ void CPU::BEQ()
 // Check the bitwise AND between the accumulator and the contents of a memory location, and set the status flags accordingly.
 void CPU::BIT()
 {
-	u8 op = curr_instr.read_addr;
-	flags.Z = (A & op) == 0;
-	flags.V = op & 0x40;
-	flags.N = op & 0x80;
+	u8 M = ReadCycle(curr_instr.addr);
+	flags.Z = (A & M) == 0;
+	flags.V = M & 0x40;
+	flags.N = M & 0x80;
 }
 
 
@@ -782,7 +533,7 @@ void CPU::CLV()
 // Compare the contents of the accumulator with the contents of a memory location (essentially performing the subtraction A-M without storing the result).
 void CPU::CMP()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	flags.C = A >= M;
 	flags.Z = A == M;
 	u8 result = A - M;
@@ -793,7 +544,7 @@ void CPU::CMP()
 // Compare the contents of the X register with the contents of a memory location (essentially performing the subtraction X-M without storing the result).
 void CPU::CPX()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = curr_instr.addr_mode == AddrMode::Immediate ? ReadCycle(PC++) : ReadCycle(curr_instr.addr);
 	flags.C = X >= M;
 	flags.Z = X == M;
 	u8 result = X - M;
@@ -804,7 +555,7 @@ void CPU::CPX()
 // Compare the contents of the Y register with the contents of memory location (essentially performing the subtraction Y-M without storing the result)
 void CPU::CPY()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = curr_instr.addr_mode == AddrMode::Immediate ? ReadCycle(PC++) : ReadCycle(curr_instr.addr);
 	flags.C = Y >= M;
 	flags.Z = Y == M;
 	u8 result = Y - M;
@@ -815,11 +566,12 @@ void CPU::CPY()
 // Subtract one from the value held at a specified memory location.
 void CPU::DEC()
 {
-	u8 M = curr_instr.read_addr;
-	M--;
-	curr_instr.new_target = M;
-	flags.Z = M == 0;
-	flags.N = M & 0x80;
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M - 1;
+	WriteCycle(curr_instr.addr, new_M);
+	flags.Z = new_M == 0;
+	flags.N = new_M & 0x80;
 }
 
 
@@ -844,8 +596,8 @@ void CPU::DEY()
 // Bitwise XOR between the accumulator and the contents of a memory location.
 void CPU::EOR()
 {
-	u8 op = curr_instr.read_addr;
-	A ^= op;
+	u8 M = GetReadInstrOperand();
+	A ^= M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
 }
@@ -854,11 +606,12 @@ void CPU::EOR()
 // Add one to the value held at a specified memory location.
 void CPU::INC()
 {
-	u8 M = curr_instr.read_addr;
-	M++;
-	curr_instr.new_target = M;
-	flags.Z = M == 0;
-	flags.N = M & 0x80;
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M + 1;
+	WriteCycle(curr_instr.addr, new_M);
+	flags.Z = new_M == 0;
+	flags.N = new_M & 0x80;
 }
 
 
@@ -887,21 +640,19 @@ void CPU::JMP()
 }
 
 
-// Push the program counter (minus one) on to stack the and set the program counter to the target memory address.
+// Push the program counter on to stack the and set the program counter to the target memory address.
 void CPU::JSR()
 {
-	PushWordToStack(PC - 1);
+	PushWordToStack(PC);
 	PC = curr_instr.addr;
-	// This instr takes 6 cycles, but due to the way that the StepAbsolute() function is built for instructions of type "implicit", all such instructions take 3 cycles.
-	// So we need to wait an additional 3 cycles
-	bus->WaitCycle(3);
+	WaitCycle();
 }
 
 
 // Load a byte of memory into the accumulator.
 void CPU::LDA()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	A = M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -911,7 +662,7 @@ void CPU::LDA()
 // Load a byte of memory into the X register.
 void CPU::LDX()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	X = M;
 	flags.Z = X == 0;
 	flags.N = X & 0x80;
@@ -921,7 +672,7 @@ void CPU::LDX()
 // Load a byte of memory into the Y register.
 void CPU::LDY()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	Y = M;
 	flags.Z = Y == 0;
 	flags.N = Y & 0x80;
@@ -931,12 +682,23 @@ void CPU::LDY()
 // Perform a logical shift one place to the right of the accumulator or the contents of a memory location. The bit that was in bit 0 is shifted into the carry flag. Bit 7 is set to zero.
 void CPU::LSR()
 {
-	u8 target = curr_instr.read_addr;
-	u8 new_target = target >> 1;
-	curr_instr.new_target = new_target;
-	flags.C = target & 1;
-	flags.Z = new_target == 0;
-	flags.N = new_target & 0x80;
+	if (curr_instr.addr_mode == AddrMode::Accumulator)
+	{
+		flags.C = A & 1;
+		A >>= 1;
+		flags.Z = A == 0;
+		flags.N = A & 0x80;
+	}
+	else
+	{
+		u8 M = ReadCycle(curr_instr.addr);
+		WriteCycle(curr_instr.addr, M);
+		u8 new_M = M >> 1;
+		WriteCycle(curr_instr.addr, new_M);
+		flags.C = M & 1;
+		flags.Z = new_M == 0;
+		flags.N = new_M & 0x80;
+	}
 }
 
 
@@ -950,7 +712,7 @@ void CPU::NOP()
 // Bitwise OR between the accumulator and the contents of a memory location.
 void CPU::ORA()
 {
-	u8 M = curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	A |= M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -961,9 +723,6 @@ void CPU::ORA()
 void CPU::PHA()
 {
 	PushByteToStack(A);
-	// This instr takes 3 cycles, but due to the way that the StepImplied() function is built,
-    //    all instr with implied addressing take 2 cycles.
-	bus->WaitCycle();
 }
 
 
@@ -971,7 +730,6 @@ void CPU::PHA()
 void CPU::PHP()
 {
 	PushByteToStack(GetStatusRegInstr(&CPU::PHP));
-	bus->WaitCycle();
 }
 
 
@@ -981,9 +739,7 @@ void CPU::PLA()
 	A = PullByteFromStack();
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
-	// This instr takes 4 cycles, but due to the way that the StepImplied() function is built,
-	//    all instr with implied addressing take 2 cycles.
-	bus->WaitCycle(2);
+	WaitCycle();
 }
 
 
@@ -999,33 +755,53 @@ void CPU::PLP()
 		clear_I_on_next_update = true;
 	flags.I = I_tmp;
 
-	bus->WaitCycle(2);
+	WaitCycle();
 }
 
 
 // Move each of the bits in either the accumulator or the value held at a memory location one place to the left. Bit 0 is filled with the current value of the carry flag whilst the old bit 7 becomes the new carry flag value.
 void CPU::ROL()
 {
-	u8 target = curr_instr.read_addr;
-	u8 new_target = (target << 1 | flags.C) & 0xFF;
-	curr_instr.new_target = new_target;
-	flags.C = target & 0x80;
-	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
-		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
-	flags.N = new_target & 0x80;
+	if (curr_instr.addr_mode == AddrMode::Accumulator)
+	{
+		flags.C = A & 0x80;
+		A = A << 1 | flags.C;
+		flags.Z = A == 0;
+		flags.N = A & 0x80;
+	}
+	else
+	{
+		u8 M = ReadCycle(curr_instr.addr);
+		WriteCycle(curr_instr.addr, M);
+		u8 new_M = M << 1 | flags.C;
+		WriteCycle(curr_instr.addr, new_M);
+		flags.C = M & 0x80;
+		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.N = new_M & 0x80;
+	}
 }
 
 
 // Move each of the bits in either the accumulator or the value held at a memory location one place to the right. Bit 7 is filled with the current value of the carry flag whilst the old bit 0 becomes the new carry flag value.
 void CPU::ROR()
 {
-	u8 target = curr_instr.read_addr;
-	u8 new_target = target >> 1 | flags.C << 7;
-	curr_instr.new_target = new_target;
-	flags.C = target & 1;
-	flags.Z = (new_target == 0 && curr_instr.addr_mode == AddrMode::Accumulator) ||
-		(A == 0 && curr_instr.addr_mode != AddrMode::Accumulator);
-	flags.N = new_target & 0x80;
+	if (curr_instr.addr_mode == AddrMode::Accumulator)
+	{
+		flags.C = A & 1;
+		A = A >> 1 | flags.C << 7;
+		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.N = A & 0x80;
+	}
+	else
+	{
+		u8 M = ReadCycle(curr_instr.addr);
+		WriteCycle(curr_instr.addr, M);
+		u8 new_M = M >> 1 | flags.C << 7;
+		WriteCycle(curr_instr.addr, new_M);
+		flags.C = M & 1;
+		flags.Z = A == 0; // TODO: new_M == 0 ?
+		flags.N = new_M & 0x80;
+	}
 }
 
 
@@ -1034,29 +810,26 @@ void CPU::RTI()
 {
 	SetStatusReg(PullByteFromStack());
 	PC = PullWordFromStack();
-	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
-	//    all instr with implied addressing take 2 cycles.
-	bus->WaitCycle(4);
+	WaitCycle();
 }
 
 
-// Return from subrouting; pull the program counter (minus one) from the stack.
+// Return from subroutine; pull the program counter from the stack.
 void CPU::RTS()
 {
-	PC = PullWordFromStack() + 1;
-	// This instr takes 6 cycles, but due to the way that the StepImplied() function is built,
-	//    all instr with implied addressing take 2 cycles.
-	bus->WaitCycle(4);
+	PC = PullWordFromStack();
+	WaitCycle(2);
 }
 
 
 // Subtract the contents of a memory location to the accumulator together with the NOT of the carry bit. If overflow occurs the carry bit is cleared.
 void CPU::SBC()
 {
-	u8 op = curr_instr.read_addr + (1 - flags.C);
-	flags.V = ((A & 0x7F) + ((u8)(0xFF - curr_instr.read_addr) & 0x7F) + flags.C > 0x7F)
-	        ^ ((A       ) + ((u8)(0xFF - curr_instr.read_addr)       ) + flags.C > 0xFF);
-	flags.C = A > curr_instr.read_addr || A == curr_instr.read_addr && flags.C;
+	u8 M = GetReadInstrOperand();
+	u8 op = M + (1 - flags.C);
+	flags.V = ((A & 0x7F) + ((u8)(0xFF - M) & 0x7F) + flags.C > 0x7F)
+	        ^ ((A       ) + ((u8)(0xFF - M)       ) + flags.C > 0xFF);
+	flags.C = A > M || A == M && flags.C;
 	A -= op;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -1088,21 +861,21 @@ void CPU::SEI()
 // Store the contents of the accumulator into memory.
 void CPU::STA()
 {
-	bus->Write(curr_instr.addr, A);
+	WriteCycle(curr_instr.addr, A);
 }
 
 
 // Store the contents of the X register into memory.
 void CPU::STX()
 {
-	bus->Write(curr_instr.addr, X);
+	WriteCycle(curr_instr.addr, X);
 }
 
 
 // Store the contents of the Y register into memory.
 void CPU::STY()
 {
-	bus->Write(curr_instr.addr, Y);
+	WriteCycle(curr_instr.addr, Y);
 }
 
 
@@ -1127,7 +900,7 @@ void CPU::TAY()
 // Copy the current contents of the stack register into the X register.
 void CPU::TSX()
 {
-	X = S;
+	X = SP;
 	flags.Z = X == 0;
 	flags.N = X & 0x80;
 }
@@ -1145,7 +918,7 @@ void CPU::TXA()
 // Copy the current contents of the X register into the stack register (flags are not affected).
 void CPU::TXS()
 {
-	S = X;
+	SP = X;
 }
 
 
@@ -1158,139 +931,207 @@ void CPU::TYA()
 }
 
 
-// Unofficial instruction; store A AND X AND (the high byte of addr + 1) at addr
-void CPU::AHX()
+// Unofficial instruction; store A AND X AND (the high byte of addr + 1) at addr.
+void CPU::AHX() // SHA / AXA
 {
 	u8 op = (curr_instr.addr >> 8) + 1;
-	bus->Write(curr_instr.addr, A & X & op);
+	WriteCycle(curr_instr.addr, A & X & op);
 }
 
 
-// Unofficial instruction; combined AND and LSR
-void CPU::ALR()
+// Unofficial instruction; combined AND and LSR with immediate addressing.
+void CPU::ALR() // ASR
 {
-	AND();
-	LSR();
+	// AND
+	u8 M = ReadCycle(PC++);
+	A &= M;
+	// LSR
+	flags.C = A & 1;
+	A >>= 1;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; AND with immediate addressing, where the carry flag is set to bit 7 of the result (equal to the negative flag after the AND)
+// Unofficial instruction; AND with immediate addressing, where the carry flag is set to bit 7 of the result (equal to the negative flag after the AND).
 void CPU::ANC()
 {
-	AND();
+	u8 M = ReadCycle(PC++);
+	A &= M;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 	flags.C = flags.N;
 }
 
 
-// Unofficial instruction; combined AND and ROR, but where the overflow and carry flags are set in particular ways
+// Unofficial instruction; combined AND and ROR with immediate addressing, but where the overflow and carry flags are set in particular ways.
 void CPU::ARR()
 {
-	// TODO: set flags.V and flags.C as they should be
-	AND();
-	ROR();
+	// AND
+	u8 M = ReadCycle(PC++);
+	A &= M;
+	// ROR
+	A = A >> 1 | flags.C << 7;
+	flags.C = A & 0x40;
+	flags.V = flags.C ^ (A >> 5 & 1); 
 }
 
 
-// Unofficial instruction; store A AND X at addr
-void CPU::AXS()
+// Unofficial instruction; store A AND X at addr.
+void CPU::AXS() // SAX, AAX
 {
-	bus->Write(curr_instr.addr, A & X);
+	WriteCycle(curr_instr.addr, A & X);
 }
 
 
-// Unofficial instruction; combined DEC and CMP
-void CPU::DCP()
+// Unofficial instruction; combined DEC and CMP.
+void CPU::DCP() // DCM
 {
-	DEC();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	CMP();
+	// DEC
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M - 1;
+	WriteCycle(curr_instr.addr, new_M);
+	// CMP
+	flags.C = A >= new_M;
+	flags.Z = A == new_M;
+	u8 result = A - new_M;
+	flags.N = result & 0x80;
 }
 
 
-// Unofficial instruction; combined INC and SBC
-void CPU::ISC()
+// Unofficial instruction; combined INC and SBC.
+void CPU::ISC() // ISB, INS
 {
-	INC();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	SBC();
+	// TODO: https://www.masswerk.at/6502/6502_instruction_set.html#ANC gives four cycles for (indirect),Y
+	// INC
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M + 1;
+	WriteCycle(curr_instr.addr, new_M);
+	// SBC
+	u8 op = new_M + (1 - flags.C);
+	flags.V = ((A & 0x7F) + ((u8)(0xFF - new_M) & 0x7F) + flags.C > 0x7F)
+	        ^ ((A       ) + ((u8)(0xFF - new_M)       ) + flags.C > 0xFF);
+	flags.C = A > new_M || A == new_M && flags.C;
+	A -= op;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; fused LDA and TSX instruction, where M AND S are put into A, X, S
-void CPU::LAS()
+// Unofficial instruction; fused LDA and TSX instruction, where M AND S are put into A, X, S.
+void CPU::LAS() // LAR
 {
-	// TODO: not sure why S would be written to as well?
-	u8 AND = curr_instr.read_addr & S;
-	A = X = S = AND;
-	flags.Z = AND == 0;
-	flags.N = AND & 0x80;
+	u8 M = curr_instr.page_crossed ? ReadCycle(curr_instr.addr) : curr_instr.read_addr;
+	A = X = SP = M & SP;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; combined LDA and LDX
+// Unofficial instruction; combined LDA and LDX.
 void CPU::LAX()
 {
-	LDA();
-	LDX();
+	// LDA
+	u8 M = curr_instr.page_crossed ? ReadCycle(curr_instr.addr) : curr_instr.read_addr;
+	A = M;
+	// LDX
+	X = M;
+	flags.Z = X == 0;
+	flags.N = X & 0x80;
 }
 
 
-// Unofficial instruction; combined ROL and AND
+// Unofficial instruction; combined ROL and AND.
 void CPU::RLA()
 {
-	ROL();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	AND();
+	// TODO: Mesen states that this is a combined LSR and EOR
+	// ROL
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M << 1 | flags.C;
+	WriteCycle(curr_instr.addr, new_M);
+	flags.C = M & 0x80;
+	// AND
+	A &= new_M;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; combined ROR and ADC
+// Unofficial instruction; combined ROR and ADC.
 void CPU::RRA()
 {
-	ROR();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	ADC();
+	// ROR
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M >> 1 | flags.C << 7;
+	WriteCycle(curr_instr.addr, new_M);
+	// ADC
+	u8 op = new_M + flags.C;
+	flags.V = ((A & 0x7F) + (new_M & 0x7F) + flags.C > 0x7F)
+	        ^ ((A       ) + (new_M       ) + flags.C > 0xFF);
+	flags.C = A + op > 0xFF;
+	A += op;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; same thing as AXS but with different addressing modes allowed
+// Unofficial instruction; same thing as AXS but with different addressing modes allowed.
 void CPU::SAX()
 {
+	// TODO remove this
 	AXS();
 }
 
 
-// Unofficial instruction; store X AND (high byte of addr + 1) at addr
+// Unofficial instruction; store X AND (high byte of addr + 1) at addr.
 void CPU::SHX()
 {
 	u8 op = (curr_instr.addr >> 8) + 1;
-	bus->Write(curr_instr.addr, X & op);
+	WriteCycle(curr_instr.addr, X & op);
 }
 
 
-// Unofficial instruction; store Y AND (high byte of addr + 1) at addr
+// Unofficial instruction; store Y AND (high byte of addr + 1) at addr.
 void CPU::SHY()
 {
 	u8 op = (curr_instr.addr >> 8) + 1;
-	bus->Write(curr_instr.addr, Y & op);
+	WriteCycle(curr_instr.addr, Y & op);
 }
 
 
-// Unofficial instruction; combined ASL and ORA
+// Unofficial instruction; combined ASL and ORA.
 void CPU::SLO()
 {
-	ASL();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	ORA();
+	// ASL
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M << 1 & 0xFF;
+	WriteCycle(curr_instr.addr, new_M);
+	flags.C = M & 0x80;
+	// ORA
+	A |= new_M;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
-// Unofficial instruction; combined LSR and EOR
-void CPU::SRE()
+// Unofficial instruction; combined LSR and EOR.
+void CPU::SRE() // LSE
 {
-	LSR();
-	curr_instr.read_addr = curr_instr.new_target; // The 2nd instr uses the result of the 1st one, but the result has not been written to memory yet
-	EOR();
+	// LSR
+	u8 M = ReadCycle(curr_instr.addr);
+	WriteCycle(curr_instr.addr, M);
+	u8 new_M = M >> 1;
+	WriteCycle(curr_instr.addr, new_M);
+	flags.C = M & 1;
+	// EOR
+	A ^= new_M;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
 }
 
 
@@ -1301,20 +1142,21 @@ void CPU::STP()
 }
 
 
-// Unofficial instruction; store A AND X in S and A AND X AND (high byte of addr + 1) at addr
-void CPU::TAS()
+// Unofficial instruction; store A AND X in SP and A AND X AND (high byte of addr + 1) at addr.
+void CPU::TAS() // XAS, SHS
 {
-	S = A & X;
+	SP = A & X;
 	u8 op = (curr_instr.addr >> 8) + 1;
-	bus->Write(curr_instr.addr, A & X & op);
+	WriteCycle(curr_instr.addr, A & X & op);
 }
 
 
-// Unofficial instruction; highly unstable instruction that stores (A OR CONST) AND X AND oper into A, where CONST depends on things such as the temperature!
+// Unofficial instruction; highly unstable instruction that stores (A OR CONST) AND X AND M into A, where CONST depends on things such as the temperature!
 void CPU::XAA()
 {
 	// Use CONST = 0
-	A &= X & curr_instr.read_addr;
+	u8 M = ReadCycle(PC++);
+	A &= X & M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
 }
@@ -1326,7 +1168,15 @@ void CPU::State(Serialization::BaseFunctor& functor)
 	functor.fun(&A, sizeof(u8));
 	functor.fun(&X, sizeof(u8));
 	functor.fun(&Y, sizeof(u8));
-	functor.fun(&S, sizeof(u8));
+	functor.fun(&SP, sizeof(u8));
 	functor.fun(&PC, sizeof(u16));
 	functor.fun(&flags, sizeof(Flags));
+}
+
+
+void CPU::LogState(Action action)
+{
+	bool nmi = action == Action::NMI;
+	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), curr_instr.opcode, SP, PC - 1, bus->total_cpu_cycle_counter - 1, nmi);
+	bus->update_logging_on_next_cycle = true;
 }

@@ -9,7 +9,7 @@
 #include "../Observer.h"
 #include "../Types.h"
 
-#include "../debug/Toggles.h"
+#include "../debug/Logging.h"
 
 #include "Bus.h"
 #include "Component.h"
@@ -232,5 +232,8 @@ private:
 
 	u8 ReadMemory(u16 addr);
 	void WriteMemory(u16 addr, u8 data);
+
+	/// Debugging-related
+	void LogState();
 };
 

@@ -99,7 +99,7 @@
     <ClInclude Include="src\debug\Logging.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\debug\Toggles.h">
+    <ClInclude Include="src\debug\DebugOptions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
