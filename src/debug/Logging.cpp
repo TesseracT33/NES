@@ -168,4 +168,5 @@ void Logging::CompareMesenLogLine()
 	TestString(current_line, line_counter, "CYC", ppu_state.ppu_cycle_counter, NumberFormat::uint32_dec);
 	TestString(current_line, line_counter, "SL", ppu_state.scanline, NumberFormat::uint32_dec);
 #endif
+}
 #endif
