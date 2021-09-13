@@ -9,7 +9,9 @@
 #define PPUCTRL_incr_mode_mask              0x04
 #define PPUCTRL_nametable_sel_mask          0x03
 
-#define PPUMASK_col_emphasis_mask           0x70
+#define PPUMASK_emphasize_blue_mask         0x80
+#define PPUMASK_emphasize_green_mask        0x40
+#define PPUMASK_emphasize_red_mask          0x20
 #define PPUMASK_sprite_enable_mask          0x10
 #define PPUMASK_bg_enable_mask              0x08
 #define PPUMASK_sprite_left_col_enable_mask 0x04
@@ -29,7 +31,9 @@
 #define PPUCTRL_incr_mode              (PPUCTRL & PPUCTRL_incr_mode_mask)
 #define PPUCTRL_nametable_sel          (PPUCTRL & PPUCTRL_nametable_sel_mask)
 
-#define PPUMASK_col_emphasis           (PPUMASK & PPUMASK_col_emphasis_mask)
+#define PPUMASK_emphasize_blue         (PPUMASK & PPUMASK_emphasize_blue_mask)
+#define PPUMASK_emphasize_green        (PPUMASK & PPUMASK_emphasize_green_mask)
+#define PPUMASK_emphasize_red          (PPUMASK & PPUMASK_emphasize_red_mask)
 #define PPUMASK_sprite_enable          (PPUMASK & PPUMASK_sprite_enable_mask)
 #define PPUMASK_bg_enable              (PPUMASK & PPUMASK_bg_enable_mask)
 #define PPUMASK_sprite_left_col_enable (PPUMASK & PPUMASK_sprite_left_col_enable_mask)
@@ -100,52 +104,66 @@ void PPU::Update()
 	{
 		if (scanline_cycle_counter == 0)
 		{
-			// idle cycle on every scanline
+			// idle cycle on every scanline, except for on scanline 0 on odd-numbered frames when rendering is enabled, where it is skipped.
 			scanline_cycle_counter = 1;
-			continue;
+			if (!(current_scanline == 0 && odd_frame && RenderingIsEnabled()))
+				continue;
 		}
 
-		if (current_scanline < post_render_scanline) // scanline 0-239
+		if (current_scanline < post_render_scanline || current_scanline == pre_render_scanline) // Scanlines 0-239, 261
 		{
 			if (scanline_cycle_counter <= 256) // Cycles 1-256
 			{
+				// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
+				// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65).
+				// On all cycles, push a pixel.
 				switch (scanline_cycle_counter)
 				{
 				case 1:
-					// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64 (each write taking two cycles).
-					// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time (?)
-					for (int i = 0; i < 32; i++)
-						secondary_oam[i] = 0xFF;
+					// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64.
+					// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
+					for (int i = 0; i < secondary_oam_size; i++)
+						memory.secondary_oam[i] = 0xFF;
 
 					tile_fetcher.SetBGTileFetchingActive();
-					UpdateBGTileFetching();
-					break;
 
-				case 256:
-					DoSpriteEvaluation();
-					reg.increment_coarse_x();
-					reg.increment_y();
+					if (current_scanline == pre_render_scanline)
+					{
+						PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
+						CheckNMIInterrupt();
+						RenderGraphics();
+					}
 					break;
 
 				case 65:
 					OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
 					sprite_evaluation.Reset();
-					[[fallthrough]];
+					ReloadBackgroundShiftRegisters();
+					break;
+
+				case 256:
+					UpdateBGTileFetching();
+					if (RenderingIsEnabled())
+						UpdateSpriteEvaluation();
+					reg.increment_coarse_x();
+					reg.increment_y();
+					break;
 
 				default:
-					// On odd cycles, update the bg tile fetching (each step takes 2 cycles, starting at cycle 1).
-					// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65). Here, both operations are done on even cycles.
-					if (scanline_cycle_counter & 1)
+					if (!(scanline_cycle_counter & 1))
+					{
 						UpdateBGTileFetching();
-					else if (scanline_cycle_counter >= 66 && RenderingIsEnabled())
-						DoSpriteEvaluation();
+						if (scanline_cycle_counter >= 66 && RenderingIsEnabled())
+							UpdateSpriteEvaluation();
+					}
 
 					// Increment the coarse X scroll at cycles 8, 16, ..., 256
 					if (RenderingIsEnabled() && scanline_cycle_counter % 8 == 0)
 						reg.increment_coarse_x();
-					// Update the bg shift registers at cycles 9, 17, ..., 249
+					// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
 					else if (scanline_cycle_counter % 8 == 1)
-						UpdateBGShiftRegs();
+						ReloadBackgroundShiftRegisters();
+
 					break;
 				}
 
@@ -155,73 +173,72 @@ void PPU::Update()
 			}
 			else if (scanline_cycle_counter <= 320) // Cycles 257-320
 			{
-				OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanline + on the pre-render one
+				OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one
 
 				static unsigned sprite_index;
 
 				if (scanline_cycle_counter == 257)
 				{
 					tile_fetcher.SetSpriteTileFetchingActive();
-					UpdateBGShiftRegs(); // Update the bg shift registers at cycle 257
+					ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
 					if (RenderingIsEnabled())
 						reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
 					sprite_index = 0;
 				}
 
-				// Consider an 8 cycle period (1-8) between cycles 257-320 (of which there are eight: one for each sprite)
+				// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
+				// On cycle 0-3: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM.
+				//    Note: All of this can be done on cycle 0, as none of this data is used until cycle 5 at the earliest (some of it is not used until the next scanline).
 				// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
 				//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
-				// On cycle 1-4: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM
-				// On cycle 9 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data
-				// Not sure if all of this precise timing is necessary. However, the switch stmnt should make it fairly performant anyways
+				// On cycle 8 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data.
+				//    Note: all of this can be done on cycle 321, for none of this data is used until on the next scanline
 				switch ((scanline_cycle_counter - 257) % 8)
 				{
 				case 0:
-					tile_fetcher.y_pos = secondary_oam[4 * sprite_index]; 
+					tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
+					tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
+					sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
+					sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
+					sprite_index++;
 					break;
-				case 1: 
-					tile_fetcher.tile_num = secondary_oam[4 * sprite_index + 1]; 
-					if (scanline_cycle_counter >= 266) UpdateSpriteShiftRegs(sprite_index - 1); // the pattern data for the previous sprite is loaded
-					break;
-				case 2: 
-					sprite_attribute_latch[sprite_index] = secondary_oam[4 * sprite_index + 2];
-					break;
-				case 3: 
-					sprite_x_pos_counter[sprite_index] = secondary_oam[4 * sprite_index + 3]; 
-					break;
-				case 4:
+
+				case 5: case 7:
 					UpdateSpriteTileFetching(); 
 					break;
-				case 5: 
-					break;
-				case 6:
-					UpdateSpriteTileFetching(); 
-					break;
-				case 7:
-					sprite_index++; 
-					break;
+
+				default: break;
+				}
+
+				if (current_scanline == pre_render_scanline && scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
+				{
+					// Copy the vertical bits of t to v
+					reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
 				}
 			}
 			else // Cycles 321-340
 			{
-				// On odd cycles, do bg tile fetching.
-				// Increment the coarse X scroll at cycles 328 and 336, and update the bg shift registers at cycles 329 and 337
+				// On even cycles, do bg tile fetching. Two tiles are fetched in total. The shift registers are reloaded at cycles 329 and 337.
+				// Increment the coarse X scroll at cycles 328 and 336.
+				// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
 				switch (scanline_cycle_counter)
 				{
 				case 321:
+					ReloadSpriteShiftRegisters();
 					tile_fetcher.SetBGTileFetchingActive();
-					UpdateSpriteShiftRegs(7); // the last sprite pattern data to be loaded (sprite index == 7)
-					UpdateBGTileFetching();
 					break;
+
 				case 328: case 336: 
+					UpdateBGTileFetching();
 					reg.increment_coarse_x();  // todo: they say "if rendering is enabled"
 					break; 
+
 				case 329: case 337: 
-					UpdateBGTileFetching();
-					UpdateBGShiftRegs();
+					ReloadBackgroundShiftRegisters();
 					break;
+
 				default: 
-					if (scanline_cycle_counter & 1)
+					if (!(scanline_cycle_counter & 1))
 						UpdateBGTileFetching();
 					break;
 				}
@@ -235,34 +252,11 @@ void PPU::Update()
 				CheckNMIInterrupt();
 			}
 		}
-		else if (current_scanline == pre_render_scanline) // scanline 261
-		{
-			if (scanline_cycle_counter == 1)
-			{
-				PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
-				CheckNMIInterrupt();
-				RenderGraphics();
-			}
-			else
-			{
-				if (scanline_cycle_counter >= 257 && scanline_cycle_counter <= 320)
-				{
-					OAMADDR = 0;
-				}
-				if (scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
-				{
-					// Copy the vertical bits of t to v
-					reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
-				}
-			}
-		}
 
 		// Increment the scanline cycle counter.
 		// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
 		// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
-		scanline_cycle_counter = (scanline_cycle_counter + 1) % 341;
-		if (scanline_cycle_counter == 340 && current_scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
-			scanline_cycle_counter = 0;
+		scanline_cycle_counter = (scanline_cycle_counter + 1) % number_of_cycles_per_scanline_ntsc;
 		if (scanline_cycle_counter == 0)
 			PrepareForNewScanline();
 	}
@@ -312,7 +306,7 @@ u8 PPU::ReadRegister(u16 addr)
 		return 0xFF;
 
 	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
-		;
+		return 0xFF;
 	}
 }
 
@@ -345,14 +339,15 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		return;
 
 	case Bus::Addr::OAMDATA: // $2004
-		if ((current_scanline < post_render_scanline || current_scanline == pre_render_scanline) && RenderingIsEnabled())
+		// OAM can only be written to during vertical or forced blanking
+		if (PPUSTATUS_vblank || !RenderingIsEnabled())
 		{
-			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
-			OAMADDR += 0b100; // todo: correct?
+			memory.oam[OAMADDR++] = data;
 		}
 		else
 		{
-			memory.oam[OAMADDR++] = data;
+			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
+			OAMADDR += 0b100; // todo: not sure what 'bumping only the high 6 bits' means
 		}
 		return;
 
@@ -418,7 +413,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 void PPU::CheckNMIInterrupt()
 {
-	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are true.
+	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are set.
 	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank)
 		cpu->SetNMILow();
 	else
@@ -426,7 +421,7 @@ void PPU::CheckNMIInterrupt()
 }
 
 
-void PPU::DoSpriteEvaluation()
+void PPU::UpdateSpriteEvaluation()
 {
 	auto increment_n = [&]()
 	{
@@ -464,7 +459,7 @@ void PPU::DoSpriteEvaluation()
 
 	if (sprite_evaluation.num_sprites_copied < 8)
 	{
-		secondary_oam[sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = read_oam_entry;
+		memory.secondary_oam[sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = read_oam_entry;
 
 		if (sprite_evaluation.m == 0)
 		{
@@ -578,45 +573,49 @@ void PPU::ResetGraphics()
 void PPU::ShiftPixel()
 {
 	// Fetch one bit from each of the two 16-bit bg shift registers (containing pattern table data for the current tile), forming the colour id for the current bg pixel
-	u8 bg_col_id = (bg_pattern_shift_reg[1] >> reg.x & 1) << 1 | bg_pattern_shift_reg[0] >> reg.x & 1;
-	bg_pattern_shift_reg[0] >>= 1;
-	bg_pattern_shift_reg[1] >>= 1;
+	bool lo_bit = bg_pattern_shift_reg[0] & 1 << (15 - reg.x);
+	bool hi_bit = bg_pattern_shift_reg[1] & 1 << (15 - reg.x);
+	u8 bg_col_id = hi_bit << 1 | lo_bit;
+	bg_pattern_shift_reg[0] <<= 1;
+	bg_pattern_shift_reg[1] <<= 1;
 
 	// Decrement the x-position counters for all 8 sprites. If a counter is 0, the sprite becomes 'active', and the shift registers for the sprite is shifted once every cycle
 	// The current pixel for each 'active' sprite is checked, and the first non-transparent pixel moves on to a multiplexer, where it joins the BG pixel.
 	u8 sprite_col_id = 0;
 	u8 sprite_index = 0; // (0-7)
-	bool sprite_found = false;
+	bool non_transparent_pixel_found = false;
 	for (int i = 0; i < 8; i++)
 	{
 		if (sprite_x_pos_counter[i] > 0)
 		{
 			sprite_x_pos_counter[i]--;
 		}
-		else
+		if (sprite_x_pos_counter[i] == 0)
 		{
-			if (!sprite_found)
+			if (!non_transparent_pixel_found)
 			{
-				u8 curr_sprite_col_id = (sprite_pattern_shift_reg[1][i] & 1) << 1 | sprite_pattern_shift_reg[0][i] & 1;
-				if (curr_sprite_col_id != 0)
+				bool lo_bit = sprite_pattern_shift_reg[0][i] & 0x80;
+				bool hi_bit = sprite_pattern_shift_reg[1][i] & 0x80;
+				u8 col_id = hi_bit << 1 | lo_bit;
+				if (col_id != 0)
 				{
-					sprite_col_id = curr_sprite_col_id;
+					sprite_col_id = col_id;
 					sprite_index = i;
-					sprite_found = true;
+					non_transparent_pixel_found = true;
 				}
 			}
-			sprite_pattern_shift_reg[0][i] >>= 1;
-			sprite_pattern_shift_reg[1][i] >>= 1;
+			sprite_pattern_shift_reg[0][i] <<= 1;
+			sprite_pattern_shift_reg[1][i] <<= 1;
 		}
 	}
 
 	// Set the sprite zero hit flag if all conditions below are met
 	if (!PPUSTATUS_sprite_0_hit                                                             && // The flag has not already been set this frame
-		sprite_0_included && sprite_index == 0                                              && // The current sprite is the 0th sprite in OAM
-		bg_col_id != 0 && sprite_col_id != 0                                                && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
-		PPUMASK_bg_enable && PPUMASK_sprite_enable                                          && // Both bg and sprite rendering must be enabled
-		(pixel_x_pos > 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
-		pixel_x_pos != 255)                                                                    // The pixel-x-pos must not be 255
+	    sprite_evaluation.sprite_0_included && sprite_index == 0                            && // The current sprite is the 0th sprite in OAM
+	    bg_col_id != 0 && sprite_col_id != 0                                                && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
+	    PPUMASK_bg_enable && PPUMASK_sprite_enable                                          && // Both bg and sprite rendering must be enabled
+	    (pixel_x_pos > 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
+	    pixel_x_pos != 255)                                                                    // The pixel-x-pos must not be 255
 	{
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 	}
@@ -642,11 +641,11 @@ void PPU::ShiftPixel()
 }
 
 
-void PPU::UpdateBGShiftRegs()
+void PPU::ReloadBackgroundShiftRegisters()
 {
-	// Reload the upper 8 bits of the two 16-bit background shifters with pattern data for the next tile
-	bg_pattern_shift_reg[0] = bg_pattern_shift_reg[0] & 0xFF | tile_fetcher.pattern_table_tile_low << 8;
-	bg_pattern_shift_reg[1] = bg_pattern_shift_reg[1] & 0xFF | tile_fetcher.pattern_table_tile_high << 8;
+	// Reload the lower 8 bits of the two 16-bit background shifters with pattern data for the next tile
+	bg_pattern_shift_reg[0] = bg_pattern_shift_reg[0] & 0xFF00 | tile_fetcher.pattern_table_tile_low;
+	bg_pattern_shift_reg[1] = bg_pattern_shift_reg[1] & 0xFF00 | tile_fetcher.pattern_table_tile_high;
 
 	// For bg tiles, an attribute table byte holds palette info. Each table entry controls a 32x32 pixel metatile.
 	// The byte is divided into four 2-bit areas, which each control a 16x16 pixel metatile
@@ -656,11 +655,23 @@ void PPU::UpdateBGShiftRegs()
 }
 
 
-void PPU::UpdateSpriteShiftRegs(unsigned sprite_index)
+void PPU::ReloadSpriteShiftRegisters()
 {
-	// Reload the two 8-bit sprite shifters with pattern data for the next tile
-	sprite_pattern_shift_reg[0][sprite_index] = tile_fetcher.pattern_table_tile_low;
-	sprite_pattern_shift_reg[1][sprite_index] = tile_fetcher.pattern_table_tile_high;
+	for (int sprite_index = 0; sprite_index < 8; sprite_index++)
+	{
+		// Reload the two 8-bit sprite shift registers (of index 'sprite_index') with pattern data for the next tile.
+		// If 'sprite_index' is not less than the number of sprites copied from OAM, the registers are loaded with transparent data instead.
+		if (sprite_index < sprite_evaluation.num_sprites_copied)
+		{
+			sprite_pattern_shift_reg[0][sprite_index] = tile_fetcher.pattern_table_tile_low;
+			sprite_pattern_shift_reg[1][sprite_index] = tile_fetcher.pattern_table_tile_high;
+		}
+		else
+		{
+			sprite_pattern_shift_reg[0][sprite_index] = 0;
+			sprite_pattern_shift_reg[1][sprite_index] = 0;
+		}
+	}
 }
 
 
@@ -717,16 +728,15 @@ void PPU::UpdateBGTileFetching()
 		  For BG tiles    : RRRR CCCC == the nametable byte fetched in step 1
 		  For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		u16 addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12;
-		tile_fetcher.pattern_table_tile_low = ReadMemory(addr);
+		tile_fetcher.pattern_table_data_addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12;
+		tile_fetcher.pattern_table_tile_low = ReadMemory(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
 	{
-		u16 addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12 | 8;
-		tile_fetcher.pattern_table_tile_high = ReadMemory(addr);
+		tile_fetcher.pattern_table_tile_high = ReadMemory(tile_fetcher.pattern_table_data_addr | 8);
 		tile_fetcher.step = TileFetcher::Step::fetch_nametable_byte;
 		break;
 	}
@@ -752,42 +762,29 @@ void PPU::UpdateSpriteTileFetching()
 		  +------------------- Half of sprite table (0: "left"; 1: "right"); equal to bit 0 of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		  RRRR CCCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		u16 addr = 0;
 		// todo: fix; should not be "reg.v >> 12" for sprites
 		if (PPUCTRL_sprite_height)  // 8x16 sprites
 		{
 			u8 row_num = 0; // TODO
-			addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12;
+			tile_fetcher.pattern_table_data_addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12;
 			// Check if we are on the top or bottom tile of the 8x16 sprite
 			if (reg.v & 0x20) // i.e. the course Y scroll is odd, meaning that we are on the bottom tile
-				addr |= 0x10;
+				tile_fetcher.pattern_table_data_addr |= 0x10;
 		}
 		else // 8x8 sprites
 		{
 			u8 row_num = tile_fetcher.y_pos - (reg.v >> 12); // 0-7
-			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | row_num;
+			tile_fetcher.pattern_table_data_addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | row_num;
 		}
 
-		tile_fetcher.pattern_table_tile_low = ReadMemory(addr);
+		tile_fetcher.pattern_table_tile_low = ReadMemory(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
 	{
-		u16 addr = 0;
-		// todo: fix; should not be "reg.v >> 12" for sprites
-		if (PPUCTRL_sprite_height)  // 8x16 sprites
-		{
-			addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & ~1) << 4 | reg.v >> 12 | 8;
-			// Check if we are on the top or bottom tile of the 8x16 sprite
-			if (reg.v & 0x20) // i.e. the course Y scroll is odd, meaning that we are on the bottom tile
-				addr |= 0x10;
-		}
-		else // 8x8 sprites
-			addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | (reg.v >> 12) | 8;
-
-		tile_fetcher.pattern_table_tile_high = ReadMemory(addr);
+		tile_fetcher.pattern_table_tile_high = ReadMemory(tile_fetcher.pattern_table_data_addr | 8);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_low;
 		break;
 	}
@@ -858,7 +855,7 @@ void PPU::PrepareForNewFrame()
 
 void PPU::PrepareForNewScanline()
 {
-	current_scanline = (current_scanline + 1) % (pre_render_scanline + 1);
+	current_scanline = (current_scanline + 1) % number_of_scanlines_ntsc;
 	if (current_scanline == 0)
 		PrepareForNewFrame();
 	pixel_x_pos = 0;

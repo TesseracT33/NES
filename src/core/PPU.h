@@ -38,7 +38,7 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	inline bool IsInVblank() { return current_scanline > post_render_scanline && current_scanline < pre_render_scanline; };
+	bool IsInVblank() { return current_scanline > post_render_scanline && current_scanline < pre_render_scanline; };
 
 	unsigned GetWindowScale() { return scale; }
 	wxSize GetWindowSize() { return wxSize(resolution_x * scale, resolution_y * scale); }
@@ -51,13 +51,17 @@ public:
 private:
 	friend class Logging;
 
+	static const unsigned oam_size = 0x100;
+	static const unsigned secondary_oam_size = 0x20;
 	static const unsigned resolution_x = 256;
 	static const unsigned resolution_y = 240;
 	static const unsigned colour_channels = 3;
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
 
 	const unsigned default_scale = 3;
-	const unsigned oam_size = 0x100;
+	const unsigned number_of_cycles_per_scanline_ntsc = 341; // Is actually 340 on scanline 0 if on an odd-numbered frame
+	const unsigned number_of_scanlines_ntsc = 262;
+
 	const unsigned pre_render_scanline = 261;
 	const unsigned post_render_scanline = 240;
 
@@ -73,89 +77,15 @@ private:
 		{204, 210, 120}, {180, 222, 120}, {168, 226, 144}, {152, 226, 180}, {160, 214, 228}, {160, 162, 160}, {  0,   0,   0}, {  0,   0,   0}
 	};
 
+	enum class TileType { BG, OBJ };
+
 	struct Memory
 	{
-		u8 vram[0x1000]{}; // $2000-$2FFF; nametables
-		u8 palette_ram[0x20]{}; // $3F00-3F1F
-		u8 oam[0x100]{};
+		u8 vram[0x1000]{}; // $2000-$2FFF; mapped to $2000-$3EFFF; nametables
+		u8 palette_ram[0x20]{}; // $3F00-3F1F; mapped to $3F00-$3FFF
+		u8 oam[oam_size]{}; // not mapped
+		u8 secondary_oam[secondary_oam_size]{}; // not mapped
 	} memory;
-
-	struct SpriteEvaluation
-	{
-		unsigned num_sprites_copied = 0; // 0-8
-		u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
-		bool idle = false;
-		bool sprite_0_included = false;
-
-		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
-	} sprite_evaluation;
-
-	struct TileFetcher
-	{
-		// fetched data of the tile currently being fetched
-		u8 tile_num; // nametable byte; hex digits 2-1 of the address of the tile's pattern table entries. 
-		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
-		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
-
-		u8 attribute_table_quadrant; // used only for background tiles
-		u8 y_pos; // used only for sprites
-
-		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
-
-		void SetBGTileFetchingActive()     { step = Step::fetch_nametable_byte; }
-		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
-	} tile_fetcher;
-
-	bool sprite_0_included = false;
-
-	struct Sprites
-	{
-		u8 x_pos[8];
-		u8 y_pos[8];
-		u8 attr[8];
-		u8 pattern_data[8];
-	} sprites;
-
-	// PPU registers accessible by the CPU
-	u8 PPUCTRL;
-	u8 PPUMASK;
-	u8 PPUSTATUS;
-	u8 PPUSCROLL;
-	u8 PPUDATA;
-	u8 OAMADDR;
-	u8 OAMDATA;
-	u8 OAMDMA;
-
-	u8 OAMADDR_at_cycle_65;
-
-	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
-
-	u8 scroll_x;
-	s16 scroll_y;
-
-	u8 ppuaddr_first_byte_written;
-	u16 ppuaddr_written_addr;
-
-	bool ppuscroll_written_to, ppuaddr_written_to;
-
-	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
-
-	unsigned current_scanline = 0;
-	unsigned scanline_cycle_counter;
-
-	u8 secondary_oam[32];
-
-	u16 bg_pattern_shift_reg[2];
-	u8 bg_palette_attr_reg;
-	u8 sprite_pattern_shift_reg[2][8];
-	u8 sprite_attribute_latch[8];
-	u8 sprite_x_pos_counter[8];
-
-	u8 pixel_x_pos = 0;
-
-	u8 value_last_written_to_ppu_reg;
-
-	enum class TileType { BG, OBJ };
 
 	struct Regs
 	{
@@ -168,7 +98,7 @@ private:
 		*/
 		unsigned v : 15; // Current VRAM address (15 bits): yyy NN YYYYY XXXXX
 		unsigned t : 15; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
-		unsigned x :  3; // Fine X scroll (3 bits)
+		unsigned x : 3; // Fine X scroll (3 bits)
 		bool w; // First or second write toggle (1 bit)
 
 		void increment_coarse_x()
@@ -203,6 +133,60 @@ private:
 		}
 	} reg;
 
+	struct SpriteEvaluation
+	{
+		unsigned num_sprites_copied = 0; // 0-8
+		u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
+		bool idle = false;
+		bool sprite_0_included = false;
+
+		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
+	} sprite_evaluation;
+
+	struct TileFetcher
+	{
+		// fetched data of the tile currently being fetched
+		u8 tile_num; // nametable byte; hex digits 2-1 of the address of the tile's pattern table entries. 
+		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
+		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
+
+		u8 attribute_table_quadrant; // used only for background tiles
+		u8 y_pos; // used only for sprites
+
+		u16 pattern_table_data_addr;
+
+		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
+
+		void SetBGTileFetchingActive()     { step = Step::fetch_nametable_byte; }
+		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
+	} tile_fetcher;
+
+	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
+
+	// PPU registers accessible by the CPU
+	u8 PPUCTRL;
+	u8 PPUMASK;
+	u8 PPUSTATUS;
+	u8 PPUSCROLL;
+	u8 PPUDATA;
+	u8 OAMADDR;
+	u8 OAMDATA;
+	u8 OAMDMA;
+
+	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
+	u8 OAMADDR_at_cycle_65;
+	u8 pixel_x_pos = 0;
+	u8 value_last_written_to_ppu_reg;
+
+	unsigned current_scanline = 0;
+	unsigned scanline_cycle_counter;
+
+	u16 bg_pattern_shift_reg[2];
+	u8 bg_palette_attr_reg;
+	u8 sprite_pattern_shift_reg[2][8];
+	u8 sprite_attribute_latch[8];
+	u8 sprite_x_pos_counter[8];
+
 	// SDL renderering specific
 	SDL_Renderer* renderer;
 	SDL_Window* window;
@@ -213,20 +197,18 @@ private:
 	u8 framebuffer[framebuffer_size]{};
 	unsigned frame_buffer_pos = 0;
 
-	bool RenderingIsEnabled();
-
-	void ResetGraphics();
-
 	void CheckNMIInterrupt();
-	void DoSpriteEvaluation();
+	void UpdateSpriteEvaluation();
 	u8 GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type);
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
 	void PushPixel(u8 nes_col);
+	void ReloadBackgroundShiftRegisters();
+	void ReloadSpriteShiftRegisters();
 	void RenderGraphics();
+	bool RenderingIsEnabled();
+	void ResetGraphics();
 	void ShiftPixel();
-	void UpdateBGShiftRegs();
-	void UpdateSpriteShiftRegs(unsigned sprite_index);
 	void UpdateBGTileFetching();
 	void UpdateSpriteTileFetching();
 
