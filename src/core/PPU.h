@@ -170,7 +170,6 @@ private:
 	u8 PPUSCROLL;
 	u8 PPUDATA;
 	u8 OAMADDR;
-	u8 OAMDATA;
 	u8 OAMDMA;
 
 	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports

@@ -30,7 +30,7 @@ public:
 	void SetNMILow();
 	void SetNMIHigh();
 
-	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr);
+	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset);
 
 	void State(Serialization::BaseFunctor& functor) override;
 
@@ -138,8 +138,9 @@ private:
 
 	// OAMDMA-related
 	bool oam_dma_transfer_pending;
-	u8* oam_start_ptr;
-	u16 oam_dma_base_addr;
+	u8* oam_dma_base_write_addr_ptr;
+	u8 oam_dma_write_addr_offset;
+	u16 oam_dma_base_read_addr;
 	void PerformOAMDMATransfer();
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)

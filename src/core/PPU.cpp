@@ -116,7 +116,7 @@ void PPU::Update()
 			{
 				// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
 				// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65).
-				// On all cycles, push a pixel.
+				// On all cycles, push a pixel to the framebuffer.
 				switch (scanline_cycle_counter)
 				{
 				case 1:
@@ -141,25 +141,22 @@ void PPU::Update()
 					ReloadBackgroundShiftRegisters();
 					break;
 
-				case 256:
-					UpdateBGTileFetching();
-					if (RenderingIsEnabled())
-						UpdateSpriteEvaluation();
-					reg.increment_coarse_x();
-					reg.increment_y();
-					break;
-
 				default:
-					if (!(scanline_cycle_counter & 1))
+					if ((scanline_cycle_counter & 1) == 0)
 					{
 						UpdateBGTileFetching();
-						if (scanline_cycle_counter >= 66 && RenderingIsEnabled())
-							UpdateSpriteEvaluation();
+						if (RenderingIsEnabled())
+						{
+							if (scanline_cycle_counter >= 66)
+								UpdateSpriteEvaluation();
+							// Increment the coarse X scroll at cycles 8, 16, ..., 256
+							if (scanline_cycle_counter % 8 == 0)
+								reg.increment_coarse_x();
+							// Increment the coarse Y scroll at cycle 256
+							if (scanline_cycle_counter == 256)
+								reg.increment_y();
+						}
 					}
-
-					// Increment the coarse X scroll at cycles 8, 16, ..., 256
-					if (RenderingIsEnabled() && scanline_cycle_counter % 8 == 0)
-						reg.increment_coarse_x();
 					// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
 					else if (scanline_cycle_counter % 8 == 1)
 						ReloadBackgroundShiftRegisters();
@@ -290,16 +287,35 @@ u8 PPU::ReadRegister(u16 addr)
 		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
 		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
 			return 0xFF;
-		return OAMDATA;
+		if (PPUSTATUS_vblank || !RenderingIsEnabled())
+			return memory.oam[OAMADDR];
+		return 0xFF;
 
-	case Bus::Addr::PPUDATA  : // $2007
-		// Outside of rendering, read the value and add either 1 or 32 to v.
+	case Bus::Addr::PPUDATA: // $2007
+		// Outside of rendering, read the value at address 'v' and add either 1 or 32 to 'v'.
 		// During rendering, return $FF (?), and increment both coarse x and y.
 		if (IsInVblank() || !RenderingIsEnabled()) 
 		{
-			u16 v = reg.v;
-			reg.v += PPUCTRL_incr_mode ? 32 : 1;
-			return ReadMemory(v);
+			u16 v_read = reg.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
+			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
+			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
+			if (v_read <= 0x3EFF)
+			{
+				u8 buffered_PPUDATA = PPUDATA;
+				PPUDATA = ReadMemory(v_read);
+				reg.v += PPUCTRL_incr_mode ? 32 : 1;
+				return buffered_PPUDATA;
+			}
+			// When reading palette data $3F00-$3FFF, the palette data is placed immediately on the data bus.
+			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of the mirrored nametable data ($3000-$3EFF) (?).
+			// TODO: no clue what this mean exactly. 
+			else
+			{
+				u8 val = ReadMemory(v_read);
+				PPUDATA = ReadMemory(v_read - 0xF00); // ???
+				reg.v += PPUCTRL_incr_mode ? 32 : 1;
+				return val;
+			}
 		}
 		reg.increment_coarse_x();
 		reg.increment_y();
@@ -387,9 +403,9 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
 		value_last_written_to_ppu_reg = data; // Todo: not 100 % if this counts as a "ppu register"
-		if (this->IsInVblank() || !RenderingIsEnabled())
+		if (PPUSTATUS_vblank || !RenderingIsEnabled())
 		{
-			WriteMemory(reg.v, data);
+			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			reg.v += PPUCTRL_incr_mode ? 32 : 1;
 		}
 		else
@@ -402,9 +418,10 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::OAMDMA: // $4014
 	{
 		// Perform OAM DMA transfer. Writing $XX will upload 256 bytes of data from CPU page $XX00-$XXFF to the internal PPU OAM.
-		// It is done by the cpu, so the cpu will stop executing instructions during this time
+		// It is done by the cpu, so the cpu will be suspended during this time.
+		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
-		cpu->StartOAMDMATransfer(data, memory.oam);
+		cpu->StartOAMDMATransfer(data, memory.oam, OAMADDR);
 	}
 
 	}
@@ -510,6 +527,8 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_ty
 	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
 	u8 palette_id = palette_attr_data & 3;
+	if (PPUMASK_greyscale)
+		return memory.palette_ram[(0x10 * palette_id) & 0x1F]; // todo: probably wrong
 	return memory.palette_ram[1 + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)] & 0x3F;
 }
 
@@ -573,9 +592,14 @@ void PPU::ResetGraphics()
 void PPU::ShiftPixel()
 {
 	// Fetch one bit from each of the two 16-bit bg shift registers (containing pattern table data for the current tile), forming the colour id for the current bg pixel
-	bool lo_bit = bg_pattern_shift_reg[0] & 1 << (15 - reg.x);
-	bool hi_bit = bg_pattern_shift_reg[1] & 1 << (15 - reg.x);
-	u8 bg_col_id = hi_bit << 1 | lo_bit;
+	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
+	u8 bg_col_id = 0;
+	if (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable)
+	{
+		bool lo_bit = bg_pattern_shift_reg[0] & 1 << (15 - reg.x);
+		bool hi_bit = bg_pattern_shift_reg[1] & 1 << (15 - reg.x);
+		bg_col_id = hi_bit << 1 | lo_bit;
+	}
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
@@ -592,7 +616,8 @@ void PPU::ShiftPixel()
 		}
 		if (sprite_x_pos_counter[i] == 0)
 		{
-			if (!non_transparent_pixel_found)
+			// If the PPUMASK_sprite_left_col_enable flag is not set, then sprites are not rendered in the leftmost 8 pixel columns.
+			if (!non_transparent_pixel_found && (pixel_x_pos >= 8 || PPUMASK_sprite_left_col_enable))
 			{
 				bool lo_bit = sprite_pattern_shift_reg[0][i] & 0x80;
 				bool hi_bit = sprite_pattern_shift_reg[1][i] & 0x80;
@@ -610,12 +635,12 @@ void PPU::ShiftPixel()
 	}
 
 	// Set the sprite zero hit flag if all conditions below are met
-	if (!PPUSTATUS_sprite_0_hit                                                             && // The flag has not already been set this frame
-	    sprite_evaluation.sprite_0_included && sprite_index == 0                            && // The current sprite is the 0th sprite in OAM
-	    bg_col_id != 0 && sprite_col_id != 0                                                && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
-	    PPUMASK_bg_enable && PPUMASK_sprite_enable                                          && // Both bg and sprite rendering must be enabled
-	    (pixel_x_pos > 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
-	    pixel_x_pos != 255)                                                                    // The pixel-x-pos must not be 255
+	if (!PPUSTATUS_sprite_0_hit                                                              && // The flag has not already been set this frame
+	    sprite_evaluation.sprite_0_included && sprite_index == 0                             && // The current sprite is the 0th sprite in OAM
+	    bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
+	    PPUMASK_bg_enable && PPUMASK_sprite_enable                                           && // Both bg and sprite rendering must be enabled
+	    (pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
+	    pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
 	{
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 	}
@@ -812,6 +837,8 @@ u8 PPU::ReadMemory(u16 addr)
 		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
 		if ((addr & 0b10011) == 0b10000)
 			addr -= 0x10;
+		if (PPUMASK_greyscale)
+			return memory.palette_ram[addr & 0x30];
 		return memory.palette_ram[addr & 0x1F];
 	}
 	else

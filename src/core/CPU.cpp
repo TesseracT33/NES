@@ -77,11 +77,12 @@ void CPU::Run()
 }
 
 
-void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr)
+void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset)
 {
 	oam_dma_transfer_pending = true;
-	oam_dma_base_addr = page << 8;
-	this->oam_start_ptr = oam_start_ptr;
+	oam_dma_base_read_addr = page << 8;
+	oam_dma_base_write_addr_ptr = oam_start_ptr;
+	oam_dma_write_addr_offset = offset;
 }
 
 
@@ -89,10 +90,16 @@ void CPU::PerformOAMDMATransfer()
 {
 	WaitCycle(odd_cpu_cycle ? 2 : 1);
 
-	// 512 cycles
-	for (u16 i = 0; i < 0x100; i++)
+	// 512 cycles in total.
+	// If the write addr offset is > 0, then we will wrap around to the start of OAM again once we hit the end.
+	for (u16 i = 0; i < 0x100 - oam_dma_write_addr_offset; i++)
 	{
-		*(oam_start_ptr + i) = ReadCycle(oam_dma_base_addr + i);
+		*(oam_dma_base_write_addr_ptr + oam_dma_write_addr_offset + i) = ReadCycle(oam_dma_base_read_addr + i);
+		WaitCycle();
+	}
+	for (u16 i = 0; i < oam_dma_write_addr_offset; i++)
+	{
+		*(oam_dma_base_write_addr_ptr + i) = ReadCycle(oam_dma_base_read_addr + (0x100 - oam_dma_write_addr_offset) + i);
 		WaitCycle();
 	}
 
