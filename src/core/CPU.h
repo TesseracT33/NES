@@ -277,23 +277,23 @@ private:
 	// Helper functions. Defined in the header to enable inlining
 	u8 ReadCycle(u16 addr)
 	{
+		odd_cpu_cycle = !odd_cpu_cycle;
 		PollInterruptOutputs();
 		return bus->ReadCycle(addr);
-		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
 	void WriteCycle(u16 addr, u8 data)
 	{
+		odd_cpu_cycle = !odd_cpu_cycle;
 		PollInterruptOutputs();
 		bus->WriteCycle(addr, data);
-		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
 	void WaitCycle()
 	{
+		odd_cpu_cycle = !odd_cpu_cycle;
 		PollInterruptOutputs();
 		bus->WaitCycle();
-		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
 	void PushByteToStack(u8 byte)

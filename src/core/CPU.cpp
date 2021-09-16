@@ -28,7 +28,7 @@ void CPU::Reset()
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
 	oam_dma_transfer_pending = false;
-	odd_cpu_cycle = false; 
+	odd_cpu_cycle = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
 }
@@ -89,9 +89,9 @@ void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset)
 
 void CPU::PerformOAMDMATransfer()
 {
-	WaitCycle();
-	if (odd_cpu_cycle) // It seems that it is the value of this flag before the first WaitCycle() is executed that matters.
+	if (odd_cpu_cycle)
 		WaitCycle();
+	WaitCycle();
 
 	// 512 cycles in total.
 	// If the write addr offset is > 0, then we will wrap around to the start of OAM again once we hit the end.
