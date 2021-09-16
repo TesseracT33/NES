@@ -29,10 +29,10 @@ private:
 	static const size_t trainer_size = 0x200;
 	static const size_t prg_piece_size = 0x4000;
 	static const size_t chr_piece_size = 0x4000;
-	
-	Header header;
 
 	std::shared_ptr<BaseMapper> mapper;
+
+	Header header;
 
 	template<typename Mapper> void MapperFactory() { this->mapper = std::make_shared<Mapper>(); }
 

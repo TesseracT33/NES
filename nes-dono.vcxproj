@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\core\Header.h" />
     <ClInclude Include="src\debug\Logging.h" />
     <ClInclude Include="src\core\mappers\MapperIncludes.h" />
     <ClInclude Include="src\core\mappers\UxROM.h" />
@@ -32,7 +33,6 @@
     <ClInclude Include="src\core\Joypad.h" />
     <ClInclude Include="src\core\APU.h" />
     <ClInclude Include="src\core\PPU.h" />
-    <ClInclude Include="src\core\Header.h" />
     <ClInclude Include="src\core\mappers\BaseMapper.h" />
     <ClInclude Include="src\core\mappers\MMC1.h" />
     <ClInclude Include="src\core\mappers\NROM.h" />

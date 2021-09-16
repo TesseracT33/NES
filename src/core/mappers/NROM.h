@@ -54,5 +54,14 @@ public:
 	{
 
 	};
+
+	u16 GetNametableAddr(u16 addr) override
+	{
+		// Horizontal mirroring; addresses in $2400-$27FF and $2C00-$2FFF are transformed into $2000-$23FF and $2800-$2BFF, respectively.
+		if (mirroring == 0)
+			return addr & ~0x400;
+		// Vertical mirroring; addresses in $2800-$2FFF are transformed into $2000-$27FF.
+		return addr & ~0x800;
+	};
 };
 

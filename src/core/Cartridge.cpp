@@ -72,10 +72,12 @@ void Cartridge::ParseRomHeader(u8* header_arr)
 		FLAGS_10 = 10
 	};
 
-	this->header.prg_size = header_arr[PRG_ROM_SIZE] * prg_piece_size;
-	this->header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
-	this->header.has_trainer = header_arr[FLAGS_6] & 4;
-	this->header.mapper_num = header_arr[FLAGS_7] & 0xF0 | header_arr[FLAGS_6] >> 4;
+	header.prg_size = header_arr[PRG_ROM_SIZE] * prg_piece_size;
+	header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
+	header.mirroring = header_arr[FLAGS_6] & 1;
+	header.has_prg_ram = header_arr[FLAGS_6] & 2;
+	header.has_trainer = header_arr[FLAGS_6] & 4;
+	header.mapper_num = header_arr[FLAGS_7] & 0xF0 | header_arr[FLAGS_6] >> 4;
 }
 
 
@@ -102,6 +104,8 @@ void Cartridge::LayoutMapperMemory(u8* rom_arr)
 
 	u16 chr_rom_addr_start = prg_rom_addr_start + header.prg_size;
 	memcpy(&mapper->chr_rom[0], rom_arr + chr_rom_addr_start, header.chr_size);
+
+	mapper->mirroring = header.mirroring; // very temporary
 
 	mapper->Initialize();
 }
