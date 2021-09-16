@@ -172,10 +172,9 @@ private:
 	u8 OAMADDR;
 	u8 OAMDMA;
 
-	u8 internal_data_bus_dynamic_latch; // TODO https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
+	u8 internal_data_bus_dynamic_latch; // See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
 	u8 OAMADDR_at_cycle_65;
 	u8 pixel_x_pos = 0;
-	u8 value_last_written_to_ppu_reg;
 
 	unsigned current_scanline = 0;
 	unsigned scanline_cycle_counter;

@@ -1,14 +1,52 @@
 #include "PPU.h"
 
-// register bitmasks
-#define PPUCTRL_NMI_enable_mask             0x80
-#define PPUCTRL_PPU_master_mask             0x40
-#define PPUCTRL_sprite_height_mask          0x20
-#define PPUCTRL_bg_tile_sel_mask            0x10
-#define PPUCTRL_sprite_tile_sel_mask        0x08
-#define PPUCTRL_incr_mode_mask              0x04
-#define PPUCTRL_nametable_sel_mask          0x03
+/* PPUCTRL
+ 7  bit  0
+ ---- ----
+ VPHB SINN
+ |||| ||||
+ |||| ||++- Base nametable address
+ |||| ||    (0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00)
+ |||| |+--- VRAM address increment per CPU read/write of PPUDATA
+ |||| |     (0: add 1, going across; 1: add 32, going down)
+ |||| +---- Sprite pattern table address for 8x8 sprites
+ ||||       (0: $0000; 1: $1000; ignored in 8x16 mode)
+ |||+------ Background pattern table address (0: $0000; 1: $1000)
+ ||+------- Sprite size (0: 8x8 pixels; 1: 8x16 pixels)
+ |+-------- PPU master/slave select
+ |          (0: read backdrop from EXT pins; 1: output color on EXT pins)
+ +--------- Generate an NMI at the start of the
+            vertical blanking interval (0: off; 1: on)
+*/
+#define PPUCTRL_NMI_enable_mask       0x80
+#define PPUCTRL_PPU_master_mask       0x40
+#define PPUCTRL_sprite_height_mask    0x20
+#define PPUCTRL_bg_tile_sel_mask      0x10
+#define PPUCTRL_sprite_tile_sel_mask  0x08
+#define PPUCTRL_incr_mode_mask        0x04
+#define PPUCTRL_nametable_sel_mask    0x03
+#define PPUCTRL_NMI_enable            (PPUCTRL & PPUCTRL_NMI_enable_mask)
+#define PPUCTRL_PPU_master            (PPUCTRL & PPUCTRL_PPU_master_mask)
+#define PPUCTRL_sprite_height         (PPUCTRL & PPUCTRL_sprite_height_mask)
+#define PPUCTRL_bg_tile_sel           (PPUCTRL & PPUCTRL_bg_tile_sel_mask)
+#define PPUCTRL_sprite_tile_sel       (PPUCTRL & PPUCTRL_sprite_tile_sel_mask)
+#define PPUCTRL_incr_mode             (PPUCTRL & PPUCTRL_incr_mode_mask)
+#define PPUCTRL_nametable_sel         (PPUCTRL & PPUCTRL_nametable_sel_mask)
 
+/* PPUMASK
+ 7  bit  0
+ ---- ----
+ BGRs bMmG
+ |||| ||||
+ |||| |||+- Greyscale (0: normal color, 1: produce a greyscale display)
+ |||| ||+-- 1: Show background in leftmost 8 pixels of screen, 0: Hide
+ |||| |+--- 1: Show sprites in leftmost 8 pixels of screen, 0: Hide
+ |||| +---- 1: Show background
+ |||+------ 1: Show sprites
+ ||+------- Emphasize red (green on PAL/Dendy)
+ |+-------- Emphasize green (red on PAL/Dendy)
+ +--------- Emphasize blue
+*/
 #define PPUMASK_emphasize_blue_mask         0x80
 #define PPUMASK_emphasize_green_mask        0x40
 #define PPUMASK_emphasize_red_mask          0x20
@@ -17,20 +55,6 @@
 #define PPUMASK_sprite_left_col_enable_mask 0x04
 #define PPUMASK_bg_left_col_enable_mask     0x02
 #define PPUMASK_greyscale_mask              0x01
-
-#define PPUSTATUS_vblank_mask               0x80
-#define PPUSTATUS_sprite_0_hit_mask         0x40
-#define PPUSTATUS_sprite_overflow_mask      0x20
-
-
-#define PPUCTRL_NMI_enable             (PPUCTRL & PPUCTRL_NMI_enable_mask)
-#define PPUCTRL_PPU_master             (PPUCTRL & PPUCTRL_PPU_master_mask)
-#define PPUCTRL_sprite_height          (PPUCTRL & PPUCTRL_sprite_height_mask)
-#define PPUCTRL_bg_tile_sel            (PPUCTRL & PPUCTRL_bg_tile_sel_mask)
-#define PPUCTRL_sprite_tile_sel        (PPUCTRL & PPUCTRL_sprite_tile_sel_mask)
-#define PPUCTRL_incr_mode              (PPUCTRL & PPUCTRL_incr_mode_mask)
-#define PPUCTRL_nametable_sel          (PPUCTRL & PPUCTRL_nametable_sel_mask)
-
 #define PPUMASK_emphasize_blue         (PPUMASK & PPUMASK_emphasize_blue_mask)
 #define PPUMASK_emphasize_green        (PPUMASK & PPUMASK_emphasize_green_mask)
 #define PPUMASK_emphasize_red          (PPUMASK & PPUMASK_emphasize_red_mask)
@@ -40,9 +64,34 @@
 #define PPUMASK_bg_left_col_enable     (PPUMASK & PPUMASK_bg_left_col_enable_mask)
 #define PPUMASK_greyscale              (PPUMASK & PPUMASK_greyscale_mask)
 
-#define PPUSTATUS_vblank               (PPUSTATUS & PPUSTATUS_vblank_mask)
-#define PPUSTATUS_sprite_0_hit         (PPUSTATUS & PPUSTATUS_sprite_0_hit_mask)
-#define PPUSTATUS_sprite_overflow      (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
+/* PPUSTATUS
+ 7  bit  0
+ ---- ----
+ VSO. ....
+ |||| ||||
+ |||+-++++- Least significant bits previously written into a PPU register
+ |||        (due to register not being updated for this address)
+ ||+------- Sprite overflow. The intent was for this flag to be set
+ ||         whenever more than eight sprites appear on a scanline, but a
+ ||         hardware bug causes the actual behavior to be more complicated
+ ||         and generate false positives as well as false negatives; see
+ ||         PPU sprite evaluation. This flag is set during sprite
+ ||         evaluation and cleared at dot 1 (the second dot) of the
+ ||         pre-render line.
+ |+-------- Sprite 0 Hit.  Set when a nonzero pixel of sprite 0 overlaps
+ |          a nonzero background pixel; cleared at dot 1 of the pre-render
+ |          line.  Used for raster timing.
+ +--------- Vertical blank has started (0: not in vblank; 1: in vblank).
+            Set at dot 1 of line 241 (the line *after* the post-render
+            line); cleared after reading $2002 and at dot 1 of the
+            pre-render line.
+*/
+#define PPUSTATUS_vblank_mask           0x80
+#define PPUSTATUS_sprite_0_hit_mask     0x40
+#define PPUSTATUS_sprite_overflow_mask  0x20
+#define PPUSTATUS_vblank          (PPUSTATUS & PPUSTATUS_vblank_mask)
+#define PPUSTATUS_sprite_0_hit    (PPUSTATUS & PPUSTATUS_sprite_0_hit_mask)
+#define PPUSTATUS_sprite_overflow (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
 
 
 PPU::~PPU()
@@ -198,10 +247,10 @@ void PPU::Update()
 				switch ((scanline_cycle_counter - 257) % 8)
 				{
 				case 0:
-					tile_fetcher.y_pos = memory.secondary_oam[4 * sprite_index];
-					tile_fetcher.tile_num = memory.secondary_oam[4 * sprite_index + 1];
+					tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
+					tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
 					sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
-					sprite_x_pos_counter[sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
+					sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 					sprite_index++;
 					break;
 
@@ -232,7 +281,7 @@ void PPU::Update()
 
 				case 328: case 336:
 					UpdateBGTileFetching();
-					reg.increment_coarse_x();  // todo: they say "if rendering is enabled"
+					if (RenderingIsEnabled()) reg.increment_coarse_x();
 					break;
 
 				case 329: case 337:
@@ -275,56 +324,67 @@ u8 PPU::ReadRegister(u16 addr)
 	case Bus::Addr::PPUSCROLL: // $2005
 	case Bus::Addr::PPUADDR  : // $2006
 	case Bus::Addr::OAMDMA   : // $4014
-		return 0xFF; // write-only. TODO: return 0xFF or 0?
+		return internal_data_bus_dynamic_latch;
 
 	case Bus::Addr::PPUSTATUS: // $2002
 	{
 		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
-		u8 PPUSTATUS_ret = PPUSTATUS & 0xE0 | value_last_written_to_ppu_reg & 0x1F;
+		u8 ret = PPUSTATUS & 0xE0 | internal_data_bus_dynamic_latch & 0x1F;
+		internal_data_bus_dynamic_latch = ret;
 		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
 		CheckNMIInterrupt();
 		reg.w = 0;
-		return PPUSTATUS_ret;
+		return ret;
 	}
 
 	case Bus::Addr::OAMDATA: // $2004
 		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
+		u8 ret;
 		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
-			return 0xFF;
-		if (PPUSTATUS_vblank || !RenderingIsEnabled())
-			return memory.oam[OAMADDR];
-		return 0xFF;
+			ret = 0xFF;
+		else if (PPUSTATUS_vblank || !RenderingIsEnabled())
+			ret = memory.oam[OAMADDR];
+		else
+			ret = internal_data_bus_dynamic_latch;
+		internal_data_bus_dynamic_latch = ret;
+		return ret;
 
 	case Bus::Addr::PPUDATA: // $2007
+	{
 		// Outside of rendering, read the value at address 'v' and add either 1 or 32 to 'v'.
 		// During rendering, return $FF (?), and increment both coarse x and y.
-		if (IsInVblank() || !RenderingIsEnabled()) 
+		u8 ret;
+		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			u16 v_read = reg.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
 			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
 			if (v_read <= 0x3EFF)
 			{
-				u8 buffered_PPUDATA = PPUDATA;
+				ret = PPUDATA;
 				PPUDATA = ReadMemory(v_read);
 				reg.v += PPUCTRL_incr_mode ? 32 : 1;
-				return buffered_PPUDATA;
 			}
 			// When reading palette data $3F00-$3FFF, the palette data is placed immediately on the data bus.
 			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of the mirrored nametable data ($3000-$3EFF) (?).
 			// TODO: no clue what this mean exactly. 
 			else
 			{
-				u8 val = ReadMemory(v_read);
+				ret = ReadMemory(v_read);
 				PPUDATA = ReadMemory(v_read - 0xF00); // ???
 				reg.v += PPUCTRL_incr_mode ? 32 : 1;
-				return val;
 			}
 		}
-		reg.increment_coarse_x();
-		reg.increment_y();
-		return 0xFF;
+		else
+		{
+			reg.increment_coarse_x();
+			reg.increment_y();
+			ret = internal_data_bus_dynamic_latch;
+		}
+		internal_data_bus_dynamic_latch = ret;
+		return ret;
+	}
 
 	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
 		return 0xFF;
@@ -341,18 +401,18 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	{
 	case Bus::Addr::PPUCTRL: // $2000
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUCTRL = value_last_written_to_ppu_reg = data;
+		PPUCTRL = internal_data_bus_dynamic_latch = data;
 		CheckNMIInterrupt();
 		reg.t = reg.t & ~(3 << 10) | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
 	case Bus::Addr::PPUMASK: // $2001
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUMASK = value_last_written_to_ppu_reg = data;
+		PPUMASK = internal_data_bus_dynamic_latch = data;
 		return;
 
 	case Bus::Addr::PPUSTATUS: // $2002
-		value_last_written_to_ppu_reg = data;
+		internal_data_bus_dynamic_latch = data;
 		return; // not writable, except that bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
 
 	case Bus::Addr::OAMADDR: // $2003
@@ -374,7 +434,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUSCROLL: // $2005
 		//if (!cpu->all_ppu_regs_writable) return;
-		value_last_written_to_ppu_reg = data;
+		internal_data_bus_dynamic_latch = data;
 		if (reg.w == 0) // Update x-scroll registers
 		{
 			reg.t = reg.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
@@ -390,7 +450,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUADDR: // $2006
 		//if (!cpu->all_ppu_regs_writable) return;
-		value_last_written_to_ppu_reg = data;
+		internal_data_bus_dynamic_latch = data;
 		if (reg.w == 0)
 		{
 			reg.t = reg.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
@@ -407,7 +467,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUDATA: // $2007
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
-		value_last_written_to_ppu_reg = data; // Todo: not 100 % if this counts as a "ppu register"
+		internal_data_bus_dynamic_latch = data; // Todo: not 100 % if this counts as a "ppu register"
 		if (PPUSTATUS_vblank || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
