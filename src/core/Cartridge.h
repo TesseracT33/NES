@@ -28,7 +28,7 @@ private:
 	static const size_t header_size = 0x10;
 	static const size_t trainer_size = 0x200;
 	static const size_t prg_piece_size = 0x4000;
-	static const size_t chr_piece_size = 0x4000;
+	static const size_t chr_piece_size = 0x2000;
 
 	std::shared_ptr<BaseMapper> mapper;
 

@@ -25,6 +25,7 @@ protected:
 	const size_t chr_piece_size = 0x4000;
 	const size_t prg_piece_size = 0x4000;
 
+	bool chr_is_ram;
 	bool mirroring;
 
 	std::vector<u8> chr_rom;

@@ -73,7 +73,16 @@ void Cartridge::ParseRomHeader(u8* header_arr)
 	};
 
 	header.prg_size = header_arr[PRG_ROM_SIZE] * prg_piece_size;
-	header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
+	if (header_arr[CHR_ROM_SIZE] == 0)
+	{
+		header.chr_size = chr_piece_size;
+		header.chr_is_ram = true;
+	}
+	else
+	{
+		header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
+		header.chr_is_ram = false;
+	}
 	header.mirroring = header_arr[FLAGS_6] & 1;
 	header.has_prg_ram = header_arr[FLAGS_6] & 2;
 	header.has_trainer = header_arr[FLAGS_6] & 4;
@@ -106,6 +115,7 @@ void Cartridge::LayoutMapperMemory(u8* rom_arr)
 	memcpy(&mapper->chr_rom[0], rom_arr + chr_rom_addr_start, header.chr_size);
 
 	mapper->mirroring = header.mirroring; // very temporary
+	mapper->chr_is_ram = header.chr_is_ram; // very temporary
 
 	mapper->Initialize();
 }

@@ -5,6 +5,7 @@
 // Contains info stored in the header of a rom
 struct Header
 {
+	bool chr_is_ram;
 	bool has_prg_ram;
 	bool has_trainer;
 	bool ignore_mirroring_control;

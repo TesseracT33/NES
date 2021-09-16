@@ -52,7 +52,8 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-
+		if (chr_is_ram)
+			chr_rom[addr] = data;
 	};
 
 	u16 GetNametableAddr(u16 addr) override
