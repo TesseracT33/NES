@@ -25,10 +25,32 @@ public:
 	void Reset();
 	void Run();
 
-	void SetIRQLow();
-	void SetIRQHigh();
-	void SetNMILow();
-	void SetNMIHigh();
+	void PollInterruptInputs()
+	{
+		// The NMI input is connected to an edge detector, which polls the status of the NMI line during the second half of each cpu cycle.
+		// It raises an internal signal if the input goes from being high during one cycle to being low during the next. 
+		// The internal signal goes high during the first half of the cycle that follows the one where the edge is detected, and stays high until the NMI has been handled.
+		// Note: 'need_NMI' is set to true as soon as the internal signal is raised, while 'need_NMI_polled' is updated to 'need_NMI' only one cycle after this. 'need_NMI_polled' is what determines whether to service an NMI after an instruction.
+		prev_NMI_input_signal = NMI_input_signal;
+		NMI_input_signal = NMI_line;
+		if (NMI_input_signal == 0 && prev_NMI_input_signal == 1)
+			need_NMI = true;
+
+		// IRQ
+		// TODO
+	}
+	void PollInterruptOutputs()
+	{
+		// NMI
+		need_NMI_polled = need_NMI;
+
+		// IRQ
+		// TODO
+	}
+	void SetIRQLow()  { IRQ_line = 0; }
+	void SetIRQHigh() { IRQ_line = 1; }
+	void SetNMILow()  { NMI_line = 0; }
+	void SetNMIHigh() { NMI_line = 1; }
 
 	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset);
 
@@ -129,12 +151,16 @@ private:
 	bool odd_cpu_cycle;
 	bool stopped; // set to true by the STP instruction
 
-	// interrupt-related
+	// Interrupt-related
 	enum class InterruptType { NMI, IRQ, BRK };
-	InterruptType handled_interrupt_type; // the type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
-	bool NMI_signal_active = false;
-	bool clear_I_on_next_update = false, set_I_on_next_update = false; // refers to the I flag in the status register
-	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down
+	InterruptType handled_interrupt_type; // The type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
+	bool NMI_line = 1; // The NMI signal coming from the ppu.
+	bool NMI_input_signal = 1, prev_NMI_input_signal = 1; // The polled NMI line signal during the 2nd half of the last and second to last CPU cycle, respectively.
+	bool need_NMI = false; // Whether we need to service an NMI interrupt. Is set right after a negative edge is detected (prev_NMI_input_signal == 1 && NMI_input_signal == 0)
+	bool need_NMI_polled = false; // Same as above, but this only gets updated to 'need_NMI' only cycle after need_NMI is updated. If this is set after we have executed an instruction, we service the NMI.
+	bool clear_I_on_next_update = false, set_I_on_next_update = false; // refers to the I flag in the status register.
+	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down.
+	bool IRQ_line = 1;
 
 	// OAMDMA-related
 	bool oam_dma_transfer_pending;
@@ -251,21 +277,23 @@ private:
 	// Helper functions. Defined in the header to enable inlining
 	u8 ReadCycle(u16 addr)
 	{
-		odd_cpu_cycle = !odd_cpu_cycle;
+		PollInterruptOutputs();
 		return bus->ReadCycle(addr);
+		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
 	void WriteCycle(u16 addr, u8 data)
 	{
-		odd_cpu_cycle = !odd_cpu_cycle;
+		PollInterruptOutputs();
 		bus->WriteCycle(addr, data);
+		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
-	void WaitCycle(unsigned cycles = 1)
+	void WaitCycle()
 	{
-		if (cycles & 1)
-			odd_cpu_cycle = !odd_cpu_cycle;
-		bus->WaitCycle(cycles);
+		PollInterruptOutputs();
+		bus->WaitCycle();
+		odd_cpu_cycle = !odd_cpu_cycle;
 	}
 
 	void PushByteToStack(u8 byte)
@@ -297,8 +325,9 @@ private:
 		{
 			s8 offset = curr_instr.addr;
 			// +1 cycle if branch succeeds, +2 if to a new page
-			unsigned additional_cycles = (PC & 0xFF00) == ((u16)(PC + offset) & 0xFF00) ? 1 : 2;
-			WaitCycle(additional_cycles);
+			WaitCycle();
+			if ((PC & 0xFF00) != ((u16)(PC + offset) & 0xFF00))
+				WaitCycle();
 			PC += offset;
 		}
 	}

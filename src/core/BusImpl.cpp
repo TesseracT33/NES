@@ -123,15 +123,12 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 }
 
 
-void BusImpl::WaitCycle(unsigned cycles)
+void BusImpl::WaitCycle()
 {
-	for (unsigned i = 0; i < cycles; i++)
-	{
-		apu->Update();
-		ppu->Update();
-	}
-	UpdateLogging(cycles);
-	cpu_cycle_counter += cycles;
+	apu->Update();
+	ppu->Update();
+	UpdateLogging();
+	cpu_cycle_counter++;
 }
 
 
@@ -141,7 +138,7 @@ void BusImpl::State(Serialization::BaseFunctor& functor)
 }
 
 
-void BusImpl::UpdateLogging(unsigned cycles)
+void BusImpl::UpdateLogging()
 {
 #ifdef DEBUG
 	if (update_logging_on_next_cycle)
@@ -149,6 +146,6 @@ void BusImpl::UpdateLogging(unsigned cycles)
 		Logging::Update();
 		update_logging_on_next_cycle = false;
 	}
-	total_cpu_cycle_counter += cycles;
+	total_cpu_cycle_counter++;
 #endif DEBUG
 }

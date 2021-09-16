@@ -57,7 +57,7 @@ public:
 	virtual void WriteCycle(u16 addr, u8 data) = 0;
 
 	// Simply advance the state machine
-	virtual void WaitCycle(unsigned cycles = 1) = 0;
+	virtual void WaitCycle() = 0;
 
 	unsigned cpu_cycle_counter;
 

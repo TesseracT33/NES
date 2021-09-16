@@ -30,7 +30,7 @@ public:
 	void WriteCycle(u16 addr, u8 data) override;
 
 	// Simply advance the state machine
-	void WaitCycle(unsigned cycles = 1) override;
+	void WaitCycle() override;
 
 	void State(Serialization::BaseFunctor& functor) override;
 
@@ -41,6 +41,6 @@ private:
 		u8 apu_io_test[0x08]; // $4018-$401F
 	} memory;
 
-	void UpdateLogging(unsigned cycles = 1);
+	void UpdateLogging();
 };
 

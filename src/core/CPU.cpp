@@ -22,7 +22,8 @@ void CPU::Reset()
 {
 	cpu_clocks_since_reset = 0;
 	all_ppu_regs_writable = false;
-	NMI_signal_active = false;
+	NMI_input_signal = prev_NMI_input_signal = 1;
+	need_NMI = false;
 	IRQ_num_inputs = 0;
 	set_I_on_next_update = clear_I_on_next_update = false;
 	stopped = false;
@@ -42,7 +43,7 @@ void CPU::Run()
 	while (bus->cpu_cycle_counter < cycle_run_len)
 	{
 		if (stopped)
-			WaitCycle(cycle_run_len - bus->cpu_cycle_counter);
+			WaitCycle();
 
 		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		//	all_ppu_regs_writable = true;
@@ -68,7 +69,7 @@ void CPU::Run()
 
 			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
 			// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
-			if (NMI_signal_active)
+			if (need_NMI_polled)
 				ServiceInterrupt(InterruptType::NMI);
 			else if (IRQ_num_inputs > 0 && !flags.I)
 				ServiceInterrupt(InterruptType::IRQ);
@@ -88,7 +89,9 @@ void CPU::StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset)
 
 void CPU::PerformOAMDMATransfer()
 {
-	WaitCycle(odd_cpu_cycle ? 2 : 1);
+	WaitCycle();
+	if (odd_cpu_cycle) // It seems that it is the value of this flag before the first WaitCycle() is executed that matters.
+		WaitCycle();
 
 	// 512 cycles in total.
 	// If the write addr offset is > 0, then we will wrap around to the start of OAM again once we hit the end.
@@ -287,31 +290,6 @@ CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
 }
 
 
-void CPU::SetIRQLow()
-{
-	// todo: probably needs some code that prevents this var from being increment twice by the same component?
-	IRQ_num_inputs++;
-}
-
-
-void CPU::SetIRQHigh()
-{
-	IRQ_num_inputs--;
-}
-
-
-void CPU::SetNMILow()
-{
-	NMI_signal_active = true;
-}
-
-
-void CPU::SetNMIHigh()
-{
-	NMI_signal_active = false;
-}
-
-
 void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 {
 #ifdef DEBUG
@@ -349,7 +327,7 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 
 	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
 	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
-	if (asserted_interrupt_type == InterruptType::NMI || NMI_signal_active)
+	if (asserted_interrupt_type == InterruptType::NMI || need_NMI_polled)
 	{
 		handled_interrupt_type = InterruptType::NMI;
 	}
@@ -369,7 +347,8 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	{
 		PC = PC & 0xFF00 | ReadCycle(Bus::Addr::NMI_VEC);
 		PC = PC & 0x00FF | ReadCycle(Bus::Addr::NMI_VEC + 1) << 8;
-		NMI_signal_active = false; // todo: it's not entirely clear if this is the right place to clear this
+		need_NMI = need_NMI_polled = false; // todo: it's not entirely clear if this is the right place to clear this
+		NMI_line = NMI_input_signal = prev_NMI_input_signal = 1;
 	}
 	else
 	{
@@ -828,7 +807,8 @@ void CPU::RTI()
 void CPU::RTS()
 {
 	PC = PullWordFromStack() + 1;
-	WaitCycle(2);
+	WaitCycle();
+	WaitCycle();
 }
 
 

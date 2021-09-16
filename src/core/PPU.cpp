@@ -100,8 +100,13 @@ void PPU::Update()
 #endif
 
 	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
-	for (int i = 0; i < 3; i++)
+	for (int ppu_cycle = 0; ppu_cycle < 3; ppu_cycle++)
 	{
+		// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle.
+		// Here, we are polling 2/3 in.
+		if (ppu_cycle == 2)
+			cpu->PollInterruptInputs();
+
 		if (scanline_cycle_counter == 0)
 		{
 			// idle cycle on every scanline, except for on scanline 0 on odd-numbered frames when rendering is enabled, where it is skipped.
@@ -193,15 +198,15 @@ void PPU::Update()
 				switch ((scanline_cycle_counter - 257) % 8)
 				{
 				case 0:
-					tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
-					tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
+					tile_fetcher.y_pos = memory.secondary_oam[4 * sprite_index];
+					tile_fetcher.tile_num = memory.secondary_oam[4 * sprite_index + 1];
 					sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
-					sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
+					sprite_x_pos_counter[sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 					sprite_index++;
 					break;
 
 				case 5: case 7:
-					UpdateSpriteTileFetching(); 
+					UpdateSpriteTileFetching();
 					break;
 
 				default: break;
@@ -225,16 +230,16 @@ void PPU::Update()
 					tile_fetcher.SetBGTileFetchingActive();
 					break;
 
-				case 328: case 336: 
+				case 328: case 336:
 					UpdateBGTileFetching();
 					reg.increment_coarse_x();  // todo: they say "if rendering is enabled"
-					break; 
+					break;
 
-				case 329: case 337: 
+				case 329: case 337:
 					ReloadBackgroundShiftRegisters();
 					break;
 
-				default: 
+				default:
 					if (!(scanline_cycle_counter & 1))
 						UpdateBGTileFetching();
 					break;
@@ -828,6 +833,7 @@ u8 PPU::ReadMemory(u16 addr)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
+		addr = mapper->GetNametableAddr(addr);
 		return memory.vram[addr & 0xFFF];
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
