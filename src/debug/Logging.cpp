@@ -75,7 +75,7 @@ bool Logging::TestString(const std::string& log_line, unsigned line_num,
 	// Compare the Mesen value against our emu value
 	if (val != emu_value)
 	{
-		const char* msg{};
+		wxString msg;
 		switch (num_format)
 		{
 		case NumberFormat::uint8_hex : msg = "Incorrect %s at line %u; expected $%02X, got $%02X"; break;
@@ -137,12 +137,16 @@ void Logging::CompareMesenLogLine()
 	// Check whether an NMI occured here
 	if (current_line.find("NMI") != std::string::npos)
 	{
+#ifdef DEBUG_COMPARE_MESEN_NMI
 		if (!cpu_state.NMI)
 			wxMessageBox(wxString::Format("Expected an NMI at line %u.", line_counter));
+#endif
 		return;
 	}
+#ifdef DEBUG_COMPARE_MESEN_NMI
 	else if (cpu_state.NMI)
 		wxMessageBox(wxString::Format("Did not expect an NMI at line %u.", line_counter));
+#endif
 
 	// Test PC
 	std::string mesen_pc_str = current_line.substr(0, 4);
