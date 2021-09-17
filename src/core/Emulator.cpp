@@ -136,13 +136,15 @@ void Emulator::MainLoop()
 	emu_is_running = true;
 	emu_is_paused = false;
 	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
+	bool cpu_first_run = true;
 
 	while (emu_is_running && !emu_is_paused)
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
 
-		// // Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
-		cpu.Run();
+		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
+		cpu.Run(cpu_first_run);
+		cpu_first_run = false;
 
 		joypad.PollInput();
 

@@ -161,6 +161,7 @@ private:
 		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
 	} tile_fetcher;
 
+	bool cycle_340_was_skipped_on_last_scanline = false;
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
 	// PPU registers accessible by the CPU
@@ -207,6 +208,7 @@ private:
 	bool RenderingIsEnabled();
 	void ResetGraphics();
 	void ShiftPixel();
+	void StepCycle();
 	void UpdateBGTileFetching();
 	void UpdateSpriteTileFetching();
 

@@ -114,8 +114,8 @@ void PPU::Power()
 void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
+	scanline_cycle_counter = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
 	odd_frame = false;
-	scanline_cycle_counter = 27; // Todo: why 27? No idea, that's where Mesen starts (as is evident in its debugger)
 	current_scanline = 0;
 }
 
@@ -149,168 +149,180 @@ void PPU::Update()
 #endif
 
 	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
-	for (int ppu_cycle = 0; ppu_cycle < 3; ppu_cycle++)
+	StepCycle();
+	StepCycle();
+	// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle. Here, we are polling 2/3 in.
+	cpu->PollInterruptInputs();
+	StepCycle();
+}
+
+
+void PPU::StepCycle()
+{
+	if (scanline_cycle_counter == 0)
 	{
-		// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle.
-		// Here, we are polling 2/3 in.
-		if (ppu_cycle == 2)
-			cpu->PollInterruptInputs();
-
-		if (scanline_cycle_counter == 0)
+		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
+		scanline_cycle_counter = 1;
+		if (cycle_340_was_skipped_on_last_scanline)
 		{
-			// idle cycle on every scanline, except for on scanline 0 on odd-numbered frames when rendering is enabled, where it is skipped.
-			scanline_cycle_counter = 1;
-			if (!(current_scanline == 0 && odd_frame && RenderingIsEnabled()))
-				continue;
+			UpdateBGTileFetching();
+			cycle_340_was_skipped_on_last_scanline = false;
 		}
-
-		if (current_scanline < post_render_scanline || current_scanline == pre_render_scanline) // Scanlines 0-239, 261
-		{
-			if (scanline_cycle_counter <= 256) // Cycles 1-256
-			{
-				// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
-				// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65).
-				// On all cycles, push a pixel to the framebuffer.
-				switch (scanline_cycle_counter)
-				{
-				case 1:
-					// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64.
-					// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
-					for (int i = 0; i < secondary_oam_size; i++)
-						memory.secondary_oam[i] = 0xFF;
-
-					tile_fetcher.SetBGTileFetchingActive();
-
-					if (current_scanline == pre_render_scanline)
-					{
-						PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
-						CheckNMIInterrupt();
-						RenderGraphics();
-					}
-					break;
-
-				case 65:
-					OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
-					sprite_evaluation.Reset();
-					ReloadBackgroundShiftRegisters();
-					break;
-
-				default:
-					if ((scanline_cycle_counter & 1) == 0)
-					{
-						UpdateBGTileFetching();
-						if (RenderingIsEnabled())
-						{
-							if (scanline_cycle_counter >= 66)
-								UpdateSpriteEvaluation();
-							// Increment the coarse X scroll at cycles 8, 16, ..., 256
-							if (scanline_cycle_counter % 8 == 0)
-								reg.increment_coarse_x();
-							// Increment the coarse Y scroll at cycle 256
-							if (scanline_cycle_counter == 256)
-								reg.increment_y();
-						}
-					}
-					// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
-					else if (scanline_cycle_counter % 8 == 1)
-						ReloadBackgroundShiftRegisters();
-
-					break;
-				}
-
-				// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
-				// Shift one pixel per cycle during cycles 1-256 on scanlines 0-239
-				ShiftPixel();
-			}
-			else if (scanline_cycle_counter <= 320) // Cycles 257-320
-			{
-				OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one
-
-				static unsigned sprite_index;
-
-				if (scanline_cycle_counter == 257)
-				{
-					tile_fetcher.SetSpriteTileFetchingActive();
-					ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
-					if (RenderingIsEnabled())
-						reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
-					sprite_index = 0;
-				}
-
-				// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
-				// On cycle 0-3: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM.
-				//    Note: All of this can be done on cycle 0, as none of this data is used until cycle 5 at the earliest (some of it is not used until the next scanline).
-				// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
-				//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
-				// On cycle 8 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data.
-				//    Note: all of this can be done on cycle 321, for none of this data is used until on the next scanline
-				switch ((scanline_cycle_counter - 257) % 8)
-				{
-				case 0:
-					tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
-					tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
-					sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
-					sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
-					sprite_index++;
-					break;
-
-				case 5: case 7:
-					UpdateSpriteTileFetching();
-					break;
-
-				default: break;
-				}
-
-				if (current_scanline == pre_render_scanline && scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
-				{
-					// Copy the vertical bits of t to v
-					reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
-				}
-			}
-			else // Cycles 321-340
-			{
-				// On even cycles, do bg tile fetching. Two tiles are fetched in total. The shift registers are reloaded at cycles 329 and 337.
-				// Increment the coarse X scroll at cycles 328 and 336.
-				// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
-				switch (scanline_cycle_counter)
-				{
-				case 321:
-					ReloadSpriteShiftRegisters();
-					tile_fetcher.SetBGTileFetchingActive();
-					break;
-
-				case 328: case 336:
-					UpdateBGTileFetching();
-					if (RenderingIsEnabled()) reg.increment_coarse_x();
-					break;
-
-				case 329: case 337:
-					ReloadBackgroundShiftRegisters();
-					break;
-
-				default:
-					if (!(scanline_cycle_counter & 1))
-						UpdateBGTileFetching();
-					break;
-				}
-			}
-		}
-		else if (current_scanline == post_render_scanline + 1) // scanline 241
-		{
-			if (scanline_cycle_counter == 1)
-			{
-				PPUSTATUS |= PPUSTATUS_vblank_mask;
-				CheckNMIInterrupt();
-			}
-		}
-
-		// Increment the scanline cycle counter.
-		// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
-		// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
-		scanline_cycle_counter = (scanline_cycle_counter + 1) % number_of_cycles_per_scanline_ntsc;
-		if (scanline_cycle_counter == 0)
-			PrepareForNewScanline();
+		return;
 	}
+
+	if (current_scanline < post_render_scanline || current_scanline == pre_render_scanline) // Scanlines 0-239, 261
+	{
+		if (scanline_cycle_counter <= 256) // Cycles 1-256
+		{
+			// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
+			// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles (starting from cycle 65).
+			// On all cycles, push a pixel to the framebuffer.
+			switch (scanline_cycle_counter)
+			{
+			case 1:
+				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64.
+				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
+				for (int i = 0; i < secondary_oam_size; i++)
+					memory.secondary_oam[i] = 0xFF;
+
+				tile_fetcher.SetBGTileFetchingActive();
+
+				if (current_scanline == pre_render_scanline)
+				{
+					PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
+					CheckNMIInterrupt();
+					RenderGraphics();
+				}
+				break;
+
+			case 65:
+				OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
+				sprite_evaluation.Reset();
+				ReloadBackgroundShiftRegisters();
+				break;
+
+			default:
+				if ((scanline_cycle_counter & 1) == 0)
+				{
+					UpdateBGTileFetching();
+					if (RenderingIsEnabled())
+					{
+						if (scanline_cycle_counter >= 66)
+							UpdateSpriteEvaluation();
+						// Increment the coarse X scroll at cycles 8, 16, ..., 256
+						if (scanline_cycle_counter % 8 == 0)
+							reg.increment_coarse_x();
+						// Increment the coarse Y scroll at cycle 256
+						if (scanline_cycle_counter == 256)
+							reg.increment_y();
+					}
+				}
+				// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
+				else if (scanline_cycle_counter % 8 == 1)
+					ReloadBackgroundShiftRegisters();
+
+				break;
+			}
+
+			// todo: Actual pixel output is delayed further due to internal render pipelining, and the first pixel is output during cycle 4.
+			// Shift one pixel per cycle during cycles 1-256 on scanlines 0-239
+			ShiftPixel();
+		}
+		else if (scanline_cycle_counter <= 320) // Cycles 257-320
+		{
+			OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one
+
+			static unsigned sprite_index;
+
+			if (scanline_cycle_counter == 257)
+			{
+				tile_fetcher.SetSpriteTileFetchingActive();
+				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
+				if (RenderingIsEnabled())
+					reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
+				sprite_index = 0;
+			}
+
+			// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
+			// On cycle 0-3: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM.
+			//    Note: All of this can be done on cycle 0, as none of this data is used until cycle 5 at the earliest (some of it is not used until the next scanline).
+			// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
+			//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
+			// On cycle 8 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data.
+			//    Note: all of this can be done on cycle 321, for none of this data is used until on the next scanline
+			switch ((scanline_cycle_counter - 257) % 8)
+			{
+			case 0:
+				tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
+				tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
+				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
+				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
+				sprite_index++;
+				break;
+
+			case 5: case 7:
+				UpdateSpriteTileFetching();
+				break;
+
+			default: break;
+			}
+
+			if (current_scanline == pre_render_scanline && scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
+			{
+				// Copy the vertical bits of t to v
+				reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
+			}
+		}
+		else // Cycles 321-340
+		{
+			// On even cycles, do bg tile fetching. Two tiles are fetched in total. The shift registers are reloaded at cycles 329 and 337.
+			// Increment the coarse X scroll at cycles 328 and 336.
+			// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
+			switch (scanline_cycle_counter)
+			{
+			case 321:
+				ReloadSpriteShiftRegisters();
+				tile_fetcher.SetBGTileFetchingActive();
+				break;
+
+			case 328: case 336:
+				UpdateBGTileFetching();
+				if (RenderingIsEnabled())
+					reg.increment_coarse_x();
+				break;
+
+			case 329: case 337:
+				ReloadBackgroundShiftRegisters();
+				break;
+
+			default:
+				if (!(scanline_cycle_counter & 1))
+					UpdateBGTileFetching();
+				break;
+			}
+		}
+	}
+	else if (current_scanline == post_render_scanline + 1) // scanline 241
+	{
+		if (scanline_cycle_counter == 1)
+		{
+			PPUSTATUS |= PPUSTATUS_vblank_mask;
+			CheckNMIInterrupt();
+		}
+	}
+
+	// Increment the scanline cycle counter.
+	// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
+	// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
+	scanline_cycle_counter = (scanline_cycle_counter + 1) % number_of_cycles_per_scanline_ntsc;
+	if (current_scanline == pre_render_scanline && scanline_cycle_counter == 340 && odd_frame && RenderingIsEnabled())
+	{
+		scanline_cycle_counter = 0;
+		cycle_340_was_skipped_on_last_scanline = true;
+	}
+	if (scanline_cycle_counter == 0)
+		PrepareForNewScanline();
 }
 
 
@@ -467,7 +479,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUDATA: // $2007
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
-		internal_data_bus_dynamic_latch = data; // Todo: not 100 % if this counts as a "ppu register"
+		internal_data_bus_dynamic_latch = data; 
 		if (PPUSTATUS_vblank || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.

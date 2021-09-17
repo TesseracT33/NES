@@ -23,7 +23,7 @@ public:
 
 	void Power();
 	void Reset();
-	void Run();
+	void Run(bool init);
 
 	void PollInterruptInputs()
 	{
