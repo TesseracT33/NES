@@ -135,10 +135,11 @@ private:
 
 	struct SpriteEvaluation
 	{
-		unsigned num_sprites_copied = 0; // 0-8
-		u8 n = 0, m = 0; // n: index (0-63) of the sprite currently being checked in OAM. m: byte (0-3) of this sprite
-		bool idle = false;
-		bool sprite_0_included = false;
+		unsigned num_sprites_copied = 0; // 0-8, the number of sprites copied from OAM into secondary OAM
+		unsigned n : 6; // index (0-63) of the sprite currently being checked in OAM
+		unsigned m : 2; // byte (0-3) of this sprite
+		bool idle = false; // whether the sprite evaluation is finished for the current scanline
+		bool sprite_0_included = false; // whether the 0th byte was copied from OAM into secondary OAM
 
 		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
 	} sprite_evaluation;
@@ -150,8 +151,12 @@ private:
 		u8 attribute_table_byte; // palette data for the tile. depending on which quadrant of a 16x16 pixel metatile this tile is in, two bits of this byte indicate the palette number (0-3) used for the tile
 		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
 
-		u8 attribute_table_quadrant; // used only for background tiles
-		u8 y_pos; // used only for sprites
+		// used only for background tiles
+		u8 attribute_table_quadrant; 
+
+		// used only for sprites
+		u8 y_pos;
+		u8 attr;
 
 		u16 pattern_table_data_addr;
 
