@@ -185,11 +185,11 @@ private:
 	unsigned current_scanline = 0;
 	unsigned scanline_cycle_counter;
 
-	u16 bg_pattern_shift_reg[2];
-	u8 bg_palette_attr_reg;
-	u8 sprite_pattern_shift_reg[2][8];
-	u8 sprite_attribute_latch[8];
-	u8 sprite_x_pos_counter[8];
+	u16 bg_pattern_shift_reg[2]{};
+	u8 bg_palette_attr_reg{};
+	u8 sprite_pattern_shift_reg[2][8]{};
+	u8 sprite_attribute_latch[8]{};
+	signed sprite_x_pos_counter[8]{};
 
 	// SDL renderering specific
 	SDL_Renderer* renderer;

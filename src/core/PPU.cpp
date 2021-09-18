@@ -315,6 +315,8 @@ void PPU::StepCycle()
 		{
 			PPUSTATUS |= PPUSTATUS_vblank_mask;
 			CheckNMIInterrupt();
+			scanline_cycle_counter = 2;
+			return;
 		}
 	}
 
@@ -562,7 +564,7 @@ void PPU::UpdateSpriteEvaluation()
 	if (sprite_evaluation.num_sprites_copied < 8)
 	{
 		// Copy the read oam entry into secondary oam. Note that this occurs even if this is the first byte of a sprite, and we later decide not to copy the rest of it due to it not being in range!
-		memory.secondary_oam[sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = oam_entry;
+		memory.secondary_oam[4 * sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = oam_entry;
 
 		if (sprite_evaluation.m == 0) // Means that the read oam entry is being interpreted as a y-position.
 		{
@@ -599,16 +601,21 @@ void PPU::UpdateSpriteEvaluation()
 // Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given palette attribute data
 u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 {
-	// If the color ID is 0, then the 'universal background color', located at $3F00, is always used.
+	// If the color ID is 0, then the 'universal background color', located at $3F00, is used.
 	// This is equal to palette_ram[0]
 	if (col_id == 0)
+	{
+		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
+		if (reg.v >= 0x3F00 && !RenderingIsEnabled())
+			return ReadMemory(reg.v) & 0x3F;
 		return memory.palette_ram[0] & 0x3F;
+	}
 	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the 'bg_palette_attr_reg' variable)
 	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
 	if (PPUMASK_greyscale)
-		return memory.palette_ram[(0x10 * palette_id) & 0x1F]; // todo: probably wrong
-	return memory.palette_ram[col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)] & 0x3F;
+		return memory.palette_ram[(0x10 * palette_id) & 0x1F] & 0x3F; // todo: wrong
+	return ReadMemory(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)) & 0x3F;
 }
 
 
@@ -672,13 +679,11 @@ void PPU::ShiftPixel()
 {
 	// Fetch one bit from each of the two 16-bit bg shift registers (containing pattern table data for the current tile), forming the colour id for the current bg pixel
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
-	u8 bg_col_id = 0;
-	if (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable)
-	{
-		bool lo_bit = bg_pattern_shift_reg[0] & 1 << (15 - reg.x);
-		bool hi_bit = bg_pattern_shift_reg[1] & 1 << (15 - reg.x);
-		bg_col_id = hi_bit << 1 | lo_bit;
-	}
+	u8 bg_col_id;
+	if (PPUMASK_bg_enable && (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable))
+		bg_col_id = ((bg_pattern_shift_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << reg.x) & 0x8000) >> 14;
+	else
+		bg_col_id = 0;
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
@@ -686,30 +691,28 @@ void PPU::ShiftPixel()
 	// The current pixel for each 'active' sprite is checked, and the first non-transparent pixel moves on to a multiplexer, where it joins the BG pixel.
 	u8 sprite_col_id = 0;
 	u8 sprite_index = 0; // (0-7)
-	bool non_transparent_pixel_found = false;
+	bool opaque_pixel_found = false;
 	for (int i = 0; i < 8; i++)
 	{
-		if (sprite_x_pos_counter[i] > 0)
-		{
-			sprite_x_pos_counter[i]--;
-		}
-		if (sprite_x_pos_counter[i] == 0)
+		--sprite_x_pos_counter[i];
+		bool sprite_is_in_range = sprite_x_pos_counter[i] <= 0 && sprite_x_pos_counter[i] > -8;
+		if (sprite_is_in_range)
 		{
 			// If the PPUMASK_sprite_left_col_enable flag is not set, then sprites are not rendered in the leftmost 8 pixel columns.
-			if (!non_transparent_pixel_found && (pixel_x_pos >= 8 || PPUMASK_sprite_left_col_enable))
+			if (!opaque_pixel_found && PPUMASK_sprite_enable && (pixel_x_pos >= 8 || PPUMASK_sprite_left_col_enable))
 			{
-				bool lo_bit = sprite_pattern_shift_reg[0][i] & 0x80;
-				bool hi_bit = sprite_pattern_shift_reg[1][i] & 0x80;
-				u8 col_id = hi_bit << 1 | lo_bit;
+				u8 offset = -sprite_x_pos_counter[i]; // Which pixel of the sprite line to render.
+				if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
+					offset = 7 - offset;
+
+				u8 col_id = ((sprite_pattern_shift_reg[0][i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[1][i] << offset) & 0x80) >> 6;
 				if (col_id != 0)
 				{
 					sprite_col_id = col_id;
 					sprite_index = i;
-					non_transparent_pixel_found = true;
+					opaque_pixel_found = true;
 				}
 			}
-			sprite_pattern_shift_reg[0][i] <<= 1;
-			sprite_pattern_shift_reg[1][i] <<= 1;
 		}
 	}
 
@@ -920,13 +923,14 @@ u8 PPU::ReadMemory(u16 addr)
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
 	{
+		addr &= 0x1F;
 		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
 		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
 		if ((addr & 0b10011) == 0b10000)
 			addr -= 0x10;
 		if (PPUMASK_greyscale)
 			return memory.palette_ram[addr & 0x30];
-		return memory.palette_ram[addr & 0x1F];
+		return memory.palette_ram[addr];
 	}
 	else
 	{
@@ -951,11 +955,14 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
 	{
+		addr &= 0x1F;
 		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
 		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
 		if ((addr & 0b10011) == 0b10000)
 			addr -= 0x10;
-		memory.palette_ram[addr & 0x1F] = data;
+		if (PPUMASK_greyscale)
+			memory.palette_ram[addr & 0x30] = data;
+		memory.palette_ram[addr] = data;
 	}
 }
 
