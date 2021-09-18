@@ -203,7 +203,7 @@ private:
 
 	void CheckNMIInterrupt();
 	void UpdateSpriteEvaluation();
-	u8 GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type);
+	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
 	void PushPixel(u8 nes_col);

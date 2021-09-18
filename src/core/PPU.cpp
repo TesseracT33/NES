@@ -231,7 +231,8 @@ void PPU::StepCycle()
 			}
 
 			// Shift one pixel per cycle during cycles 1-256 on scanlines 0-239
-			ShiftPixel();
+			if (current_scanline != pre_render_scanline)
+				ShiftPixel();
 		}
 		else if (scanline_cycle_counter <= 320) // Cycles 257-320
 		{
@@ -260,6 +261,7 @@ void PPU::StepCycle()
 			case 0:
 				tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
 				tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
+				tile_fetcher.attr                    = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 				sprite_index++;
@@ -595,7 +597,7 @@ void PPU::UpdateSpriteEvaluation()
 
 
 // Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given palette attribute data
-u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_type)
+u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 {
 	// If the color ID is 0, then the 'universal background color', located at $3F00, is always used.
 	// This is equal to palette_ram[0]
@@ -604,10 +606,9 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_attr_data, TileType tile_ty
 	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the 'bg_palette_attr_reg' variable)
 	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
-	u8 palette_id = palette_attr_data & 3;
 	if (PPUMASK_greyscale)
 		return memory.palette_ram[(0x10 * palette_id) & 0x1F]; // todo: probably wrong
-	return memory.palette_ram[1 + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)] & 0x3F;
+	return memory.palette_ram[col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)] & 0x3F;
 }
 
 
@@ -736,7 +737,7 @@ void PPU::ShiftPixel()
 	u8 col;
 	bool sprite_priority = sprite_attribute_latch[sprite_index] & 0x20;
 	if (sprite_col_id > 0 && (bg_col_id == 0 || sprite_priority == 0))
-		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index], TileType::OBJ);
+		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
 	else
 		col = GetNESColorFromColorID(bg_col_id, bg_palette_attr_reg, TileType::BG);
 
@@ -865,7 +866,8 @@ void PPU::UpdateSpriteTileFetching()
 		  +------------------- Half of sprite table (0: "left"; 1: "right"); equal to bit 0 of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		u8 sprite_row_num = (reg.v >> 12) - tile_fetcher.y_pos; // which row of the sprite the scanline falls on (0-7)
+		// TODO: not sure if reg.v should be used instead of current_scanline
+		u8 sprite_row_num = (current_scanline - tile_fetcher.y_pos) % 8; // which row of the sprite the scanline falls on (0-7)
 		bool flip_sprite_y = tile_fetcher.attr & 0x80;
 		if (flip_sprite_y)
 			sprite_row_num = 7 - sprite_row_num;
