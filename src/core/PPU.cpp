@@ -865,8 +865,11 @@ void PPU::UpdateSpriteTileFetching()
 		  +------------------- Half of sprite table (0: "left"; 1: "right"); equal to bit 0 of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		u8 sprite_row_num = (reg.v >> 12) - tile_fetcher.y_pos; // which row of the sprite the scanline falls on
+		u8 sprite_row_num = (reg.v >> 12) - tile_fetcher.y_pos; // which row of the sprite the scanline falls on (0-7)
 		bool flip_sprite_y = tile_fetcher.attr & 0x80;
+		if (flip_sprite_y)
+			sprite_row_num = 7 - sprite_row_num;
+
 		if (PPUCTRL_sprite_height) // 8x16 sprites
 		{
 			u8 tile_num = tile_fetcher.tile_num & 0xFE; // Tile number of the top of sprite (0 to 254; bottom half gets the next tile)
@@ -875,16 +878,11 @@ void PPU::UpdateSpriteTileFetching()
 			bool coarse_y_is_odd = reg.v & 0x20;
 			bool fetch_bottom_tile = coarse_y_is_odd ^ flip_sprite_y;
 			if (fetch_bottom_tile)
-			{
 				tile_num++;
-				sprite_row_num -= 8; // If not for this subtraction, the row number would be in the range 8..15 
-			}
-			tile_fetcher.pattern_table_data_addr = (tile_fetcher.tile_num & 1) << 12 | (tile_fetcher.tile_num & 0xFE) << 4 | reg.v >> 12;
+			tile_fetcher.pattern_table_data_addr = (tile_fetcher.tile_num & 1) << 12 | tile_num << 4 | sprite_row_num;
 		}
 		else // 8x8 sprites
 		{
-			if (flip_sprite_y)
-				sprite_row_num = 7 - sprite_row_num;
 			tile_fetcher.pattern_table_data_addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | sprite_row_num;
 		}
 
