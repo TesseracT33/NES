@@ -65,7 +65,6 @@ private:
 		toggle_filter_nes_files,
 		reset_settings,
 		github_link,
-		listBoxDoubleClick
 	};
 
 	static const wxString emulator_name;
@@ -137,12 +136,12 @@ private:
 	void ApplyGUISettings();
 	void ChooseGameDirDialog();
 	void CreateMenuBar();
-	wxString format_size_menubar_label(int scale) const;
-	wxString format_speed_menubar_label(int speed) const;
-	wxString format_custom_size_menubar_label(int scale) const;
-	wxString format_custom_speed_menubar_label(int speed) const;
-	int get_id_of_size_menubar_item(int scale) const;
-	int get_id_of_speed_menubar_item(int speed) const;
+	wxString FormatSizeMenubarLabel(int scale) const;
+	wxString FormatSpeedMenubarLabel(int speed) const;
+	wxString FormatCustomSizeMenubarLabel(int scale) const;
+	wxString FormatCustomSpeedMenubarLabel(int speed) const;
+	int GetIdOfSizeMenubarItem(int scale) const;
+	int GetIdOfSpeedMenubarItem(int speed) const;
 	void LaunchGame();
 	void LocateAndOpenRomFromListBoxSelection(wxString selection);
 	void Quit();

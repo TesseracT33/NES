@@ -186,28 +186,28 @@ void MainWindow::CreateMenuBar()
 	menu_emulation->Append(MenuBarID::reset, wxT("&Reset"));
 	menu_emulation->Append(MenuBarID::stop, wxT("&Stop"));
 
-	menu_size->AppendRadioItem(MenuBarID::size_1x, format_size_menubar_label(1));
-	menu_size->AppendRadioItem(MenuBarID::size_2x, format_size_menubar_label(2));
-	menu_size->AppendRadioItem(MenuBarID::size_4x, format_size_menubar_label(4));
-	menu_size->AppendRadioItem(MenuBarID::size_6x, format_size_menubar_label(6));
-	menu_size->AppendRadioItem(MenuBarID::size_8x, format_size_menubar_label(8));
-	menu_size->AppendRadioItem(MenuBarID::size_10x, format_size_menubar_label(10));
-	menu_size->AppendRadioItem(MenuBarID::size_12x, format_size_menubar_label(12));
-	menu_size->AppendRadioItem(MenuBarID::size_15x, format_size_menubar_label(15));
+	menu_size->AppendRadioItem(MenuBarID::size_1x, FormatSizeMenubarLabel(1));
+	menu_size->AppendRadioItem(MenuBarID::size_2x, FormatSizeMenubarLabel(2));
+	menu_size->AppendRadioItem(MenuBarID::size_4x, FormatSizeMenubarLabel(4));
+	menu_size->AppendRadioItem(MenuBarID::size_6x, FormatSizeMenubarLabel(6));
+	menu_size->AppendRadioItem(MenuBarID::size_8x, FormatSizeMenubarLabel(8));
+	menu_size->AppendRadioItem(MenuBarID::size_10x, FormatSizeMenubarLabel(10));
+	menu_size->AppendRadioItem(MenuBarID::size_12x, FormatSizeMenubarLabel(12));
+	menu_size->AppendRadioItem(MenuBarID::size_15x, FormatSizeMenubarLabel(15));
 	menu_size->AppendRadioItem(MenuBarID::size_custom, wxT("&Custom"));
 	menu_size->Append(MenuBarID::size_maximized, wxT("&Toggle maximized window"));
 	menu_size->AppendSeparator();
 	menu_size->Append(MenuBarID::size_fullscreen, wxT("&Toggle fullscreen (F11)"));
 	menu_settings->AppendSubMenu(menu_size, wxT("&Window size"));
 
-	menu_speed->AppendRadioItem(MenuBarID::speed_50, format_speed_menubar_label(50));
-	menu_speed->AppendRadioItem(MenuBarID::speed_75, format_speed_menubar_label(75));
-	menu_speed->AppendRadioItem(MenuBarID::speed_100, format_speed_menubar_label(100));
-	menu_speed->AppendRadioItem(MenuBarID::speed_125, format_speed_menubar_label(125));
-	menu_speed->AppendRadioItem(MenuBarID::speed_150, format_speed_menubar_label(150));
-	menu_speed->AppendRadioItem(MenuBarID::speed_200, format_speed_menubar_label(200));
-	menu_speed->AppendRadioItem(MenuBarID::speed_300, format_speed_menubar_label(300));
-	menu_speed->AppendRadioItem(MenuBarID::speed_500, format_speed_menubar_label(500));
+	menu_speed->AppendRadioItem(MenuBarID::speed_50, FormatSpeedMenubarLabel(50));
+	menu_speed->AppendRadioItem(MenuBarID::speed_75, FormatSpeedMenubarLabel(75));
+	menu_speed->AppendRadioItem(MenuBarID::speed_100, FormatSpeedMenubarLabel(100));
+	menu_speed->AppendRadioItem(MenuBarID::speed_125, FormatSpeedMenubarLabel(125));
+	menu_speed->AppendRadioItem(MenuBarID::speed_150, FormatSpeedMenubarLabel(150));
+	menu_speed->AppendRadioItem(MenuBarID::speed_200, FormatSpeedMenubarLabel(200));
+	menu_speed->AppendRadioItem(MenuBarID::speed_300, FormatSpeedMenubarLabel(300));
+	menu_speed->AppendRadioItem(MenuBarID::speed_500, FormatSpeedMenubarLabel(500));
 	menu_speed->AppendRadioItem(MenuBarID::speed_uncapped, wxT("&Uncapped"));
 	menu_speed->AppendRadioItem(MenuBarID::speed_custom, wxT("&Custom"));
 	menu_settings->AppendSubMenu(menu_speed, wxT("&Emulation speed"));
@@ -233,24 +233,10 @@ void MainWindow::SetupGameList()
 	rom_folder_path_arr.Clear();
 	game_list_box->Clear();
 
-	size_t num_files = wxDir::GetAllFiles(rom_folder_path, &rom_folder_path_arr, wxEmptyString, wxDIR_FILES);
-
-	// If the option to filter out all files that do not have extension .nes have been enabled, remove these files from 'rom_folder_path_arr'
-	// The below way of doing this is not particularly efficient. It is possible to specify to wxDir::GetAllFiles() that only files of a certain 
-	// extension to be collected. However, we need two extensions (.gb, .gbc), which does not seem possible to specify.
+	wxString filespec = wxEmptyString;
 	if (menu_settings->IsChecked(MenuBarID::toggle_filter_nes_files))
-	{
-		// TODO REWORK
-		wxArrayString rom_folder_path_arr_temp = wxArrayString();
-		for (size_t i = 0; i < num_files; i++)
-		{
-			wxString file_ext = wxFileName(rom_folder_path_arr[i]).GetExt();
-			if (file_ext.IsSameAs("gb") || file_ext.IsSameAs("gbc"))
-				rom_folder_path_arr_temp.Add(rom_folder_path_arr[i]);
-		}
-		rom_folder_path_arr = rom_folder_path_arr_temp;
-		num_files = rom_folder_path_arr.GetCount();
-	}
+		filespec = "*.nes";
+	size_t num_files = wxDir::GetAllFiles(rom_folder_path, &rom_folder_path_arr, filespec, wxDIR_FILES);
 
 	if (num_files == 0)
 	{
@@ -266,14 +252,16 @@ void MainWindow::SetupGameList()
 
 void MainWindow::ApplyGUISettings()
 {
+	menu_settings->Check(MenuBarID::toggle_filter_nes_files, display_only_nes_files);
+
 	SetupGameList();
 
 	unsigned scale = emulator.GetWindowScale();
-	int menu_id = get_id_of_size_menubar_item(scale);
+	int menu_id = GetIdOfSizeMenubarItem(scale);
 	if (menu_id == wxNOT_FOUND)
 	{
 		menu_size->Check(MenuBarID::size_custom, true);
-		menu_size->SetLabel(MenuBarID::size_custom, format_custom_size_menubar_label(scale));
+		menu_size->SetLabel(MenuBarID::size_custom, FormatCustomSizeMenubarLabel(scale));
 	}
 	else
 	{
@@ -287,11 +275,11 @@ void MainWindow::ApplyGUISettings()
 	else
 	{
 		unsigned speed = emulator.emulation_speed;
-		menu_id = get_id_of_speed_menubar_item(speed);
+		menu_id = GetIdOfSpeedMenubarItem(speed);
 		if (menu_id == wxNOT_FOUND)
 		{
 			menu_speed->Check(MenuBarID::speed_custom, true);
-			menu_speed->SetLabel(MenuBarID::speed_custom, format_custom_speed_menubar_label(speed));
+			menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
 		}
 		else
 		{
@@ -327,7 +315,7 @@ void MainWindow::OnMenuOpen(wxCommandEvent& event)
 	// Creates an "open file" dialog
 	wxFileDialog* fileDialog = new wxFileDialog(
 		this, "Choose a file to open", wxEmptyString,
-		wxEmptyString, "GB and GBC files (*.gb;*.gbc)|*.gb;*.gbc|All files (*.*)|*.*",
+		wxEmptyString, "NES files (*.nes)|*.nes|All files (*.*)|*.*",
 		wxFD_OPEN | wxFD_FILE_MUST_EXIST, wxDefaultPosition);
 
 	int buttonPressed = fileDialog->ShowModal(); // show the dialog
@@ -460,7 +448,7 @@ void MainWindow::OnMenuSize(wxCommandEvent& event)
 			ApplyGUISettings();
 			return;
 		}
-		menu_size->SetLabel(MenuBarID::size_custom, format_custom_size_menubar_label(scale));
+		menu_size->SetLabel(MenuBarID::size_custom, FormatCustomSizeMenubarLabel(scale));
 	}
 	else if (id == MenuBarID::size_maximized)
 	{
@@ -530,7 +518,7 @@ void MainWindow::OnMenuSpeed(wxCommandEvent& event)
 		}
 		emulator.SetEmulationSpeed(speed);
 		emulator.emulation_speed_uncapped = false;
-		menu_speed->SetLabel(MenuBarID::speed_custom, format_custom_speed_menubar_label(speed));
+		menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
 	}
 
 	config.Save();
@@ -641,6 +629,8 @@ void MainWindow::OnKeyDown(wxKeyEvent& event)
 			game_list_box->SetSelection(std::max(selection - 1, 0));
 			break;
 		}
+
+		default: break;
 		}
 	}
 
@@ -659,6 +649,8 @@ void MainWindow::OnKeyDown(wxKeyEvent& event)
 		case wx_keycode_fullscreen:
 			ToggleFullScreen();
 			break;
+
+		default: break;
 		}
 	}
 }
@@ -708,23 +700,23 @@ void MainWindow::UpdateFPSLabel()
 }
 
 
-int MainWindow::get_id_of_size_menubar_item(int scale) const
+int MainWindow::GetIdOfSizeMenubarItem(int scale) const
 {
-	wxString item_string = format_size_menubar_label(scale);
+	wxString item_string = FormatSizeMenubarLabel(scale);
 	int menu_id = menu_size->FindItem(item_string);
 	return menu_id;
 }
 
 
-int MainWindow::get_id_of_speed_menubar_item(int speed) const
+int MainWindow::GetIdOfSpeedMenubarItem(int speed) const
 {
-	wxString item_string = format_speed_menubar_label(speed);
+	wxString item_string = FormatSpeedMenubarLabel(speed);
 	int menu_id = menu_speed->FindItem(item_string);
 	return menu_id;
 }
 
 
-wxString MainWindow::format_size_menubar_label(int scale) const
+wxString MainWindow::FormatSizeMenubarLabel(int scale) const
 {
 	// format is '160x144 (1x)'
 	int width = scale * 160, height = scale * 144;
@@ -732,21 +724,21 @@ wxString MainWindow::format_size_menubar_label(int scale) const
 }
 
 
-wxString MainWindow::format_speed_menubar_label(int speed) const
+wxString MainWindow::FormatSpeedMenubarLabel(int speed) const
 {
 	// format is '100 %'
 	return wxString::Format("%i %%", speed);
 }
 
 
-wxString MainWindow::format_custom_size_menubar_label(int scale) const
+wxString MainWindow::FormatCustomSizeMenubarLabel(int scale) const
 {
 	// format is 'Custom (1x)'
 	return wxString::Format("Custom (%ix)", scale);
 }
 
 
-wxString MainWindow::format_custom_speed_menubar_label(int speed) const
+wxString MainWindow::FormatCustomSpeedMenubarLabel(int speed) const
 {
 	// format is 'Custom (100 %)'
 	return wxString::Format("Custom (%i %%)", speed);
