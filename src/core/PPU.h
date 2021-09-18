@@ -116,17 +116,18 @@ private:
 			if ((v & 0x7000) == 0x7000) // if fine y == 7
 			{
 				v &= ~0x7000; // set fine y = 0
-				switch ((v >> 5) & 0x3F) // branch on coarse y
+				switch ((v >> 5) & 0x1F) // branch on coarse y
 				{
 				case 29:
-					v &= ~(0x3F << 5); // set course y = 0
+					v &= ~(0x1F << 5); // set course y = 0
 					v ^= 0x800; // switch vertical nametable
 					break;
 				case 31:
-					v &= ~(0x3F << 5); // set course y = 0
+					v &= ~(0x1F << 5); // set course y = 0
 					break;
 				default:
 					v += 0x20; // increment coarse y
+					break;
 				}
 			}
 			else v += 0x1000;
@@ -167,6 +168,7 @@ private:
 	} tile_fetcher;
 
 	bool cycle_340_was_skipped_on_last_scanline = false;
+	bool set_sprite_0_hit_flag = false;
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
 
 	// PPU registers accessible by the CPU

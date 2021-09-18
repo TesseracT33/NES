@@ -159,6 +159,11 @@ void PPU::Update()
 
 void PPU::StepCycle()
 {
+	if (set_sprite_0_hit_flag && scanline_cycle_counter >= 2) // todo: not sure if this should be at the end of this function instead
+	{
+		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
+		set_sprite_0_hit_flag = false;
+	}
 	if (scanline_cycle_counter == 0)
 	{
 		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
@@ -181,10 +186,11 @@ void PPU::StepCycle()
 			switch (scanline_cycle_counter)
 			{
 			case 1:
-				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64.
+				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64. Does not occur on the pre-render scanline
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
-				for (int i = 0; i < secondary_oam_size; i++)
-					memory.secondary_oam[i] = 0xFF;
+				if (current_scanline != pre_render_scanline)
+					for (int i = 0; i < secondary_oam_size; i++)
+						memory.secondary_oam[i] = 0xFF;
 
 				tile_fetcher.SetBGTileFetchingActive();
 
@@ -284,7 +290,13 @@ void PPU::StepCycle()
 		{
 			// On even cycles, do bg tile fetching. Two tiles are fetched in total. The shift registers are reloaded at cycles 329 and 337.
 			// Increment the coarse X scroll at cycles 328 and 336.
+			// Between cycles 322 and 337, the background shift registers are shifted.
 			// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
+			if (scanline_cycle_counter >= 322 && scanline_cycle_counter <= 337)
+			{
+				bg_pattern_shift_reg[0] <<= 1;
+				bg_pattern_shift_reg[1] <<= 1;
+			}
 			switch (scanline_cycle_counter)
 			{
 			case 321:
@@ -303,7 +315,7 @@ void PPU::StepCycle()
 				break;
 
 			default:
-				if (!(scanline_cycle_counter & 1))
+				if ((scanline_cycle_counter & 1) == 0)
 					UpdateBGTileFetching();
 				break;
 			}
@@ -694,7 +706,6 @@ void PPU::ShiftPixel()
 	bool opaque_pixel_found = false;
 	for (int i = 0; i < 8; i++)
 	{
-		--sprite_x_pos_counter[i];
 		bool sprite_is_in_range = sprite_x_pos_counter[i] <= 0 && sprite_x_pos_counter[i] > -8;
 		if (sprite_is_in_range)
 		{
@@ -714,6 +725,7 @@ void PPU::ShiftPixel()
 				}
 			}
 		}
+		sprite_x_pos_counter[i]--;
 	}
 
 	// Set the sprite zero hit flag if all conditions below are met
@@ -724,7 +736,11 @@ void PPU::ShiftPixel()
 	    (pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
 	    pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
 	{
-		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
+		// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
+		if (scanline_cycle_counter >= 2)
+			PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
+		else
+			set_sprite_0_hit_flag = true;
 	}
 
 	// Mix the bg and sprite pixels, and get an actual NES color from the color id and palette attribute data
@@ -739,7 +755,7 @@ void PPU::ShiftPixel()
 	*/
 	u8 col;
 	bool sprite_priority = sprite_attribute_latch[sprite_index] & 0x20;
-	if (sprite_col_id > 0 && (bg_col_id == 0 || sprite_priority == 0))
+	if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
 		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
 	else
 		col = GetNESColorFromColorID(bg_col_id, bg_palette_attr_reg, TileType::BG);
