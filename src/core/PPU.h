@@ -210,7 +210,7 @@ private:
 	void PrepareForNewScanline();
 	void PushPixel(u8 nes_col);
 	void ReloadBackgroundShiftRegisters();
-	void ReloadSpriteShiftRegisters();
+	void ReloadSpriteShiftRegisters(unsigned sprite_index);
 	void RenderGraphics();
 	bool RenderingIsEnabled();
 	void ResetGraphics();

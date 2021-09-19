@@ -261,7 +261,6 @@ void PPU::StepCycle()
 			// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
 			//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
 			// On cycle 8 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data.
-			//    Note: all of this can be done on cycle 321, for none of this data is used until on the next scanline
 			switch ((scanline_cycle_counter - 257) % 8)
 			{
 			case 0:
@@ -271,6 +270,11 @@ void PPU::StepCycle()
 				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 				sprite_index++;
+				break;
+
+			case 1:
+				if (scanline_cycle_counter >= 266)
+					ReloadSpriteShiftRegisters(sprite_index - 2); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 2.
 				break;
 
 			case 5: case 7:
@@ -300,7 +304,7 @@ void PPU::StepCycle()
 			switch (scanline_cycle_counter)
 			{
 			case 321:
-				ReloadSpriteShiftRegisters();
+				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th sprite.
 				tile_fetcher.SetBGTileFetchingActive();
 				break;
 
@@ -778,22 +782,19 @@ void PPU::ReloadBackgroundShiftRegisters()
 }
 
 
-void PPU::ReloadSpriteShiftRegisters()
+void PPU::ReloadSpriteShiftRegisters(unsigned sprite_index)
 {
-	for (int sprite_index = 0; sprite_index < 8; sprite_index++)
+	// Reload the two 8-bit sprite shift registers (of index 'sprite_index') with pattern data for the next tile.
+	// If 'sprite_index' is not less than the number of sprites copied from OAM, the registers are loaded with transparent data instead.
+	if (sprite_index < sprite_evaluation.num_sprites_copied)
 	{
-		// Reload the two 8-bit sprite shift registers (of index 'sprite_index') with pattern data for the next tile.
-		// If 'sprite_index' is not less than the number of sprites copied from OAM, the registers are loaded with transparent data instead.
-		if (sprite_index < sprite_evaluation.num_sprites_copied)
-		{
-			sprite_pattern_shift_reg[0][sprite_index] = tile_fetcher.pattern_table_tile_low;
-			sprite_pattern_shift_reg[1][sprite_index] = tile_fetcher.pattern_table_tile_high;
-		}
-		else
-		{
-			sprite_pattern_shift_reg[0][sprite_index] = 0;
-			sprite_pattern_shift_reg[1][sprite_index] = 0;
-		}
+		sprite_pattern_shift_reg[0][sprite_index] = tile_fetcher.pattern_table_tile_low;
+		sprite_pattern_shift_reg[1][sprite_index] = tile_fetcher.pattern_table_tile_high;
+	}
+	else
+	{
+		sprite_pattern_shift_reg[0][sprite_index] = 0;
+		sprite_pattern_shift_reg[1][sprite_index] = 0;
 	}
 }
 
