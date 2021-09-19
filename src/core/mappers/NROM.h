@@ -23,23 +23,22 @@ public:
 		{
 			return 0xFF;
 		}
-		else if (addr <= 0x7FFF)
+		if (addr <= 0x7FFF)
 		{
-			return prg_ram[addr - 0x6000];
+			if (has_prg_ram)
+				return prg_ram[addr - 0x6000];
+			return 0xFF;
 		}
-		else if (addr <= 0xBFFF)
+		if (addr <= 0xBFFF)
 		{
 			return prg_rom[addr - 0x8000];
 		}
-		else
-		{
-			return prg_rom[addr - (variant == Variant::PRG_128 ? 0xC000 : 0x8000)];
-		}
+		return prg_rom[addr - (variant == Variant::PRG_128 ? 0xC000 : 0x8000)];
 	};
 
 	void WritePRG(u16 addr, u8 data) override
 	{
-		if (addr <= 0x7FFF)
+		if (addr >= 0x6000 && addr <= 0x7FFF)
 		{
 			prg_ram[addr - 0x6000] = data;
 		}
@@ -47,22 +46,20 @@ public:
 
 	u8 ReadCHR(u16 addr) const override
 	{
-		return chr_rom[addr];
+		return chr[addr];
 	};
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
 		if (chr_is_ram)
-			chr_rom[addr] = data;
+			chr[addr] = data;
 	};
 
 	u16 GetNametableAddr(u16 addr) override
 	{
-		// Horizontal mirroring; addresses in $2400-$27FF and $2C00-$2FFF are transformed into $2000-$23FF and $2800-$2BFF, respectively.
 		if (mirroring == 0)
-			return addr & ~0x400;
-		// Vertical mirroring; addresses in $2800-$2FFF are transformed into $2000-$27FF.
-		return addr & ~0x800;
+			return NametableAddrHorizontal(addr);
+		return NametableAddrVertical(addr);
 	};
 };
 
