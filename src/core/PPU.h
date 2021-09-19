@@ -189,6 +189,7 @@ private:
 
 	u16 bg_pattern_shift_reg[2]{};
 	u8 bg_palette_attr_reg{};
+	u8 bg_palette_attr_reg_buffer{};
 	u8 sprite_pattern_shift_reg[2][8]{};
 	u8 sprite_attribute_latch[8]{};
 	signed sprite_x_pos_counter[8]{};

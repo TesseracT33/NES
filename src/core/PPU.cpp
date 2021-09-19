@@ -626,7 +626,7 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 			return ReadMemory(reg.v) & 0x3F;
 		return memory.palette_ram[0] & 0x3F;
 	}
-	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the 'bg_palette_attr_reg' variable)
+	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
 	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
 	if (PPUMASK_greyscale)
@@ -778,7 +778,8 @@ void PPU::ReloadBackgroundShiftRegisters()
 	// The byte is divided into four 2-bit areas, which each control a 16x16 pixel metatile
 	// Denoting the four 16x16 pixel metatiles by 'bottomright', 'bottomleft' etc, then: value = (bottomright << 6) | (bottomleft << 4) | (topright << 2) | (topleft << 0)
 	// We find which quadrant our 8x8 tile lies in. Then, the two extracted bits give the palette number (0-3) used for the tile
-	bg_palette_attr_reg = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
+	bg_palette_attr_reg = bg_palette_attr_reg_buffer;
+	bg_palette_attr_reg_buffer = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
 }
 
 
@@ -813,6 +814,10 @@ void PPU::UpdateBGTileFetching()
 		  ++----------------- Nametable base address ($2000)
 		*/
 		u16 addr = 0x2000 | (reg.v & 0x0FFF);
+		if (addr == 0x2257)
+		{
+			int a = 3;
+		}
 		tile_fetcher.tile_num = ReadMemory(addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_attribute_table_byte;
 		break;
