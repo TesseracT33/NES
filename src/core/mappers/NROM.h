@@ -5,17 +5,8 @@
 class NROM final : public BaseMapper
 {
 public:
-	static const size_t prg_ram_size      = 0x2000;
-	static const size_t prg_rom_size_base = 0x4000;
-	static const size_t chr_rom_size      = 0x2000;
-
-	enum class Variant { PRG_128, PRG_256 } variant;
-
-	void Initialize() override
-	{
-		this->variant = this->prg_rom.size() == prg_rom_size_base ? Variant::PRG_128 : Variant::PRG_256;
-		prg_ram.resize(prg_ram_size);
-	}
+	NROM(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
+		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
 
 	u8 ReadPRG(u16 addr) const override
 	{
@@ -23,17 +14,20 @@ public:
 		{
 			return 0xFF;
 		}
+		// CPU $6000-$7FFF: Family Basic only: PRG RAM, mirrored as necessary to fill entire 8 KiB window, write protectable with an external switch
 		if (addr <= 0x7FFF)
 		{
 			if (has_prg_ram)
 				return prg_ram[addr - 0x6000];
 			return 0xFF;
 		}
+		// CPU $8000-$BFFF: First 16 KiB of ROM.
 		if (addr <= 0xBFFF)
 		{
 			return prg_rom[addr - 0x8000];
 		}
-		return prg_rom[addr - (variant == Variant::PRG_128 ? 0xC000 : 0x8000)];
+		// CPU $C000-$FFFF: Last 16 KiB of ROM (NROM-256) or mirror of $8000-$BFFF (NROM-128).
+		return prg_rom[addr - (prg_rom_size == prg_rom_bank_size ? 0xC000 : 0x8000)];
 	};
 
 	void WritePRG(u16 addr, u8 data) override
@@ -46,14 +40,15 @@ public:
 
 	u8 ReadCHR(u16 addr) const override
 	{
+		// PPU $0000-$1FFF: 8 KiB (not bank switched)
 		return chr[addr];
-	};
+	}
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
 		if (chr_is_ram)
 			chr[addr] = data;
-	};
+	}
 
 	u16 GetNametableAddr(u16 addr) override
 	{

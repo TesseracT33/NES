@@ -1,127 +1,155 @@
+#include <wx/msgdlg.h>
 #include "Cartridge.h"
 
 
-void Cartridge::Initialize()
+Cartridge::MapperInfo Cartridge::mapper_info{};
+std::shared_ptr<BaseMapper> Cartridge::mapper{};
+
+
+std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(const std::string& rom_path)
 {
-
-}
-
-
-void Cartridge::Reset()
-{
-
-}
-
-
-void Cartridge::Eject()
-{
-
-}
-
-
-u8 Cartridge::Read(u16 addr, bool ppu) const { return mapper->ReadPRG(addr); }
-
-
-void Cartridge::Write(u16 addr, u8 data, bool ppu) { mapper->WritePRG(addr, data); }
-
-
-bool Cartridge::ReadRomFile(std::string path)
-{
-	FILE* rom_file = fopen(path.c_str(), "rb");
+	FILE* rom_file = fopen(rom_path.c_str(), "rb");
 	if (rom_file == NULL)
 	{
 		wxMessageBox("Failed to open rom file.");
-		return false;
+		return std::nullopt;
 	}
 
 	fseek(rom_file, 0, SEEK_END);
-	size_t rom_size = ftell(rom_file);
+	const size_t rom_size = ftell(rom_file);
 	rewind(rom_file);
 
-	// parse the rom header and put details about the rom into var 'header'
-	u8 header_arr[header_size];
-	fread(header_arr, 1, header_size, rom_file);
-	ParseRomHeader(header_arr);
+	// Read and parse the rom header
+	const size_t header_size = 0x10;
+	u8 header[header_size];
+	fread(header, 1, header_size, rom_file);
+	bool success = ParseHeader(header);
+	if (!success)
+		return std::nullopt;
 
-	ConstructMapper();
+	// Match and construct a mapper. If it fails (e.g. due to unsupported mapper detected), return.
+	std::optional<std::shared_ptr<BaseMapper>> mapper = ConstructMapper();
+	if (!mapper.has_value())
+		return std::nullopt;
 
-	// setup the various vectors (e.g. prg_rom, chr_rom) inside of the mapper, by reading the full rom file
-	rewind(rom_file);
-	u8* rom_arr = new u8[rom_size];
-	fread(rom_arr, 1, rom_size, rom_file);
-	LayoutMapperMemory(rom_arr);
+	// Setup the various vectors (e.g. prg_rom, chr_rom) inside of the mapper, by reading the full rom file
+	const size_t trainer_size = 0x200;
+	const size_t read_start = header_size + (mapper_info.has_trainer ? trainer_size : 0);
+	const size_t chr_prg_rom_size = rom_size - read_start;
+	u8* rom_arr = new u8[chr_prg_rom_size];
+	fseek(rom_file, read_start, SEEK_SET);
+	fread(rom_arr, 1, chr_prg_rom_size, rom_file);
+	mapper->get()->LayoutMemory(rom_arr);
 	delete[] rom_arr;
-
 	fclose(rom_file);
+
+	// Setup various properties of the mapper
+	SetupMapperProperties();
+
+	return mapper;
+}
+
+
+std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
+{
+	switch (mapper_info.mapper_num)
+	{
+	case 0x00: MapperFactory<NROM>(); break;
+	case 0x01: MapperFactory<MMC1>(); break;
+	case 0x02: MapperFactory<UxROM>(); break;
+	case 0x07: MapperFactory<AxROM>(); break;
+	default:
+		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_info.mapper_num));
+		return std::nullopt;
+	}
+	return std::make_optional<std::shared_ptr<BaseMapper>>(mapper);
+}
+
+
+bool Cartridge::ParseHeader(u8 header[])
+{
+	// https://wiki.nesdev.com/w/index.php/NES_2.0#Identification
+	// Check if the header is a valid iNES header
+	if (!(header[0] == 'N' && header[1] == 'E' && header[2] == 'S' && header[3] == 0x1A))
+	{
+		wxMessageBox("Error: Could not parse rom file header; rom is not a valid iNES or NES 2.0 image file.");
+		return false;
+	}
+
+	ParseiNESHeader(header);
+
+	// Check if the header is a valid NES 2.0 header
+	if ((header[7] & 0x0C) == 0x08)
+		ParseNES20Header(header);
 
 	return true;
 }
 
 
-void Cartridge::ParseRomHeader(u8* header_arr)
+void Cartridge::ParseiNESHeader(u8 header[])
 {
-	enum HeaderAddr
+	// Parse bytes 0-7 of the header. These have the same meaning on iNES and NES 2.0 headers.
+	mapper_info.prg_rom_size = header[4] * BaseMapper::prg_rom_bank_size;
+	if (header[5] == 0)
 	{
-		TITLE_START = 0,
-		PRG_ROM_SIZE = 4,
-		CHR_ROM_SIZE = 5,
-		FLAGS_6 = 6,
-		FLAGS_7 = 7,
-		FLAGS_8 = 8,
-		FLAGS_9 = 9,
-		FLAGS_10 = 10
-	};
-
-	header.prg_size = header_arr[PRG_ROM_SIZE] * prg_piece_size;
-	if (header_arr[CHR_ROM_SIZE] == 0)
-	{
-		header.chr_size = chr_piece_size;
-		header.chr_is_ram = true;
+		mapper_info.chr_size = BaseMapper::chr_bank_size; // TODO: not correct
+		mapper_info.chr_is_ram = true;
 	}
 	else
 	{
-		header.chr_size = header_arr[CHR_ROM_SIZE] * chr_piece_size;
-		header.chr_is_ram = false;
-	}
-	header.mirroring = header_arr[FLAGS_6] & 1;
-	header.has_prg_ram = header_arr[FLAGS_6] & 2;
-	header.has_trainer = header_arr[FLAGS_6] & 4;
-	header.mapper_num = header_arr[FLAGS_7] & 0xF0 | header_arr[FLAGS_6] >> 4;
-}
-
-
-void Cartridge::ConstructMapper()
-{
-	switch (this->header.mapper_num)
-	{
-	case 0x00: MapperFactory<NROM>() ; break;
-	case 0x01: MapperFactory<MMC1>() ; break;
-	case 0x02: MapperFactory<UxROM>(); break;
+		mapper_info.chr_size = header[5] * BaseMapper::chr_bank_size;
+		mapper_info.chr_is_ram = false;
 	}
 
-	ppu->mapper = this->mapper;
+	mapper_info.mirroring = header[6] & 0x01;
+	mapper_info.has_prg_ram = header[6] & 0x02;
+	mapper_info.has_trainer = header[6] & 0x04;
+	mapper_info.hard_wired_four_screen = header[6] & 0x08;
+
+	mapper_info.mapper_num = header[7] & 0xF0 | header[6] >> 4;
 }
 
 
-void Cartridge::LayoutMapperMemory(u8* rom_arr)
+void Cartridge::ParseNES20Header(u8 header[])
 {
-	mapper->prg_rom.resize(header.prg_size);
-	mapper->chr_rom.resize(header.chr_size);
+	// Parse bytes 8-15 of the header.
+	mapper_info.mapper_num |= (header[8] & 0xF) << 8;
+	mapper_info.submapper_num = header[8] >> 4;
+	if (!mapper_info.chr_is_ram)
+		mapper_info.chr_size += ((header[9] & 0x0F) << 8) * BaseMapper::chr_bank_size;
+	mapper_info.prg_rom_size += ((header[9] & 0xF0) << 4) * BaseMapper::prg_rom_bank_size;
 
-	u16 prg_rom_addr_start = header_size + (header.has_trainer ? trainer_size : 0);
-	memcpy(&mapper->prg_rom[0], rom_arr + prg_rom_addr_start, header.prg_size);
+	// Check for PRG-RAM
+	if (header[10] & 0x0F)
+		mapper_info.prg_ram_size = 64 << (header[10] & 0xF);
+	else
+		mapper_info.prg_ram_size = 0; // todo: clear flag 'has_prg_ram'?
 
-	u16 chr_rom_addr_start = prg_rom_addr_start + header.prg_size;
-	memcpy(&mapper->chr_rom[0], rom_arr + chr_rom_addr_start, header.chr_size);
+	// Check for PRG-NVRAM
+	if (header[10] & 0xF0)
+		mapper_info.prg_nvram_size = 64 << (header[10] >> 4);
+	else
+		mapper_info.prg_nvram_size = 0; // todo: clear flag 'has_prg_nvram'?
 
-	mapper->mirroring = header.mirroring; // very temporary
-	mapper->chr_is_ram = header.chr_is_ram; // very temporary
+	// Check for CHR-RAM
+	if (header[11] & 0x0F)
+		mapper_info.chr_size = 64 << (header[11] & 0xF);
+	else
+		mapper_info.prg_ram_size = 0;
 
-	mapper->Initialize();
+	// Check for CHR-NVRAM
+	if (header[11] & 0xF0)
+		mapper_info.chr_nvram_size = 64 << (header[11] >> 4);
+	else
+		mapper_info.chr_nvram_size = 0;
+
+	mapper_info.cpu_ppu_timing = header[12] & 3;
 }
 
 
-void Cartridge::State(Serialization::BaseFunctor& functor)
+void Cartridge::SetupMapperProperties()
 {
-
+	mapper->chr_is_ram = mapper_info.chr_is_ram;
+	mapper->has_prg_ram = mapper_info.has_prg_ram;
+	mapper->mirroring = mapper_info.mirroring;
 }

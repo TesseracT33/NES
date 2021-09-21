@@ -4,17 +4,18 @@
 
 #include "APU.h"
 #include "Bus.h"
-#include "Cartridge.h"
 #include "Component.h"
 #include "CPU.h"
 #include "Joypad.h"
 #include "PPU.h"
 
+#include "mappers/BaseMapper.h"
+
 class BusImpl final : public Bus, public Component
 {
 public:
 	APU* apu;
-	Cartridge* cartridge;
+	BaseMapper* mapper;
 	CPU* cpu;
 	Joypad* joypad;
 	PPU* ppu;

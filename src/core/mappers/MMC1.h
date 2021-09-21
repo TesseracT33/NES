@@ -5,13 +5,11 @@
 class MMC1 final : public BaseMapper
 {
 public:
-	const size_t prg_ram_size = 0x8000; // todo: this is not actually the same for every game
+	MMC1(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
+		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
 
-	void Initialize() override
-	{
-		prg_ram.resize(prg_ram_size);
-		// TODO: how to distinguish between the different SxROM boards with CHR ram?
-	}
+	const size_t prg_ram_size = 0x8000; // todo: this is not actually the same for every game
+	// TODO: how to distinguish between the different SxROM boards with CHR ram?
 
 	u8 ReadPRG(u16 addr) const override
 	{
@@ -19,31 +17,30 @@ public:
 		{
 			return 0xFF;
 		}
-		else if (addr <= 0x7FFF)
+		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
+		if (addr <= 0x7FFF)
 		{
 			if (has_prg_ram)
 				return prg_ram[addr - 0x6000];
 			return 0xFF;
 		}
-		else
+		// CPU $8000-$BFFF and CPU $C000-FFFF: depends on the control register
+		switch (control_reg >> 2 & 3)
 		{
-			switch (control_reg >> 2 & 3)
-			{
-			case 0: case 1: // 32 KB mode; $8000-$FFFF is mapped to a 32 KB bank (bit 0 of the bank number is ignored).
-				return prg_rom[addr - 0x8000 + (prg_bank & 0x1E) * 0x8000];
+		case 0: case 1: // 32 KiB mode; $8000-$FFFF is mapped to a 32 KiB bank (bit 0 of the bank number is ignored).
+			return prg_rom[addr - 0x8000 + (prg_bank & 0x1E) * 0x8000];
 
-			case 2: // 16 KB mode 1; Fix the first bank at $8000-$BFFF and switch 16 KB bank at $C000-$FFFF.
-				if (addr < 0xC000)
-					return prg_rom[addr - 0x8000];
-				return prg_rom[addr - 0xC000 + prg_bank * 0x4000];
+		case 2: // 16 KiB mode 1; Fix the first bank at $8000-$BFFF and switch 16 KB bank at $C000-$FFFF.
+			if (addr < 0xC000)
+				return prg_rom[addr - 0x8000];
+			return prg_rom[addr - 0xC000 + prg_bank * 0x4000];
 
-			case 3: // 16 KB mode 2; Switch 16 KB bank at $8000-$FFFF and fix the last bank at $C000-$FFFF.
-				if (addr < 0xC000)
-					return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
-				return prg_rom[addr - 0xC000 + (GetNumPRGRomBanks() - 1) * 0x4000];
+		case 3: // 16 KiB mode 2; Switch 16 KB bank at $8000-$FFFF and fix the last bank at $C000-$FFFF.
+			if (addr < 0xC000)
+				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
+			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
 
-			default: return 0xFF; // impossible
-			}
+		default: return 0xFF; // impossible
 		}
 	};
 
@@ -98,7 +95,7 @@ public:
 						break;
 
 					case 0xE: case 0xF:
-						prg_bank = shift_reg;
+						prg_bank = shift_reg % num_prg_rom_banks;
 						break;
 
 					default: break; // impossible
@@ -112,14 +109,14 @@ public:
 
 	u8 ReadCHR(u16 addr) const override
 	{
-		// 4 KB mode; $0000-$0FFF and $1000-$1FFF have two separate 4 KB banks.
+		// 4 KiB mode; $0000-$0FFF and $1000-$1FFF have two separate 4 KiB banks.
 		if (control_reg & 0x10)
 		{
 			if (addr < 0x1000)
 				return chr[addr + 0x1000 * chr_bank_0];
 			return chr[addr - 0x1000 + 0x1000 * chr_bank_1];
 		}
-		// 8 KB mode; $0000-$1FFF is mapped to a single 8 KB bank (bit 0 of the bank number is ignored).
+		// 8 KB mode; $0000-$1FFF is mapped to a single 8 KiB bank (bit 0 of the bank number is ignored).
 		return chr[addr + 0x2000 * (chr_bank_0 & 0x1E)];
 	};
 

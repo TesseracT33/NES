@@ -28,6 +28,16 @@ public:
 	bool emulation_speed_uncapped = false;
 	unsigned emulation_speed = 100;
 
+	APU apu;
+	BusImpl bus;
+	CPU cpu;
+	Joypad joypad;
+	PPU ppu;
+
+	std::shared_ptr<BaseMapper> mapper;
+
+	Observer* gui;
+
 	void StartGame(std::string rom_path);
 	void MainLoop();
 
@@ -52,15 +62,6 @@ public:
 	unsigned GetWindowScale() { return ppu.GetWindowScale(); }
 	wxSize GetWindowSize() { return ppu.GetWindowSize(); }
 
-	APU apu;
-	BusImpl bus;
-	Cartridge cartridge;
-	CPU cpu;
-	Joypad joypad;
-	PPU ppu;
-
-	Observer* gui;
-
 private:
 	const unsigned cycles_per_sec_NTSC = 1789773;
 	const unsigned cycles_per_sec_PAL = 1662607;
@@ -84,7 +85,6 @@ private:
 	std::vector<Snapshottable*> snapshottable_components{};
 
 	void CreateComponentVector();
-	//void BuildComponentVector();
 	void ConnectSystemComponents();
 };
 

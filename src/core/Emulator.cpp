@@ -12,7 +12,6 @@ void Emulator::CreateComponentVector()
 {
 	components.push_back(&apu);
 	components.push_back(&bus);
-	components.push_back(&cartridge);
 	components.push_back(&cpu);
 	components.push_back(&ppu);
 }
@@ -21,12 +20,9 @@ void Emulator::CreateComponentVector()
 void Emulator::ConnectSystemComponents()
 {
 	bus.apu = &apu;
-	bus.cartridge = &cartridge;
 	bus.cpu = &cpu;
 	bus.joypad = &joypad;
 	bus.ppu = &ppu;
-
-	cartridge.ppu = &ppu;
 
 	cpu.bus = &bus;
 
@@ -117,9 +113,12 @@ void Emulator::SetEmulationSpeed(unsigned speed)
 
 void Emulator::StartGame(std::string rom_path)
 {
-	cartridge.Reset();
-	bool rom_loaded = cartridge.ReadRomFile(rom_path);
-	if (!rom_loaded) return;
+	// Construct a mapper class instance given the rom file. If it failed (e.g. if the mapper is not supported), return.
+	std::optional<std::shared_ptr<BaseMapper>> mapper = Cartridge::ConstructMapperFromRom(rom_path);
+	if (!mapper.has_value()) return;
+	this->mapper = mapper.value();
+	bus.mapper = ppu.mapper = this->mapper.get();
+
 	this->current_rom_path = rom_path;
 
 	apu.Reset();
@@ -186,8 +185,6 @@ void Emulator::Pause()
 
 void Emulator::Reset()
 {
-	if (emu_is_running)
-		cartridge.Eject();
 	StartGame(this->current_rom_path);
 }
 
@@ -201,7 +198,5 @@ void Emulator::Resume()
 
 void Emulator::Stop()
 {
-	if (emu_is_running)
-		cartridge.Eject();
 	emu_is_running = false;
 }

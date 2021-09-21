@@ -1,43 +1,44 @@
 #pragma once
 
-#include <wx/msgdlg.h>
-
-#include "Component.h"
-#include "Header.h"
-#include "PPU.h"
+#include <optional>
 
 #include "mappers/BaseMapper.h"
 #include "mappers/MapperIncludes.h"
 
-class Cartridge final : public Component
+class Cartridge final
 {
 public:
-	PPU* ppu;
-
-	void Initialize();
-	void Reset();
-
-	void State(Serialization::BaseFunctor& functor) override;
-
-	void Eject();
-	u8 Read(u16 addr, bool ppu = false) const;
-	bool ReadRomFile(std::string path);
-	void Write(u16 addr, u8 data, bool ppu = false);
+	static std::optional<std::shared_ptr<BaseMapper>> ConstructMapperFromRom(const std::string& rom_path);
 
 private:
-	static const size_t header_size = 0x10;
-	static const size_t trainer_size = 0x200;
-	static const size_t prg_piece_size = 0x4000;
-	static const size_t chr_piece_size = 0x2000;
+	struct MapperInfo
+	{
+		bool chr_is_ram;
+		bool hard_wired_four_screen;
+		bool has_prg_ram;
+		bool has_trainer;
+		bool mirroring;
+		u8 cpu_ppu_timing : 3;
+		u8 submapper_num;
+		u16 mapper_num;
+		size_t chr_nvram_size;
+		size_t chr_size; // refers to either rom or ram; a mapper can't use both (?)
+		size_t prg_nvram_size;
+		size_t prg_ram_size;
+		size_t prg_rom_size;
+	} static mapper_info;
 
-	std::shared_ptr<BaseMapper> mapper;
+	static std::shared_ptr<BaseMapper> mapper;
 
-	Header header;
+	static std::optional<std::shared_ptr<BaseMapper>> ConstructMapper();
 
-	template<typename Mapper> void MapperFactory() { this->mapper = std::make_shared<Mapper>(); }
+	template<typename Mapper> static void MapperFactory() { 
+		mapper = std::make_shared<Mapper>(
+			mapper_info.chr_size, mapper_info.prg_rom_size, mapper_info.prg_ram_size); }
 
-	void ParseRomHeader(u8* header_arr);
-	void ConstructMapper();
-	void LayoutMapperMemory(u8* rom_arr);
+	static bool ParseHeader(u8 header[]);
+	static void ParseiNESHeader(u8 header[]);
+	static void ParseNES20Header(u8 header[]);
+	static void SetupMapperProperties();
 };
 

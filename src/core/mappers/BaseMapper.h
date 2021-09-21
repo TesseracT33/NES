@@ -9,12 +9,33 @@
 class BaseMapper
 {
 public:
-	virtual void Initialize() {}
+	BaseMapper(size_t _chr_size, size_t _prg_rom_size, size_t _prg_ram_size) :
+		chr_size(_chr_size),
+		prg_rom_size(_prg_rom_size),
+		prg_ram_size(_prg_ram_size),
+		num_chr_banks(_chr_size / chr_bank_size),
+		num_prg_rom_banks(prg_rom_size / prg_rom_bank_size),
+		num_prg_ram_banks(prg_ram_size / prg_ram_bank_size)
+	{
+		chr.resize(chr_size);
+		prg_rom.resize(prg_rom_size);
+		prg_ram.resize(prg_ram_size);
+	}
+
+	static const size_t chr_bank_size = 0x2000;
+	static const size_t prg_ram_bank_size = 0x2000;
+	static const size_t prg_rom_bank_size = 0x4000;
+
+	void LayoutMemory(u8* rom_arr)
+	{
+		memcpy(&prg_rom[0], rom_arr, prg_rom_size);
+		memcpy(&chr[0], rom_arr + prg_rom_size, chr_size);
+	}
 
 	virtual u8   ReadPRG(u16 addr) const = 0;
 	virtual void WritePRG(u16 addr, u8 data) = 0;
 
-	virtual u8   ReadCHR (u16 addr) const = 0;
+	virtual u8   ReadCHR(u16 addr) const = 0;
 	virtual void WriteCHR(u16 addr, u8 data) = 0;
 
 	virtual u16 GetNametableAddr(u16 addr) { return addr; }
@@ -22,19 +43,21 @@ public:
 protected:
 	friend class Cartridge;
 
-	const size_t chr_piece_size = 0x2000;
-	const size_t prg_piece_size = 0x4000;
+	const size_t chr_size;
+	const size_t prg_ram_size;
+	const size_t prg_rom_size;
+
+	const size_t num_chr_banks;
+	const size_t num_prg_ram_banks;
+	const size_t num_prg_rom_banks;
 
 	bool chr_is_ram;
 	bool has_prg_ram;
 	bool mirroring;
 
-	std::vector<u8> chr_rom;
+	std::vector<u8> chr;
 	std::vector<u8> prg_ram;
 	std::vector<u8> prg_rom;
-
-	u8 GetNumPRGRomBanks() const { return prg_rom.size() / prg_piece_size; }
-	u8 GetNumCHRRomBanks() const { return chr_rom.size() / chr_piece_size; }
 
 	// Horizontal mirroring; addresses in $2400-$27FF and $2C00-$2FFF are transformed into $2000-$23FF and $2800-$2BFF, respectively.
 	u16 NametableAddrHorizontal(u16 addr) const { return addr & ~0x400; }

@@ -51,7 +51,7 @@ u8 BusImpl::Read(u16 addr)
 	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
-		return cartridge->Read(addr);
+		return mapper->ReadPRG(addr);
 	}
 }
 
@@ -97,7 +97,7 @@ void BusImpl::Write(u16 addr, u8 data)
 	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
-		cartridge->Write(addr, data);
+		mapper->WritePRG(addr, data);
 	}
 }
 

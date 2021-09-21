@@ -27,7 +27,7 @@ public:
 
 	Observer* gui;
 
-	std::shared_ptr<BaseMapper> mapper;
+	BaseMapper* mapper;
 
 	bool CreateRenderer(const void* window_handle);
 	void Power();
@@ -188,8 +188,8 @@ private:
 	unsigned scanline_cycle_counter;
 
 	u16 bg_pattern_shift_reg[2]{};
-	u8 bg_palette_attr_reg{};
-	u8 bg_palette_attr_reg_buffer{};
+	u8 bg_palette_attr_reg[2]{};
+	u8 bg_palette_attr_reg_buffer[2]{};
 	u8 sprite_pattern_shift_reg[2][8]{};
 	u8 sprite_attribute_latch[8]{};
 	signed sprite_x_pos_counter[8]{};
