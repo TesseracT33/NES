@@ -197,7 +197,7 @@ void PPU::StepCycle()
 				if (current_scanline == pre_render_scanline)
 				{
 					PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
-					CheckNMIInterrupt();
+					CheckNMI();
 					RenderGraphics();
 				}
 				break;
@@ -330,7 +330,7 @@ void PPU::StepCycle()
 		if (scanline_cycle_counter == 1)
 		{
 			PPUSTATUS |= PPUSTATUS_vblank_mask;
-			CheckNMIInterrupt();
+			CheckNMI();
 			scanline_cycle_counter = 2;
 			return;
 		}
@@ -369,7 +369,7 @@ u8 PPU::ReadRegister(u16 addr)
 		internal_data_bus_dynamic_latch = ret;
 		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
-		CheckNMIInterrupt();
+		CheckNMI();
 		reg.w = 0;
 		return ret;
 	}
@@ -438,8 +438,8 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUCTRL: // $2000
 		//if (!cpu->all_ppu_regs_writable) return;
 		PPUCTRL = internal_data_bus_dynamic_latch = data;
-		CheckNMIInterrupt();
-		reg.t = reg.t & ~(3 << 10) | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
+		CheckNMI();
+		reg.t = reg.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
 	case Bus::Addr::PPUMASK: // $2001
@@ -529,13 +529,20 @@ void PPU::WriteRegister(u16 addr, u8 data)
 }
 
 
-void PPU::CheckNMIInterrupt()
+void PPU::CheckNMI()
 {
 	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are set.
-	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank)
+	// Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal.
+	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank && NMI_line == 1)
+	{
 		cpu->SetNMILow();
-	else
+		NMI_line = 0;
+	}
+	else if (NMI_line == 0)
+	{
 		cpu->SetNMIHigh();
+		NMI_line = 1;
+	}
 }
 
 
@@ -703,6 +710,10 @@ void PPU::ShiftPixel()
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
+	u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x80) >> 7 | ((bg_palette_attr_reg[1] << reg.x) & 0x80) >> 6;
+	bg_palette_attr_reg[0] <<= 1;
+	bg_palette_attr_reg[1] <<= 1;
+
 	// Decrement the x-position counters for all 8 sprites. If a counter is 0, the sprite becomes 'active', and the shift registers for the sprite is shifted once every cycle
 	// The current pixel for each 'active' sprite is checked, and the first non-transparent pixel moves on to a multiplexer, where it joins the BG pixel.
 	u8 sprite_col_id = 0;
@@ -762,7 +773,7 @@ void PPU::ShiftPixel()
 	if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
 		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
 	else
-		col = GetNESColorFromColorID(bg_col_id, bg_palette_attr_reg, TileType::BG);
+		col = GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
 
 	PushPixel(col);
 }
@@ -778,8 +789,20 @@ void PPU::ReloadBackgroundShiftRegisters()
 	// The byte is divided into four 2-bit areas, which each control a 16x16 pixel metatile
 	// Denoting the four 16x16 pixel metatiles by 'bottomright', 'bottomleft' etc, then: value = (bottomright << 6) | (bottomleft << 4) | (topright << 2) | (topleft << 0)
 	// We find which quadrant our 8x8 tile lies in. Then, the two extracted bits give the palette number (0-3) used for the tile
-	bg_palette_attr_reg = bg_palette_attr_reg_buffer;
-	bg_palette_attr_reg_buffer = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
+	bg_palette_attr_reg[0] = bg_palette_attr_reg_buffer[0];
+	bg_palette_attr_reg[1] = bg_palette_attr_reg_buffer[1];
+	// TODO: TESTING CODE; WIP
+	u8 tmp = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
+	u8 tmp_1 = tmp & 1;
+	u8 tmp_2 = (tmp & 2) >> 1;
+	if (tmp_1 == 0)
+		bg_palette_attr_reg_buffer[0] = 0;
+	else
+		bg_palette_attr_reg_buffer[0] = 0xFF;
+	if (tmp_2 == 0)
+		bg_palette_attr_reg_buffer[1] = 0;
+	else
+		bg_palette_attr_reg_buffer[1] = 0xFF;
 }
 
 
@@ -814,10 +837,6 @@ void PPU::UpdateBGTileFetching()
 		  ++----------------- Nametable base address ($2000)
 		*/
 		u16 addr = 0x2000 | (reg.v & 0x0FFF);
-		if (addr == 0x2257)
-		{
-			int a = 3;
-		}
 		tile_fetcher.tile_num = ReadMemory(addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_attribute_table_byte;
 		break;

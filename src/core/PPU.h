@@ -168,8 +168,9 @@ private:
 	} tile_fetcher;
 
 	bool cycle_340_was_skipped_on_last_scanline = false;
-	bool set_sprite_0_hit_flag = false;
+	bool NMI_line = 1;
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
+	bool set_sprite_0_hit_flag = false;
 
 	// PPU registers accessible by the CPU
 	u8 PPUCTRL;
@@ -204,7 +205,7 @@ private:
 	u8 framebuffer[framebuffer_size]{};
 	unsigned frame_buffer_pos = 0;
 
-	void CheckNMIInterrupt();
+	void CheckNMI();
 	void UpdateSpriteEvaluation();
 	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
 	void PrepareForNewFrame();
