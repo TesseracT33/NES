@@ -991,6 +991,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
+		addr = mapper->GetNametableAddr(addr);
 		memory.vram[addr & 0xFFF] = data;
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F

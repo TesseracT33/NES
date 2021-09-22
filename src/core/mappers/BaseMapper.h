@@ -65,10 +65,13 @@ protected:
 	// Vertical mirroring; addresses in $2800-$2FFF are transformed into $2000-$27FF.
 	u16 NametableAddrVertical(u16 addr) const { return addr & ~0x800; }
 
-	// TODO
-	u16 NametableAddrSingleLower(u16 addr) const { return addr; }
+	// Single screen, lower; addresses in $2000-$2FFF are transformed into $2000-$23FF
+	u16 NametableAddrSingleLower(u16 addr) const { return addr & ~0xC00; }
 
-	// TODO
-	u16 NametableAddrSingleUpper(u16 addr) const { return addr; }
+	// Single screen, upper; addresses in $2000-$2FFF are transformed into $2400-$27FF
+	u16 NametableAddrSingleUpper(u16 addr) const { return addr & ~0x800 | 0x400; }
+
+	// 4-Screen: address are not transformed
+	u16 NametableAddrFourScreen(u16 addr) const { return addr; }
 };
 
