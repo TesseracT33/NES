@@ -28,15 +28,15 @@ public:
 		switch (control_reg >> 2 & 3)
 		{
 		case 0: case 1: // 32 KiB mode; $8000-$FFFF is mapped to a 32 KiB bank (bit 0 of the bank number is ignored).
-			return prg_rom[addr - 0x8000 + (prg_bank & 0x1E) * 0x8000];
+			return prg_rom[addr - 0x8000 + (prg_bank & 0xE) * 0x8000];
 
-		case 2: // 16 KiB mode 1; Fix the first bank at $8000-$BFFF and switch 16 KB bank at $C000-$FFFF.
-			if (addr < 0xC000)
+		case 2: // 16 KiB mode 1; Fix the first bank at $8000-$BFFF and switch 16 KiB bank at $C000-$FFFF.
+			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000];
 			return prg_rom[addr - 0xC000 + prg_bank * 0x4000];
 
-		case 3: // 16 KiB mode 2; Switch 16 KB bank at $8000-$FFFF and fix the last bank at $C000-$FFFF.
-			if (addr < 0xC000)
+		case 3: // 16 KiB mode 2; Switch 16 KiB bank at $8000-$BFFF and fix the last bank at $C000-$FFFF.
+			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
 			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
 
@@ -61,11 +61,14 @@ public:
 			// On the fifth write, bit 0 and the shift register contents are copied into an internal register selected by bits 14 and 13 of the address, and then it clears the shift register.
 			// The shift register can also be cleared by writing any value where bit 7 is set.
 			if (data & 0x80)
+			{
 				shift_reg = 0x10;
+				control_reg |= 0xC;
+			}
 			else
 			{
 				static unsigned times_written = 0;
-				shift_reg = shift_reg >> 1 | data << 5;
+				shift_reg = shift_reg >> 1 | data << 4;
 				if (++times_written == 5)
 				{
 					switch (addr >> 12)
@@ -112,7 +115,7 @@ public:
 		// 4 KiB mode; $0000-$0FFF and $1000-$1FFF have two separate 4 KiB banks.
 		if (control_reg & 0x10)
 		{
-			if (addr < 0x1000)
+			if (addr <= 0x0FFF)
 				return chr[addr + 0x1000 * chr_bank_0];
 			return chr[addr - 0x1000 + 0x1000 * chr_bank_1];
 		}
@@ -127,7 +130,7 @@ public:
 
 		if (control_reg & 0x10)
 		{
-			if (addr < 0x1000)
+			if (addr <= 0x0FFF)
 				chr[addr + 0x1000 * chr_bank_0] = data;
 			else
 				chr[addr - 0x1000 + 0x1000 * chr_bank_1] = data;
