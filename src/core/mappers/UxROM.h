@@ -8,7 +8,7 @@ public:
 	UxROM(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
 		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
 
-	u8 ReadPRG(u16 addr) const override
+	u8 ReadPRG(u16 addr) override
 	{
 		if (addr <= 0x7FFF)
 		{
@@ -34,7 +34,7 @@ public:
 		}
 	};
 
-	u8 ReadCHR(u16 addr) const override
+	u8 ReadCHR(u16 addr) override
 	{
 		// PPU $0000-$1FFF: 8 KiB (not bank switched)
 		return chr[addr];

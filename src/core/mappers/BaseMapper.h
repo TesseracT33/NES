@@ -32,13 +32,13 @@ public:
 		memcpy(&chr[0], rom_arr + prg_rom_size, chr_size);
 	}
 
-	virtual u8   ReadPRG(u16 addr) const = 0;
+	virtual u8   ReadPRG(u16 addr) = 0;
 	virtual void WritePRG(u16 addr, u8 data) = 0;
 
-	virtual u8   ReadCHR(u16 addr) const = 0;
+	virtual u8   ReadCHR(u16 addr) = 0;
 	virtual void WriteCHR(u16 addr, u8 data) = 0;
 
-	virtual u16 GetNametableAddr(u16 addr) { return addr; }
+	virtual u16 GetNametableAddr(u16 addr) = 0;
 
 protected:
 	friend class Cartridge;
