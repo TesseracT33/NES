@@ -156,8 +156,8 @@ private:
 		u8 attribute_table_quadrant; 
 
 		// used only for sprites
-		u8 y_pos;
-		u8 attr;
+		u8 sprite_y_pos;
+		u8 sprite_attr;
 
 		u16 pattern_table_data_addr;
 
@@ -189,8 +189,9 @@ private:
 	unsigned scanline_cycle_counter;
 
 	u16 bg_pattern_shift_reg[2]{};
-	u8 bg_palette_attr_reg[2]{};
-	u8 bg_palette_attr_reg_buffer[2]{};
+	// These are actually 8 bits on real HW, but it's easier this way.
+	// Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
+	u16 bg_palette_attr_reg[2]{};
 	u8 sprite_pattern_shift_reg[2][8]{};
 	u8 sprite_attribute_latch[8]{};
 	signed sprite_x_pos_counter[8]{};

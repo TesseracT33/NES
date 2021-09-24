@@ -264,9 +264,9 @@ void PPU::StepCycle()
 			switch ((scanline_cycle_counter - 257) % 8)
 			{
 			case 0:
-				tile_fetcher.y_pos                   = memory.secondary_oam[4 * sprite_index    ];
+				tile_fetcher.sprite_y_pos                   = memory.secondary_oam[4 * sprite_index    ];
 				tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
-				tile_fetcher.attr                    = memory.secondary_oam[4 * sprite_index + 2];
+				tile_fetcher.sprite_attr                    = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 				sprite_index++;
@@ -292,14 +292,17 @@ void PPU::StepCycle()
 		}
 		else // Cycles 321-340
 		{
-			// On even cycles, do bg tile fetching. Two tiles are fetched in total. The shift registers are reloaded at cycles 329 and 337.
-			// Increment the coarse X scroll at cycles 328 and 336.
+			// On even cycles, do bg tile fetching. Two tiles are fetched in total (to be displayed on the next scanline.
+			// The shift registers are reloaded at cycles 329 and 337.
+			// The coarse X scroll is incremented at cycles 328 and 336.
 			// Between cycles 322 and 337, the background shift registers are shifted.
 			// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
 			if (scanline_cycle_counter >= 322 && scanline_cycle_counter <= 337)
 			{
 				bg_pattern_shift_reg[0] <<= 1;
 				bg_pattern_shift_reg[1] <<= 1;
+				bg_palette_attr_reg [0] <<= 1;
+				bg_palette_attr_reg [1] <<= 1;
 			}
 			switch (scanline_cycle_counter)
 			{
@@ -700,7 +703,7 @@ void PPU::ResetGraphics()
 
 void PPU::ShiftPixel()
 {
-	// Fetch one bit from each of the two 16-bit bg shift registers (containing pattern table data for the current tile), forming the colour id for the current bg pixel
+	// Fetch one bit from each of the two bg shift registers containing pattern table data for the current tile, forming the colour id for the current bg pixel.
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
 	u8 bg_col_id;
 	if (PPUMASK_bg_enable && (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable))
@@ -710,7 +713,8 @@ void PPU::ShiftPixel()
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
-	u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x80) >> 7 | ((bg_palette_attr_reg[1] << reg.x) & 0x80) >> 6;
+	// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
+	u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << reg.x) & 0x8000) >> 14;
 	bg_palette_attr_reg[0] <<= 1;
 	bg_palette_attr_reg[1] <<= 1;
 
@@ -781,28 +785,19 @@ void PPU::ShiftPixel()
 
 void PPU::ReloadBackgroundShiftRegisters()
 {
-	// Reload the lower 8 bits of the two 16-bit background shifters with pattern data for the next tile
-	bg_pattern_shift_reg[0] = bg_pattern_shift_reg[0] & 0xFF00 | tile_fetcher.pattern_table_tile_low;
-	bg_pattern_shift_reg[1] = bg_pattern_shift_reg[1] & 0xFF00 | tile_fetcher.pattern_table_tile_high;
+	// Reload the lower 8 bits of the two 16-bit background shifters with pattern data for the next tile.
+	bg_pattern_shift_reg[0] |= tile_fetcher.pattern_table_tile_low;
+	bg_pattern_shift_reg[1] |= tile_fetcher.pattern_table_tile_high;
 
 	// For bg tiles, an attribute table byte holds palette info. Each table entry controls a 32x32 pixel metatile.
 	// The byte is divided into four 2-bit areas, which each control a 16x16 pixel metatile
 	// Denoting the four 16x16 pixel metatiles by 'bottomright', 'bottomleft' etc, then: value = (bottomright << 6) | (bottomleft << 4) | (topright << 2) | (topleft << 0)
 	// We find which quadrant our 8x8 tile lies in. Then, the two extracted bits give the palette number (0-3) used for the tile
-	bg_palette_attr_reg[0] = bg_palette_attr_reg_buffer[0];
-	bg_palette_attr_reg[1] = bg_palette_attr_reg_buffer[1];
-	// TODO: TESTING CODE; WIP
-	u8 tmp = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
-	u8 tmp_1 = tmp & 1;
-	u8 tmp_2 = (tmp & 2) >> 1;
-	if (tmp_1 == 0)
-		bg_palette_attr_reg_buffer[0] = 0;
-	else
-		bg_palette_attr_reg_buffer[0] = 0xFF;
-	if (tmp_2 == 0)
-		bg_palette_attr_reg_buffer[1] = 0;
-	else
-		bg_palette_attr_reg_buffer[1] = 0xFF;
+	u8 palette_id = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
+	// The LSB of the attribute registers are filled with the palette id (0-3) (next tile to be rendered after the current one).
+	// Note: the same palette id is used for an entire tile, so the LSB is either set to $00 or $FF
+	if (palette_id & 0x01) bg_palette_attr_reg[0] |= 0xFF;
+	if (palette_id & 0x02) bg_palette_attr_reg[1] |= 0xFF;
 }
 
 
@@ -911,8 +906,8 @@ void PPU::UpdateSpriteTileFetching()
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
 		// TODO: not sure if reg.v should be used instead of current_scanline
-		u8 sprite_row_num = (current_scanline - tile_fetcher.y_pos) % 8; // which row of the sprite the scanline falls on (0-7)
-		bool flip_sprite_y = tile_fetcher.attr & 0x80;
+		u8 sprite_row_num = (current_scanline - tile_fetcher.sprite_y_pos) % 8; // which row of the sprite the scanline falls on (0-7)
+		bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
 		if (flip_sprite_y)
 			sprite_row_num = 7 - sprite_row_num;
 
