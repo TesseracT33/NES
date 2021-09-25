@@ -57,6 +57,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 	case 0x00: MapperFactory<NROM>(); break;
 	case 0x01: MapperFactory<MMC1>(); break;
 	case 0x02: MapperFactory<UxROM>(); break;
+	case 0x03: MapperFactory<CNROM>(); break;
 	case 0x04: MapperFactory<MMC3>(); break;
 	case 0x07: MapperFactory<AxROM>(); break;
 	default:
