@@ -42,7 +42,7 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (chr_is_ram)
+		if (has_chr_ram)
 			chr[addr] = data;
 	};
 

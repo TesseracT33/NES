@@ -13,9 +13,11 @@ public:
 private:
 	struct MapperInfo
 	{
-		bool chr_is_ram;
+		bool has_chr_ram;
 		bool hard_wired_four_screen;
+		bool has_chr_nvram;
 		bool has_prg_ram;
+		bool has_prg_nvram;
 		bool has_trainer;
 		bool mirroring;
 		u8 cpu_ppu_timing : 3;
@@ -34,7 +36,9 @@ private:
 
 	template<typename Mapper> static void MapperFactory() { 
 		mapper = std::make_shared<Mapper>(
-			mapper_info.chr_size, mapper_info.prg_rom_size, mapper_info.prg_ram_size); }
+			mapper_info.chr_size,
+			mapper_info.prg_rom_size, 
+			mapper_info.has_prg_ram ? mapper_info.prg_ram_size : 0); }
 
 	static bool ParseHeader(u8 header[]);
 	static void ParseiNESHeader(u8 header[]);

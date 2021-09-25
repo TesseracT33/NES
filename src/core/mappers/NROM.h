@@ -32,7 +32,7 @@ public:
 
 	void WritePRG(u16 addr, u8 data) override
 	{
-		if (addr >= 0x6000 && addr <= 0x7FFF)
+		if (addr >= 0x6000 && addr <= 0x7FFF && has_prg_ram)
 		{
 			prg_ram[addr - 0x6000] = data;
 		}
@@ -46,7 +46,7 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (chr_is_ram)
+		if (has_chr_ram)
 			chr[addr] = data;
 	}
 

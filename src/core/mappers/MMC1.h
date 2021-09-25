@@ -52,7 +52,8 @@ public:
 		}
 		else if (addr <= 0x7FFF)
 		{
-			prg_ram[addr - 0x6000] = data;
+			if (has_prg_ram)
+				prg_ram[addr - 0x6000] = data;
 		}
 		else
 		{
@@ -78,7 +79,7 @@ public:
 						break;
 
 					case 0xA: case 0xB:
-						if (chr_is_ram)
+						if (has_chr_ram)
 						{
 							chr_bank_0 = shift_reg & 1;
 							prg_ram_bank = shift_reg >> 2;
@@ -88,7 +89,7 @@ public:
 						break;
 
 					case 0xC: case 0xD:
-						if (chr_is_ram)
+						if (has_chr_ram)
 						{
 							chr_bank_1 = shift_reg & 1;
 							prg_ram_bank = shift_reg >> 2;
@@ -125,7 +126,7 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (!chr_is_ram)
+		if (!has_chr_ram)
 			return;
 
 		if (control_reg & 0x10)

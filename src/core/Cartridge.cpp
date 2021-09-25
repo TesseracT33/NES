@@ -57,6 +57,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 	case 0x00: MapperFactory<NROM>(); break;
 	case 0x01: MapperFactory<MMC1>(); break;
 	case 0x02: MapperFactory<UxROM>(); break;
+	case 0x04: MapperFactory<MMC3>(); break;
 	case 0x07: MapperFactory<AxROM>(); break;
 	default:
 		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_info.mapper_num));
@@ -93,12 +94,12 @@ void Cartridge::ParseiNESHeader(u8 header[])
 	if (header[5] == 0)
 	{
 		mapper_info.chr_size = BaseMapper::chr_bank_size; // TODO: not correct
-		mapper_info.chr_is_ram = true;
+		mapper_info.has_chr_ram = true;
 	}
 	else
 	{
 		mapper_info.chr_size = header[5] * BaseMapper::chr_bank_size;
-		mapper_info.chr_is_ram = false;
+		mapper_info.has_chr_ram = false;
 	}
 
 	mapper_info.mirroring = header[6] & 0x01;
@@ -115,7 +116,7 @@ void Cartridge::ParseNES20Header(u8 header[])
 	// Parse bytes 8-15 of the header.
 	mapper_info.mapper_num |= (header[8] & 0xF) << 8;
 	mapper_info.submapper_num = header[8] >> 4;
-	if (!mapper_info.chr_is_ram)
+	if (!mapper_info.has_chr_ram)
 		mapper_info.chr_size += ((header[9] & 0x0F) << 8) * BaseMapper::chr_bank_size;
 	mapper_info.prg_rom_size += ((header[9] & 0xF0) << 4) * BaseMapper::prg_rom_bank_size;
 
@@ -123,25 +124,25 @@ void Cartridge::ParseNES20Header(u8 header[])
 	if (header[10] & 0x0F)
 		mapper_info.prg_ram_size = 64 << (header[10] & 0xF);
 	else
-		mapper_info.prg_ram_size = 0; // todo: clear flag 'has_prg_ram'?
+		mapper_info.has_prg_ram = false;
 
 	// Check for PRG-NVRAM
 	if (header[10] & 0xF0)
 		mapper_info.prg_nvram_size = 64 << (header[10] >> 4);
 	else
-		mapper_info.prg_nvram_size = 0; // todo: clear flag 'has_prg_nvram'?
+		mapper_info.has_prg_nvram = false;
 
 	// Check for CHR-RAM
 	if (header[11] & 0x0F)
 		mapper_info.chr_size = 64 << (header[11] & 0xF);
 	else
-		mapper_info.prg_ram_size = 0;
+		mapper_info.has_chr_ram = false;
 
 	// Check for CHR-NVRAM
 	if (header[11] & 0xF0)
 		mapper_info.chr_nvram_size = 64 << (header[11] >> 4);
 	else
-		mapper_info.chr_nvram_size = 0;
+		mapper_info.has_chr_nvram = false;
 
 	mapper_info.cpu_ppu_timing = header[12] & 3;
 }
@@ -149,7 +150,7 @@ void Cartridge::ParseNES20Header(u8 header[])
 
 void Cartridge::SetupMapperProperties()
 {
-	mapper->chr_is_ram = mapper_info.chr_is_ram;
+	mapper->has_chr_ram = mapper_info.has_chr_ram;
 	mapper->has_prg_ram = mapper_info.has_prg_ram;
 	mapper->mirroring = mapper_info.mirroring;
 }

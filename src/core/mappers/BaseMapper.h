@@ -51,7 +51,7 @@ protected:
 	const size_t num_prg_ram_banks;
 	const size_t num_prg_rom_banks;
 
-	bool chr_is_ram;
+	bool has_chr_ram;
 	bool has_prg_ram;
 	bool mirroring;
 
