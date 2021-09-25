@@ -157,7 +157,7 @@ void CPU::ExecZeroPage()
 }
 
 
-void CPU::ExecuteZeroPageIndexed(u8& index_reg)
+void CPU::ExecZeroPageIndexed(u8& index_reg)
 {
 	curr_instr.addr = ReadCycle(PC++);
 	ReadCycle(curr_instr.addr);
@@ -177,7 +177,7 @@ void CPU::ExecAbsolute()
 }
 
 
-void CPU::ExecuteAbsoluteIndexed(u8& index_reg)
+void CPU::ExecAbsoluteIndexed(u8& index_reg)
 {
 	curr_instr.page_crossing_possible = true;
 
@@ -374,7 +374,7 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 void CPU::ADC()
 {
 	u8 M = GetReadInstrOperand();
-	u8 op = M + flags.C;
+	u16 op = M + flags.C;
 	flags.V = ((A & 0x7F) + (M & 0x7F) + flags.C > 0x7F)
 	        ^ ((A       ) + (M       ) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
@@ -819,12 +819,14 @@ void CPU::RTS()
 // Subtract the contents of a memory location to the accumulator together with the NOT of the carry bit. If overflow occurs the carry bit is cleared.
 void CPU::SBC()
 {
+	// SBC is equivalent to ADC, but where the operand has been XORed with $FF.
 	u8 M = GetReadInstrOperand();
-	u8 op = M + (1 - flags.C);
-	flags.V = ((A & 0x7F) + ((u8)(0xFF - M) & 0x7F) + flags.C > 0x7F)
-	        ^ ((A       ) + ((u8)(0xFF - M)       ) + flags.C > 0xFF);
-	flags.C = A > M || A == M && flags.C;
-	A -= op;
+	M ^= 0xFF;
+	u16 op = M + flags.C;
+	flags.V = ((A & 0x7F) + (M & 0x7F) + flags.C > 0x7F)
+		^ ((A)+(M)+flags.C > 0xFF);
+	flags.C = A + op > 0xFF;
+	A += op;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
 }
