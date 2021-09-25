@@ -134,12 +134,11 @@ private:
 		&CPU::SED, &CPU::SBC, &CPU::NOP, &CPU::ISC, &CPU::NOP, &CPU::SBC, &CPU::INC, &CPU::ISC  // $Fx
 	};
 
-
 	const addr_mode_fun_t addr_mode_fun_table[13] =
 	{
-		&CPU::ExecuteImplied, &CPU::ExecuteAccumulator, &CPU::ExecuteImmediate, &CPU::ExecuteZeroPage, &CPU::ExecuteZeroPageX,
-		&CPU::ExecuteZeroPageY, &CPU::ExecuteAbsolute, &CPU::ExecuteAbsoluteX, &CPU::ExecuteAbsoluteY, &CPU::ExecuteRelative,
-		&CPU::ExecuteIndirect, &CPU::ExecuteIndexedIndirect, &CPU::ExecuteIndirectIndexed
+		&CPU::ExecImplied, &CPU::ExecAccumulator, &CPU::ExecImmediate, &CPU::ExecZeroPage, &CPU::ExecZeroPageX,
+		&CPU::ExecZeroPageY, &CPU::ExecAbsolute, &CPU::ExecAbsoluteX, &CPU::ExecAbsoluteY, &CPU::ExecRelative,
+		&CPU::ExecIndirect, &CPU::ExecIndexedIndirect, &CPU::ExecIndirectIndexed
 	};
 
 	u8 A, X, Y; // registers
@@ -177,21 +176,21 @@ private:
 
 	void ExecuteInstruction();
 
-	void ExecuteImplied();
-	void ExecuteAccumulator();
-	void ExecuteImmediate();
-	void ExecuteZeroPage();
-	void ExecuteZeroPageX() { ExecuteZeroPageIndexed(X); }
-	void ExecuteZeroPageY() { ExecuteZeroPageIndexed(Y); }
-	void ExecuteZeroPageIndexed(u8& index_reg);
-	void ExecuteAbsolute();
-	void ExecuteAbsoluteX() { ExecuteAbsoluteIndexed(X); }
-	void ExecuteAbsoluteY() { ExecuteAbsoluteIndexed(Y); }
-	void ExecuteAbsoluteIndexed(u8& index_reg);
-	void ExecuteRelative();
-	void ExecuteIndirect();
-	void ExecuteIndexedIndirect();
-	void ExecuteIndirectIndexed();
+	void ExecImplied();
+	void ExecAccumulator();
+	void ExecImmediate();
+	void ExecZeroPage();
+	void ExecZeroPageX() { ExecZeroPageIndexed(X); }
+	void ExecZeroPageY() { ExecZeroPageIndexed(Y); }
+	void ExecZeroPageIndexed(u8& index_reg);
+	void ExecAbsolute();
+	void ExecAbsoluteX() { ExecAbsoluteIndexed(X); }
+	void ExecAbsoluteY() { ExecAbsoluteIndexed(Y); }
+	void ExecAbsoluteIndexed(u8& index_reg);
+	void ExecRelative();
+	void ExecIndirect();
+	void ExecIndexedIndirect();
+	void ExecIndirectIndexed();
 
 	void ServiceInterrupt(InterruptType asserted_interrupt_type);
 
@@ -336,13 +335,13 @@ private:
 	u8 GetStatusRegInstr(instr_t instr) const
 	{
 		bool bit4 = (instr == &CPU::BRK || instr == &CPU::PHP);
-		return flags.N << 7 | flags.V << 6 | 0 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
+		return flags.N << 7 | flags.V << 6 | 1 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
 	// called when an interrupt is being serviced and the status register is pushed to the stack
 	u8 GetStatusRegInterrupt() const
 	{
-		return flags.N << 7 | flags.V << 6 | 0 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
+		return flags.N << 7 | flags.V << 6 | 1 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
 	void SetStatusReg(u8 value)

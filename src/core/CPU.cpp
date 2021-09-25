@@ -34,12 +34,16 @@ void CPU::Reset()
 }
 
 
-void CPU::Run()
+void CPU::Run(bool init)
 {
 	bus->cpu_cycle_counter = 0;
 	const unsigned cycle_run_len = 20000;
 
-	// Run the CPU for roughly a whole frame (exact timing is not important; synchronization is done by the APU).
+	if (init)
+		for (int i = 0; i < 8; i++)
+			WaitCycle();
+
+	// Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
 	while (bus->cpu_cycle_counter < cycle_run_len)
 	{
 		if (stopped)
@@ -126,27 +130,27 @@ void CPU::ExecuteInstruction()
 }
 
 
-void CPU::ExecuteImplied()
+void CPU::ExecImplied()
 {
 	ReadCycle(PC);
 	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::ExecuteAccumulator()
+void CPU::ExecAccumulator()
 {
 	ReadCycle(PC);
 	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::ExecuteImmediate()
+void CPU::ExecImmediate()
 {
 	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::ExecuteZeroPage()
+void CPU::ExecZeroPage()
 {
 	curr_instr.addr = ReadCycle(PC++);
 	std::invoke(curr_instr.instr, this);
@@ -163,7 +167,7 @@ void CPU::ExecuteZeroPageIndexed(u8& index_reg)
 }
 
 
-void CPU::ExecuteAbsolute()
+void CPU::ExecAbsolute()
 {
 	u8 addr_lo = ReadCycle(PC++);
 	u8 addr_hi = ReadCycle(PC++);
@@ -190,14 +194,14 @@ void CPU::ExecuteAbsoluteIndexed(u8& index_reg)
 }
 
 
-void CPU::ExecuteRelative()
+void CPU::ExecRelative()
 {
 	curr_instr.addr = ReadCycle(PC++);
 	std::invoke(curr_instr.instr, this);
 }
 
 
-void CPU::ExecuteIndirect()
+void CPU::ExecIndirect()
 {
 	u8 addr_lo = ReadCycle(PC++);
 	u8 addr_hi = ReadCycle(PC++);
@@ -215,7 +219,7 @@ void CPU::ExecuteIndirect()
 }
 
 
-void CPU::ExecuteIndexedIndirect()
+void CPU::ExecIndexedIndirect()
 {
 	curr_instr.addr = ReadCycle(PC++);
 	ReadCycle(curr_instr.addr);
@@ -228,7 +232,7 @@ void CPU::ExecuteIndexedIndirect()
 }
 
 
-void CPU::ExecuteIndirectIndexed()
+void CPU::ExecIndirectIndexed()
 {
 	curr_instr.page_crossing_possible = true;
 
@@ -396,7 +400,7 @@ void CPU::ASL()
 	if (curr_instr.addr_mode == AddrMode::Accumulator)
 	{
 		flags.C = A & 0x80;
-		A = A << 1 & 0xFF;
+		A <<= 1;
 		flags.Z = A == 0;
 		flags.N = A & 0x80;
 	}
@@ -404,7 +408,7 @@ void CPU::ASL()
 	{
 		u8 M = ReadCycle(curr_instr.addr);
 		WriteCycle(curr_instr.addr, M);
-		u8 new_M = M << 1 & 0xFF;
+		u8 new_M = M << 1;
 		WriteCycle(curr_instr.addr, new_M);
 		flags.C = M & 0x80;
 		flags.Z = new_M == 0;
@@ -1100,7 +1104,7 @@ void CPU::SLO()
 	// ASL
 	u8 M = ReadCycle(curr_instr.addr);
 	WriteCycle(curr_instr.addr, M);
-	u8 new_M = M << 1 & 0xFF;
+	u8 new_M = M << 1;
 	WriteCycle(curr_instr.addr, new_M);
 	flags.C = M & 0x80;
 	// ORA
