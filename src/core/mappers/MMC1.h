@@ -28,7 +28,10 @@ public:
 		switch (control_reg >> 2 & 3)
 		{
 		case 0: case 1: // 32 KiB mode; $8000-$FFFF is mapped to a 32 KiB bank (bit 0 of the bank number is ignored).
-			return prg_rom[addr - 0x8000 + (prg_bank & 0xE) * 0x8000];
+			if (prg_rom_size >= 0x8000)
+				return prg_rom[addr - 0x8000 + (prg_bank & 0xE) * 0x8000];
+			// If PRG ROM is smaller than 32 KiB (in that case 16 KiB), transform addresses $C000-$FFFF into $8000-$BFFF.
+			return prg_rom[(addr & ~0x4000) - 0x8000];
 
 		case 2: // 16 KiB mode 1; Fix the first bank at $8000-$BFFF and switch 16 KiB bank at $C000-$FFFF.
 			if (addr <= 0xBFFF)
