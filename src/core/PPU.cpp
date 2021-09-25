@@ -264,9 +264,9 @@ void PPU::StepCycle()
 			switch ((scanline_cycle_counter - 257) % 8)
 			{
 			case 0:
-				tile_fetcher.sprite_y_pos                   = memory.secondary_oam[4 * sprite_index    ];
+				tile_fetcher.sprite_y_pos            = memory.secondary_oam[4 * sprite_index    ];
 				tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
-				tile_fetcher.sprite_attr                    = memory.secondary_oam[4 * sprite_index + 2];
+				tile_fetcher.sprite_attr             = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
 				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
 				sprite_index++;
@@ -382,7 +382,7 @@ u8 PPU::ReadRegister(u16 addr)
 		u8 ret;
 		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
 			ret = 0xFF;
-		else if (PPUSTATUS_vblank || !RenderingIsEnabled())
+		else if (IsInVblank() || !RenderingIsEnabled())
 			ret = memory.oam[OAMADDR];
 		else
 			ret = internal_data_bus_dynamic_latch;
@@ -460,7 +460,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::OAMDATA: // $2004
 		// OAM can only be written to during vertical or forced blanking
-		if (PPUSTATUS_vblank || !RenderingIsEnabled())
+		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			memory.oam[OAMADDR++] = data;
 		}
@@ -507,7 +507,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
 		internal_data_bus_dynamic_latch = data; 
-		if (PPUSTATUS_vblank || !RenderingIsEnabled())
+		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			reg.v += PPUCTRL_incr_mode ? 32 : 1;
