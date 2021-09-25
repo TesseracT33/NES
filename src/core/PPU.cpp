@@ -164,6 +164,11 @@ void PPU::StepCycle()
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 		set_sprite_0_hit_flag = false;
 	}
+	if (!open_bus_decayed && --cycles_until_open_bus_decay == 0)
+	{
+		open_bus = 0;
+		open_bus_decayed = true;
+	}
 	if (scanline_cycle_counter == 0)
 	{
 		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
@@ -189,8 +194,7 @@ void PPU::StepCycle()
 				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64. Does not occur on the pre-render scanline
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
 				if (current_scanline != pre_render_scanline)
-					for (int i = 0; i < secondary_oam_size; i++)
-						memory.secondary_oam[i] = 0xFF;
+					memset(memory.secondary_oam, 0xFF, secondary_oam_size);
 
 				tile_fetcher.SetBGTileFetchingActive();
 
@@ -357,19 +361,19 @@ u8 PPU::ReadRegister(u16 addr)
 {
 	switch (addr)
 	{
-	case Bus::Addr::PPUCTRL  : // $2000
-	case Bus::Addr::PPUMASK  : // $2001
-	case Bus::Addr::OAMADDR  : // $2003
-	case Bus::Addr::PPUSCROLL: // $2005
-	case Bus::Addr::PPUADDR  : // $2006
-	case Bus::Addr::OAMDMA   : // $4014
-		return internal_data_bus_dynamic_latch;
+	case Bus::Addr::PPUCTRL  : // $2000 (write-only)
+	case Bus::Addr::PPUMASK  : // $2001 (write-only)
+	case Bus::Addr::OAMADDR  : // $2003 (write-only)
+	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
+	case Bus::Addr::PPUADDR  : // $2006 (write-only)
+	case Bus::Addr::OAMDMA   : // $4014 (write-only)
+		return ReadOpenBus();
 
-	case Bus::Addr::PPUSTATUS: // $2002
+	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
 	{
 		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
-		u8 ret = PPUSTATUS & 0xE0 | internal_data_bus_dynamic_latch & 0x1F;
-		internal_data_bus_dynamic_latch = ret;
+		u8 ret = PPUSTATUS & 0xE0 | ReadOpenBus() & 0x1F;
+		WriteOpenBus(ret);
 		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
 		CheckNMI();
@@ -377,25 +381,29 @@ u8 PPU::ReadRegister(u16 addr)
 		return ret;
 	}
 
-	case Bus::Addr::OAMDATA: // $2004
+	case Bus::Addr::OAMDATA: // $2004 (read/write)
 		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
+		// TODO: is this actually true? Mesen does not implement this, and blargg ppu_open_bus doesn't expect it.
 		u8 ret;
 		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
 			ret = 0xFF;
-		else if (IsInVblank() || !RenderingIsEnabled())
-			ret = memory.oam[OAMADDR];
 		else
-			ret = internal_data_bus_dynamic_latch;
-		internal_data_bus_dynamic_latch = ret;
+		{
+			ret = memory.oam[OAMADDR];
+			// Bits 2-4 of sprite attributes should always be clear when read (these are unimplemented).
+			if ((OAMADDR & 3) == 2)
+				ret &= 0xE3;
+		}
+		WriteOpenBus(ret);
 		return ret;
 
-	case Bus::Addr::PPUDATA: // $2007
+	case Bus::Addr::PPUDATA: // $2007 (read/write)
 	{
 		// Outside of rendering, read the value at address 'v' and add either 1 or 32 to 'v'.
 		// During rendering, return $FF (?), and increment both coarse x and y.
-		u8 ret;
 		if (IsInVblank() || !RenderingIsEnabled())
 		{
+			u8 ret;
 			u16 v_read = reg.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
 			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
@@ -410,19 +418,20 @@ u8 PPU::ReadRegister(u16 addr)
 			// TODO: no clue what this mean exactly. 
 			else
 			{
-				ret = ReadMemory(v_read);
+				// High 2 bits from palette should be from open bus. Reading palette shouldn't refresh high 2 bits of open bus.
+				ret = ReadMemory(v_read) & 0x3F | ReadOpenBus() & 0xC0;
 				PPUDATA = ReadMemory(v_read - 0xF00); // ???
 				reg.v += PPUCTRL_incr_mode ? 32 : 1;
 			}
+			WriteOpenBus(ret);
+			return ret;
 		}
 		else
 		{
 			reg.increment_coarse_x();
 			reg.increment_y();
-			ret = internal_data_bus_dynamic_latch;
+			return ReadOpenBus();
 		}
-		internal_data_bus_dynamic_latch = ret;
-		return ret;
 	}
 
 	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
@@ -438,31 +447,34 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	
 	switch (addr)
 	{
-	case Bus::Addr::PPUCTRL: // $2000
+	case Bus::Addr::PPUCTRL: // $2000 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUCTRL = internal_data_bus_dynamic_latch = data;
+		PPUCTRL = data;
+		WriteOpenBus(data);
 		CheckNMI();
 		reg.t = reg.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		return;
 
-	case Bus::Addr::PPUMASK: // $2001
+	case Bus::Addr::PPUMASK: // $2001 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		PPUMASK = internal_data_bus_dynamic_latch = data;
+		PPUMASK = data;
+		WriteOpenBus(data);
 		return;
 
-	case Bus::Addr::PPUSTATUS: // $2002
-		internal_data_bus_dynamic_latch = data;
-		return; // not writable, except that bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
+	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
+		WriteOpenBus(data); // bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
+		return;
 
-	case Bus::Addr::OAMADDR: // $2003
+	case Bus::Addr::OAMADDR: // $2003 (write-only)
 		OAMADDR = data;
 		return;
 
-	case Bus::Addr::OAMDATA: // $2004
+	case Bus::Addr::OAMDATA: // $2004 (read/write)
 		// OAM can only be written to during vertical or forced blanking
 		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			memory.oam[OAMADDR++] = data;
+			WriteOpenBus(data);
 		}
 		else
 		{
@@ -471,29 +483,29 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		}
 		return;
 
-	case Bus::Addr::PPUSCROLL: // $2005
+	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		internal_data_bus_dynamic_latch = data;
+		WriteOpenBus(data);
 		if (reg.w == 0) // Update x-scroll registers
 		{
 			reg.t = reg.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
-			reg.x = data & 7; // Set 'x' (fine x-scroll) to bits 2-0 of 'data'
+			reg.x = data; // Set 'x' (fine x-scroll) to bits 2-0 of 'data'
 		}
 		else // Update y-scroll registers
 		{
 			// Set bits 14-12 of 't' (fine y-scroll) to bits 2-0 of 'data', and bits 9-5 of 't' (coarse y-scroll) to bits 7-3 of 'data'
-			reg.t = reg.t & ~(0x1F << 5) & ~(7 << 12) | (data & 7) << 12 | (data & 0xF8) << 5;
+			reg.t = reg.t & ~0x73E0 | (data & 7) << 12 | (data & 0xF8) << 2;
 		}
 		reg.w = !reg.w;
 		return;
 
-	case Bus::Addr::PPUADDR: // $2006
+	case Bus::Addr::PPUADDR: // $2006 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		internal_data_bus_dynamic_latch = data;
+		WriteOpenBus(data);
 		if (reg.w == 0)
 		{
 			reg.t = reg.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
-			reg.t &= ~(1 << 14); // Clear bit 14 of 't'
+			reg.t &= 0x3FFF; // Clear bit 14 of 't'
 		}
 		else
 		{
@@ -503,14 +515,14 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		reg.w = !reg.w;
 		return;
 
-	case Bus::Addr::PPUDATA: // $2007
+	case Bus::Addr::PPUDATA: // $2007 (read/write)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
-		internal_data_bus_dynamic_latch = data; 
 		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			reg.v += PPUCTRL_incr_mode ? 32 : 1;
+			WriteOpenBus(data);
 		}
 		else
 		{
@@ -519,7 +531,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		}
 		return;
 
-	case Bus::Addr::OAMDMA: // $4014
+	case Bus::Addr::OAMDMA: // $4014 (write-only)
 	{
 		// Perform OAM DMA transfer. Writing $XX will upload 256 bytes of data from CPU page $XX00-$XXFF to the internal PPU OAM.
 		// It is done by the cpu, so the cpu will be suspended during this time.
@@ -529,6 +541,22 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	}
 
 	}
+}
+
+
+u8 PPU::ReadOpenBus()
+{
+	cycles_until_open_bus_decay = open_bus_decay_cycle_length;
+	open_bus_decayed = false;
+	return open_bus;
+}
+
+
+void PPU::WriteOpenBus(u8 data)
+{
+	cycles_until_open_bus_decay = open_bus_decay_cycle_length;
+	open_bus_decayed = false;
+	open_bus = data;
 }
 
 
@@ -713,11 +741,6 @@ void PPU::ShiftPixel()
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
-	// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
-	u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << reg.x) & 0x8000) >> 14;
-	bg_palette_attr_reg[0] <<= 1;
-	bg_palette_attr_reg[1] <<= 1;
-
 	// Decrement the x-position counters for all 8 sprites. If a counter is 0, the sprite becomes 'active', and the shift registers for the sprite is shifted once every cycle
 	// The current pixel for each 'active' sprite is checked, and the first non-transparent pixel moves on to a multiplexer, where it joins the BG pixel.
 	u8 sprite_col_id = 0;
@@ -777,7 +800,13 @@ void PPU::ShiftPixel()
 	if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
 		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
 	else
+	{
+		// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
+		u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << reg.x) & 0x8000) >> 14;
 		col = GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
+	}
+	bg_palette_attr_reg[0] <<= 1;
+	bg_palette_attr_reg[1] <<= 1;
 
 	PushPixel(col);
 }

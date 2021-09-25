@@ -59,9 +59,9 @@ private:
 	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
 
 	const unsigned default_scale = 3;
-	const unsigned number_of_cycles_per_scanline_ntsc = 341; // Is actually 340 on scanline 0 if on an odd-numbered frame
+	const unsigned number_of_cycles_per_scanline_ntsc = 341; // Is actually 340 on scanline 261 if on an odd-numbered frame
 	const unsigned number_of_scanlines_ntsc = 262;
-
+	const unsigned open_bus_decay_cycle_length = 30000; // roughly a frame
 	const unsigned pre_render_scanline = 261;
 	const unsigned post_render_scanline = 240;
 
@@ -82,7 +82,7 @@ private:
 	struct Memory
 	{
 		u8 vram[0x1000]{}; // $2000-$2FFF; mapped to $2000-$3EFFF; nametables
-		u8 palette_ram[0x20]{}; // $3F00-3F1F; mapped to $3F00-$3FFF
+		u8 palette_ram[0x20]{}; // $3F00-$3F1F; mapped to $3F00-$3FFF
 		u8 oam[oam_size]{}; // not mapped
 		u8 secondary_oam[secondary_oam_size]{}; // not mapped
 	} memory;
@@ -170,6 +170,7 @@ private:
 	bool cycle_340_was_skipped_on_last_scanline = false;
 	bool NMI_line = 1;
 	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
+	bool open_bus_decayed = true;
 	bool set_sprite_0_hit_flag = false;
 
 	// PPU registers accessible by the CPU
@@ -181,12 +182,13 @@ private:
 	u8 OAMADDR;
 	u8 OAMDMA;
 
-	u8 internal_data_bus_dynamic_latch; // See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
+	u8 open_bus = 0; // See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
 	u8 OAMADDR_at_cycle_65;
 	u8 pixel_x_pos = 0;
 
 	unsigned current_scanline = 0;
 	unsigned scanline_cycle_counter;
+	unsigned cycles_until_open_bus_decay;
 
 	u16 bg_pattern_shift_reg[2]{};
 	// These are actually 8 bits on real HW, but it's easier this way.
@@ -224,6 +226,9 @@ private:
 
 	u8 ReadMemory(u16 addr);
 	void WriteMemory(u16 addr, u8 data);
+
+	u8 ReadOpenBus();
+	void WriteOpenBus(u8 data);
 
 	/// Debugging-related
 	void LogState();
