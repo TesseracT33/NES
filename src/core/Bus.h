@@ -42,6 +42,7 @@ public:
 		SND_CHN    = 0x4015,
 		JOY1       = 0x4016,
 		JOY2       = 0x4017,
+		FRAME_CNT  = 0x4017,
 
 		// interrupt vectors
 		NMI_VEC     = 0xFFFA,

@@ -25,7 +25,7 @@ u8 BusImpl::Read(u16 addr)
 	else if (addr <= 0x3FFF)
 	{
 		// Wrap address to between 0x2000-0x2007 
-		return ppu->ReadRegister(0x2000 + (addr & 7));
+		return ppu->ReadRegister(addr & 0x2007);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -80,7 +80,6 @@ void BusImpl::Write(u16 addr, u8 data)
 			ppu->WriteRegister(addr, data);
 			break;
 		case Bus::Addr::JOY1: // $4016
-		case Bus::Addr::JOY2: // $4017
 			joypad->WriteRegister(addr, data);
 			break;
 		default: apu->WriteRegister(addr, data);
