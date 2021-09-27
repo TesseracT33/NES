@@ -41,33 +41,29 @@ private:
 
 	static constexpr size_t pulse_table_len = 31;
 	static constexpr size_t tnd_table_len = 203;
-	const std::array<f32, pulse_table_len> pulse_table = compute_pulse_table();
-	const std::array<f32, tnd_table_len> tnd_table = compute_tnd_table();
 
-	constexpr std::array<f32, pulse_table_len> compute_pulse_table()
-	{
+	static constexpr std::array<f32, pulse_table_len> pulse_table = [] {
 		// https://wiki.nesdev.org/w/index.php?title=APU_Mixer#Lookup_Table
 		std::array<f32, pulse_table_len> table{};
 		table[0] = 95.52f / 100.f;
-		for (size_t i = 1; i < pulse_table_len; i++)
+		for (std::size_t i = 1; i < pulse_table_len; i++)
 		{
 			f32 pulse_sum = i;
 			table[i] = 95.52f / (8128.f / pulse_sum + 100.f);
 		}
 		return table;
-	}
+	}();
 
-	constexpr std::array<f32, tnd_table_len> compute_tnd_table()
-	{
+	static constexpr std::array<f32, tnd_table_len> tnd_table = [] {
 		std::array<f32, tnd_table_len> table{};
 		table[0] = 163.67f / 100.f;
-		for (size_t i = 1; i < tnd_table_len; i++)
+		for (std::size_t i = 1; i < tnd_table_len; i++)
 		{
 			f32 tnd_sum = i;
 			table[i] = 163.67f / (24329.f / tnd_sum + 100.f);
 		}
 		return table;
-	}
+	}();
 
 	static constexpr unsigned sample_buffer_size = 1024;
 	static constexpr unsigned sample_rate = 44100;
