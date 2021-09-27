@@ -7,9 +7,13 @@
 #include "Bus.h"
 #include "Component.h"
 
+#include "mappers/BaseMapper.h"
+
 class APU final : public Component
 {
 public:
+	BaseMapper* mapper;
+
 	void Initialize();
 	void Power();
 	void Reset();
@@ -19,25 +23,38 @@ public:
 	void WriteRegister(u16 addr, u8 data);
 
 private:
-	static constexpr u8 pulse_duty_table[4][8] =
-	{
+	static constexpr u8 noise_length[32] = {
+		10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
+		12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
+	};
+
+	static constexpr u8 pulse_duty_table[4][8] = {
 		{0, 1, 0, 0, 0, 0, 0, 0},
 		{0, 1, 1, 0, 0, 0, 0, 0},
 		{0, 1, 1, 1, 1, 0, 0, 0},
 		{1, 0, 0, 1, 1, 1, 1, 1}
 	};
 
-	static constexpr u8 triangle_duty_table[32] =
-	{
+	static constexpr u8 triangle_duty_table[32] = {
 		15, 14, 13, 12, 11, 10, 9, 8, 7, 6,  5,  4,  3,  2,  1,  0,
 		 0,  1,  2,  3,  4,  5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 	};
 
+	static constexpr u16 dmc_rate_ntsc[16] = {
+		428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54
+	};
+
+	static constexpr u16 dmc_rate_pal[16] = {
+		398, 354, 316, 298, 276, 236, 210, 198, 176, 148, 132, 118, 98, 78, 66, 50
+	};
+
 	static constexpr u16 noise_period_ntsc[16] = {
-	4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 };
+		4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 
+	};
 
 	static constexpr u16 noise_period_pal[16] = {
-		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778 };
+		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778 
+	};
 
 	static constexpr size_t pulse_table_len = 31;
 	static constexpr size_t tnd_table_len = 203;
@@ -45,8 +62,8 @@ private:
 	static constexpr std::array<f32, pulse_table_len> pulse_table = [] {
 		// https://wiki.nesdev.org/w/index.php?title=APU_Mixer#Lookup_Table
 		std::array<f32, pulse_table_len> table{};
-		table[0] = 95.52f / 100.f;
-		for (std::size_t i = 1; i < pulse_table_len; i++)
+		table[0] = 0.f;
+		for (size_t i = 1; i < pulse_table_len; i++)
 		{
 			f32 pulse_sum = i;
 			table[i] = 95.52f / (8128.f / pulse_sum + 100.f);
@@ -56,8 +73,8 @@ private:
 
 	static constexpr std::array<f32, tnd_table_len> tnd_table = [] {
 		std::array<f32, tnd_table_len> table{};
-		table[0] = 163.67f / 100.f;
-		for (std::size_t i = 1; i < tnd_table_len; i++)
+		table[0] = 0.f;
+		for (size_t i = 1; i < tnd_table_len; i++)
 		{
 			f32 tnd_sum = i;
 			table[i] = 163.67f / (24329.f / tnd_sum + 100.f);
@@ -85,6 +102,7 @@ private:
 		unsigned divider : 3;
 		unsigned divider_period : 3;
 		unsigned shift_count : 3;
+		unsigned timer_target_period : 11;
 	};
 
 	struct Channel
@@ -95,34 +113,39 @@ private:
 
 	struct PulseCh : Channel
 	{
+		PulseCh(int _id) : id(_id) {};
+		const int id;
+
 		bool const_vol;
 		bool len_cnt_halt;
+		bool muted; // Whether the channel is muted by the sweep unit.
 		unsigned duty : 2;
 		unsigned duty_pos : 3;
+		unsigned volume : 4;
 		unsigned len_cnt : 5;
-		unsigned len_cnt_reload : 5;
 		unsigned timer : 11;
-		unsigned timer_reload : 11;
+		unsigned timer_period : 11;
 		Envelope envelope;
 		Sweep sweep;
 
 		void ClockEnvelope();
 		void ClockLength();
 		void ClockSweep();
+		void ComputeTargetTimerPeriod();
 		void Step();
-	} pulse_ch_1{}, pulse_ch_2{};
+	} pulse_ch_1{1}, pulse_ch_2{2};
 
 	struct TriangleCh : Channel
 	{
-		bool linear_cnt_control;
+		bool linear_cnt_control; // doubles as length counter halt flag
 		bool linear_cnt_reload_flag;
+		bool volume; // TODO: temp
 		unsigned duty_pos : 5;
 		unsigned len_cnt : 5;
-		unsigned len_cnt_reload : 5;
 		unsigned linear_cnt : 7;
 		unsigned linear_cnt_reload : 7;
 		unsigned timer : 11;
-		unsigned timer_reload : 11;
+		unsigned timer_period : 11;
 
 		void ClockLength();
 		void ClockLinear();
@@ -135,11 +158,11 @@ private:
 		bool len_cnt_halt;
 		bool loop_noise;
 		unsigned div_period : 4;
+		unsigned volume : 4;
 		unsigned len_cnt : 5;
-		unsigned len_cnt_reload : 5;
 		unsigned LFSR : 15;
 		u16 timer;
-		u16 timer_reload;
+		u16 timer_period;
 		Envelope envelope;
 
 		void ClockEnvelope();
@@ -152,9 +175,11 @@ private:
 		bool active; // TODO temp var; bytes remaining more than 0
 		bool IRQ_enable;
 		bool loop;
-		unsigned frequency : 4;
-		unsigned load_cnt : 7;
+		unsigned load_cnt : 7;	
 		u8 sample_buffer;
+		u16 bytes_remaining;
+		u16 current_sample_addr;
+		u16 rate;
 		u16 sample_addr;
 		u16 sample_len;
 	} dmc;
@@ -173,6 +198,7 @@ private:
 	SDL_AudioSpec audio_spec;
 
 	void Mix();
+	void ReadSample();
 	void OutputSample();
 	void StepFrameCounter();
 

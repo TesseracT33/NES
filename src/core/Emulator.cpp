@@ -117,7 +117,7 @@ void Emulator::StartGame(std::string rom_path)
 	std::optional<std::shared_ptr<BaseMapper>> mapper = Cartridge::ConstructMapperFromRom(rom_path);
 	if (!mapper.has_value()) return;
 	this->mapper = mapper.value();
-	bus.mapper = ppu.mapper = this->mapper.get();
+	apu.mapper = bus.mapper = ppu.mapper = this->mapper.get();
 
 	this->current_rom_path = rom_path;
 
@@ -126,6 +126,8 @@ void Emulator::StartGame(std::string rom_path)
 	cpu.Power();
 	ppu.Power();
 
+	//std::thread t(&Emulator::MainLoop, this);
+	//t.detach();
 	MainLoop();
 }
 
@@ -157,7 +159,7 @@ void Emulator::MainLoop()
 
 		//if (!emulation_speed_uncapped)
 		//{
-		//	while (microseconds_elapsed_this_frame < microseconds_per_frame_NTSC)
+		//	while (microseconds_elapsed_this_frame < 11111)
 		//	{
 		//		joypad.PollInput();
 		//		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - frame_start_t).count();

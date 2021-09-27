@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <thread>
 #include <vector>
 
 #include "SDL.h"
