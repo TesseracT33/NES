@@ -12,9 +12,9 @@ void CPU::Power()
 	A = X = Y = 0;
 	SP = 0xFD;
 	for (u16 addr = 0x4000; addr <= 0x4013; addr++)
-		bus->Write(addr, 0);
-	bus->Write(0x4015, 0);
-	bus->Write(0x4017, 0);
+		bus->Write(addr, 0x00);
+	bus->Write(0x4015, 0x00);
+	bus->Write(0x4017, 0x00);
 }
 
 
@@ -31,6 +31,8 @@ void CPU::Reset()
 	odd_cpu_cycle = false;
 
 	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
+
+	bus->Write(0x4015, 0x00);
 }
 
 
@@ -824,7 +826,7 @@ void CPU::SBC()
 	M ^= 0xFF;
 	u16 op = M + flags.C;
 	flags.V = ((A & 0x7F) + (M & 0x7F) + flags.C > 0x7F)
-		^ ((A)+(M)+flags.C > 0xFF);
+	        ^ ((A       ) + (M       ) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
 	A += op;
 	flags.Z = A == 0;

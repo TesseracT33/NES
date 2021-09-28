@@ -10,6 +10,7 @@ void APU::Initialize()
 void APU::Power()
 {
     noise_ch.LFSR = 1;
+    dmc.output_level = 0;
     WriteRegister(Bus::Addr::SND_CHN, 0x00);
 }
 
@@ -34,17 +35,17 @@ void APU::Reset()
 void APU::Update()
 {
     StepFrameCounter();
-
-    // The triangle channel timer is clocked every cpu cycle.
+    dmc.Step();
     triangle_ch.Step();
 
+    // APU::Update() is called every CPU cycle, and 2 CPU cycles = 1 APU cycle
     if (!on_apu_cycle)
     {
         on_apu_cycle = true;
     }
     else
     {
-        // The pulse channels' timer is clocked every other cpu cycle (every apu cycle).
+        // The pulse channels' timers are clocked every apu cycle.
         pulse_ch_1.Step();
         pulse_ch_2.Step();
     }
@@ -66,11 +67,11 @@ u8 APU::ReadRegister(u16 addr)
                | (pulse_ch_2.len_cnt > 0 ) << 1
                | (triangle_ch.len_cnt > 0) << 2
                | (noise_ch.len_cnt > 0   ) << 3
-               | (dmc.active             ) << 4
+               | (dmc.bytes_remaining > 0) << 4
                | (0x01                   ) << 5 // TODO: unclear if this should return 0 or 1
-               | (frame_interrupt        ) << 6
+               | (frame_counter.interrupt) << 6
                | (dmc.IRQ_enable         ) << 7;
-        frame_interrupt = false;
+        frame_counter.interrupt = false;
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
         return ret;
     }
@@ -196,7 +197,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         break;
 
     case Bus::Addr::DMC_RAW: // $4011
-        dmc.load_cnt = data;
+        dmc.output_level = data;
         break;
 
     case Bus::Addr::DMC_START: // $4012
@@ -225,12 +226,31 @@ void APU::WriteRegister(u16 addr, u8 data)
             noise_ch.len_cnt = 0;
 
         dmc.enabled = data & 0x10;
-        dmc.IRQ_enable = false;
+        // todo: not clear if the xor between the new dmc.enabled and previous one matters
+        if (dmc.enabled)
+        {
+            if (dmc.bytes_remaining > 0)
+            {
+                dmc.current_sample_addr = dmc.sample_addr;
+                dmc.bytes_remaining = dmc.sample_len;
+                // todo If there are bits remaining in the 1-byte sample buffer, these will finish playing before the next sample is fetched.
+            }
+        }
+        else
+        {
+            dmc.bytes_remaining = 0;
+            // TODO: DMC bytes remaining will be set to 0 and the DMC will silence when it empties.
+        }
+        dmc.interrupt_flag = false;
+
         break;
 
     case Bus::Addr::FRAME_CNT: // $4017
-        frame_cnt_interrupt_inhibit = data & 0x40;
-        frame_cnt_mode = data & 0x80;
+        /* If the write occurs during an APU cycle, the effects occur 3 CPU cycles after the $4017 write cycle, 
+           and if the write occurs between APU cycles, the effects occurs 4 CPU cycles after the write cycle. */
+        frame_counter.pending_4017_write = true;
+        frame_counter.cpu_cycles_until_apply_4017_write = on_apu_cycle ? 3 : 4;
+        frame_counter.data_written_to_4017 = data;
         break;
 
     default:
@@ -241,83 +261,72 @@ void APU::WriteRegister(u16 addr, u8 data)
 
 void APU::StepFrameCounter()
 {
-    switch (++cpu_cycle_count)
+    // If $4017 was written to, the write doesn't apply until a few cpu cycles later.
+    if (frame_counter.pending_4017_write && --frame_counter.cpu_cycles_until_apply_4017_write == 0)
+    {
+        frame_counter.interrupt_inhibit = frame_counter.data_written_to_4017 & 0x40;
+        frame_counter.mode = frame_counter.data_written_to_4017 & 0x80;
+        frame_counter.pending_4017_write = false;
+        frame_counter.cpu_cycle_count = 0;
+    }
+
+    // The frame counter is clocked on every other CPU cycle, i.e. on every APU cycle.
+    // This function is called every CPU cycle.
+    // Therefore, the APU cycle counts from https://wiki.nesdev.org/w/index.php?title=APU_Frame_Counter have been doubled.
+    switch (++frame_counter.cpu_cycle_count)
     {
     case 7457:
-        pulse_ch_1.ClockEnvelope();
-        pulse_ch_2.ClockEnvelope();
-        noise_ch.ClockEnvelope();
-        triangle_ch.ClockLinear();
+        ClockEnvelopeUnits();
+        ClockLinearUnits();
         break;
 
     case 14913:
-        pulse_ch_1.ClockEnvelope();
-        pulse_ch_2.ClockEnvelope();
-        noise_ch.ClockEnvelope();
-        pulse_ch_1.ClockLength();
-        pulse_ch_2.ClockLength();
-        triangle_ch.ClockLength();
-        noise_ch.ClockLength();
-        pulse_ch_1.ClockSweep();
-        pulse_ch_2.ClockSweep();
-        triangle_ch.ClockLinear();
+        ClockEnvelopeUnits();
+        ClockLengthUnits();
+        ClockLinearUnits();
+        ClockSweepUnits();
         break;
 
     case 22371:
-        pulse_ch_1.ClockEnvelope();
-        pulse_ch_2.ClockEnvelope();
-        noise_ch.ClockEnvelope();
-        triangle_ch.ClockLinear();
+        ClockEnvelopeUnits();
+        ClockLinearUnits();
         break;
 
     case 29828:
-        // TODO: not sure if correct logic
-        if (frame_cnt_mode == 0 && frame_cnt_interrupt_inhibit == 0)
-            frame_interrupt = 1;
+        if (frame_counter.mode == 0 && frame_counter.interrupt_inhibit == 0)
+            frame_counter.interrupt = 1;
         break;
 
     case 29829:
-        if (frame_cnt_mode == 0)
+        if (frame_counter.mode == 0)
         {
-            pulse_ch_1.ClockEnvelope();
-            pulse_ch_2.ClockEnvelope();
-            noise_ch.ClockEnvelope();
-            pulse_ch_1.ClockLength();
-            pulse_ch_2.ClockLength();
-            triangle_ch.ClockLength();
-            noise_ch.ClockLength();
-            pulse_ch_1.ClockSweep();
-            pulse_ch_2.ClockSweep();
-            triangle_ch.ClockLinear();
-            if (frame_cnt_interrupt_inhibit == 0)
-                frame_interrupt = 1;
+            ClockEnvelopeUnits();
+            ClockLengthUnits();
+            ClockLinearUnits();
+            ClockSweepUnits();
+            if (frame_counter.interrupt_inhibit == 0)
+                frame_counter.interrupt = 1;
         }
         break;
 
     case 29830:
-        if (frame_cnt_mode == 0)
+        if (frame_counter.mode == 0)
         {
-            if (frame_cnt_interrupt_inhibit == 0)
-                frame_interrupt = 1;
-            cpu_cycle_count = 0;
+            if (frame_counter.interrupt_inhibit == 0)
+                frame_counter.interrupt = 1;
+            frame_counter.cpu_cycle_count = 0;
         }
         break;
 
     case 37281:
-        pulse_ch_1.ClockEnvelope();
-        pulse_ch_2.ClockEnvelope();
-        noise_ch.ClockEnvelope();
-        pulse_ch_1.ClockLength();
-        pulse_ch_2.ClockLength();
-        triangle_ch.ClockLength();
-        noise_ch.ClockLength();
-        pulse_ch_1.ClockSweep();
-        pulse_ch_2.ClockSweep();
-        triangle_ch.ClockLinear();
+        ClockEnvelopeUnits();
+        ClockLengthUnits();
+        ClockLinearUnits();
+        ClockSweepUnits();
         break;
 
     case 37282:
-        cpu_cycle_count = 0;
+        frame_counter.cpu_cycle_count = 0;
         break;
 
     default:
@@ -368,9 +377,13 @@ void APU::PulseCh::ClockSweep()
 {
     if (sweep.divider == 0 && sweep.enabled && !muted)
     {
-        timer_period = sweep.timer_target_period;
-        if (timer_period < 8)
-            muted = true;
+        // If the shift count is zero, the channel's period is never updated.
+        if (sweep.shift_count != 0)
+        {
+            timer_period = sweep.timer_target_period;
+            if (timer_period < 8)
+                muted = true;
+        }
     }
     if (sweep.divider == 0 || sweep.reload)
     {
@@ -386,11 +399,6 @@ void APU::PulseCh::ComputeTargetTimerPeriod()
 {
     // TODO: when to call this function?
 
-    // TODO: 'If the shift count is zero, the channel's period is never updated, but muting logic still applies.'
-    // Not clear if this check is done here or when the sweep is clocked via the frame sequencer.
-    if (sweep.shift_count == 0)
-        return;
-
     int timer_period_change = timer_period >> sweep.shift_count;
     if (sweep.negate)
     {
@@ -400,7 +408,7 @@ void APU::PulseCh::ComputeTargetTimerPeriod()
         if (id == 1)
             timer_period_change--;
     }
-    sweep.timer_target_period = timer_period_change;
+    sweep.timer_target_period = timer_period + timer_period_change;
 
     if (sweep.timer_target_period > 0x7FF)
         muted = true;
@@ -412,7 +420,7 @@ void APU::PulseCh::Step()
     if (timer == 0)
     {
         timer = timer_period;
-        duty_pos++;
+        duty_pos--; // The counter counts downward rather than upward.
         output = pulse_duty_table[duty][duty_pos];
     }
     else
@@ -518,6 +526,37 @@ void APU::NoiseCh::Step()
 }
 
 
+void APU::DMC::Step()
+{
+    if (--cpu_cycles_until_step > 0)
+        return;
+
+    if (!silence_flag)
+    {
+        int new_output_level = output_level + ((shift_register & 1) ? 2 : -2);
+        if (new_output_level >= 0 && new_output_level <= 127)
+            output_level = new_output_level;
+    }
+
+    // TODO: The right shift register is clocked.
+
+    if (--bits_remaining == 0)
+    {
+        bits_remaining = 8;
+        if (sample_buffer_is_empty)
+            silence_flag = true;
+        else
+        {
+            silence_flag = false;
+            shift_register = sample_buffer;
+            sample_buffer_is_empty = true;
+        }
+    }
+
+    cpu_cycles_until_step = rate;
+}
+
+
 void APU::ReadSample()
 {
     dmc.sample_buffer = mapper->ReadPRG(dmc.current_sample_addr);
@@ -525,7 +564,7 @@ void APU::ReadSample()
     if (dmc.current_sample_addr == 0x0000)
         dmc.current_sample_addr = 0x8000;
 
-    if (--dmc.bytes_remaining == 0)
+    if (dmc.bytes_remaining == 0)
     {
         if (dmc.loop)
         {
@@ -533,8 +572,10 @@ void APU::ReadSample()
             dmc.bytes_remaining = dmc.sample_len;
         }
         else if (dmc.IRQ_enable)
-            frame_interrupt = true;
+            dmc.interrupt_flag = true;
     }
+    else
+        dmc.bytes_remaining--;
 }
 
 
@@ -556,12 +597,6 @@ void APU::Mix()
         SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
         sample_buffer_index = 0;
     }
-}
-
-
-void APU::OutputSample()
-{
-    
 }
 
 

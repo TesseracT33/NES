@@ -86,6 +86,8 @@ private:
 	static constexpr unsigned sample_rate = 44100;
 	static constexpr unsigned cpu_cycles_per_sample = 1789773 / sample_rate;
 
+	/* Note: the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
+
 	struct Envelope
 	{
 		bool start_flag;
@@ -172,24 +174,38 @@ private:
 
 	struct DMC : Channel
 	{
-		bool active; // TODO temp var; bytes remaining more than 0
+		bool interrupt_flag;
 		bool IRQ_enable;
 		bool loop;
-		unsigned load_cnt : 7;	
+		bool sample_buffer_is_empty;
+		bool silence_flag;
+		unsigned output_level : 7;
+		u8 bits_remaining;
 		u8 sample_buffer;
+		u8 shift_register;
 		u16 bytes_remaining;
+		u16 cpu_cycles_until_step;
 		u16 current_sample_addr;
 		u16 rate;
 		u16 sample_addr;
 		u16 sample_len;
+
+		void Step();
 	} dmc;
 
-	bool frame_cnt_mode;
-	bool frame_cnt_interrupt_inhibit;
-	bool frame_interrupt;
-	bool on_apu_cycle = true;
+	struct FrameCounter
+	{
+		bool interrupt = 0;
+		bool interrupt_inhibit = 0;
+		bool mode = 0;
+		bool pending_4017_write = false;
+		u8 data_written_to_4017;
+		unsigned cpu_cycle_count = 0;
+		unsigned cpu_cycles_until_apply_4017_write;
+	} frame_counter;
 
-	unsigned cpu_cycle_count = 0;
+	bool on_apu_cycle = 1;
+
 	unsigned cpu_cycles_until_sample = cpu_cycles_per_sample;
 	unsigned sample_buffer_index = 0;
 
@@ -197,9 +213,34 @@ private:
 
 	SDL_AudioSpec audio_spec;
 
+	__forceinline void ClockEnvelopeUnits()
+	{
+		pulse_ch_1.ClockEnvelope();
+		pulse_ch_2.ClockEnvelope();
+		noise_ch.ClockEnvelope();
+	}
+
+	__forceinline void ClockLengthUnits()
+	{
+		pulse_ch_1.ClockLength();
+		pulse_ch_2.ClockLength();
+		triangle_ch.ClockLength();
+		noise_ch.ClockLength();
+	}
+
+	__forceinline void ClockLinearUnits()
+	{
+		triangle_ch.ClockLinear();
+	}
+
+	__forceinline void ClockSweepUnits()
+	{
+		pulse_ch_1.ClockSweep();
+		pulse_ch_2.ClockSweep();
+	}
+
 	void Mix();
 	void ReadSample();
-	void OutputSample();
 	void StepFrameCounter();
 
 	void State(Serialization::BaseFunctor& functor);
