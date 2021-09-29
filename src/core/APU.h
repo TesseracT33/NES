@@ -86,31 +86,68 @@ private:
 	static constexpr unsigned sample_rate = 44100;
 	static constexpr unsigned cpu_cycles_per_sample = 1789773 / sample_rate;
 
-	/* Note: the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
+	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 
 	struct Envelope
 	{
+		bool const_vol;
 		bool start_flag;
-		unsigned decay_level_cnt : 4;
+		unsigned decay_level_cnt : 4; 
 		unsigned divider : 4;
-		unsigned divider_period : 4;
+		unsigned divider_period : 4; // Doubles as the channels volume when in constant volume mode
+	};
+
+	struct LengthCounter
+	{
+		bool halt;
+		bool has_reached_zero = true;
+		unsigned value : 5;
+		
+		void SetToZero()
+		{
+			value = 0;
+			has_reached_zero = true;
+		}
+		void SetValue(unsigned value)
+		{
+			this->value = value;
+			has_reached_zero = false;
+		}
+	};
+
+	struct LinearCounter
+	{
+		bool control; // Doubles as the length counter halt flag for the triangle channel
+		bool has_reached_zero = true;
+		bool reload;
+		unsigned reload_value : 7;
+		unsigned value : 7;
+
+		void Reload()
+		{
+			value = reload_value;
+			has_reached_zero = false;
+		}
 	};
 
 	struct Sweep
 	{
 		bool enabled;
+		bool muting;
 		bool negate;
 		bool reload;
 		unsigned divider : 3;
 		unsigned divider_period : 3;
 		unsigned shift_count : 3;
-		unsigned timer_target_period : 11;
+		unsigned target_timer_period : 11;
 	};
 
 	struct Channel
 	{
 		bool enabled = false;
 		u8 output;
+		u8 volume = 0;
+		virtual void UpdateVolume() = 0;
 	};
 
 	struct PulseCh : Channel
@@ -118,16 +155,12 @@ private:
 		PulseCh(int _id) : id(_id) {};
 		const int id;
 
-		bool const_vol;
-		bool len_cnt_halt;
-		bool muted; // Whether the channel is muted by the sweep unit.
 		unsigned duty : 2;
 		unsigned duty_pos : 3;
-		unsigned volume : 4;
-		unsigned len_cnt : 5;
 		unsigned timer : 11;
 		unsigned timer_period : 11;
 		Envelope envelope;
+		LengthCounter length_counter;
 		Sweep sweep;
 
 		void ClockEnvelope();
@@ -135,41 +168,61 @@ private:
 		void ClockSweep();
 		void ComputeTargetTimerPeriod();
 		void Step();
+
+		void UpdateVolume()
+		{
+			if (length_counter.has_reached_zero || sweep.muting)
+				volume = 0;
+			else if (envelope.const_vol)
+				volume = envelope.divider_period; // Doubles as the channel's volume when in constant volume mode
+			else
+				volume = envelope.decay_level_cnt;
+		}
 	} pulse_ch_1{1}, pulse_ch_2{2};
 
 	struct TriangleCh : Channel
 	{
-		bool linear_cnt_control; // doubles as length counter halt flag
-		bool linear_cnt_reload_flag;
-		bool volume; // TODO: temp
 		unsigned duty_pos : 5;
-		unsigned len_cnt : 5;
-		unsigned linear_cnt : 7;
-		unsigned linear_cnt_reload : 7;
 		unsigned timer : 11;
 		unsigned timer_period : 11;
+		LengthCounter length_counter;
+		LinearCounter linear_counter;
 
 		void ClockLength();
 		void ClockLinear();
 		void Step();
+
+		void UpdateVolume()
+		{
+			if (length_counter.has_reached_zero || linear_counter.has_reached_zero)
+				volume = 0;
+			else
+				volume = 1;
+		}
 	} triangle_ch;
 
 	struct NoiseCh : Channel
 	{
-		bool const_vol;
-		bool len_cnt_halt;
 		bool loop_noise;
-		unsigned div_period : 4;
-		unsigned volume : 4;
-		unsigned len_cnt : 5;
 		unsigned LFSR : 15;
 		u16 timer;
 		u16 timer_period;
 		Envelope envelope;
+		LengthCounter length_counter;
 
 		void ClockEnvelope();
 		void ClockLength();
 		void Step();
+
+		void UpdateVolume()
+		{
+			if (length_counter.has_reached_zero || (LFSR & 1)) // The volume is 0 if bit 0 of the LFSR is set
+				volume = 0;
+			else if (envelope.const_vol)
+				volume = envelope.divider_period; // Doubles as the channel's volume when in constant volume mode
+			else
+				volume = envelope.decay_level_cnt;
+		}
 	} noise_ch;
 
 	struct DMC : Channel
@@ -191,6 +244,8 @@ private:
 		u16 sample_len;
 
 		void Step();
+
+		void UpdateVolume() { /* TODO */ }
 	} dmc;
 
 	struct FrameCounter

@@ -63,14 +63,14 @@ u8 APU::ReadRegister(u16 addr)
     // Only $4015 is readable, the rest are write only.
     if (addr == Bus::Addr::SND_CHN)
     {
-        u8 ret = (pulse_ch_1.len_cnt > 0 )
-               | (pulse_ch_2.len_cnt > 0 ) << 1
-               | (triangle_ch.len_cnt > 0) << 2
-               | (noise_ch.len_cnt > 0   ) << 3
-               | (dmc.bytes_remaining > 0) << 4
-               | (0x01                   ) << 5 // TODO: unclear if this should return 0 or 1
-               | (frame_counter.interrupt) << 6
-               | (dmc.IRQ_enable         ) << 7;
+        u8 ret = (pulse_ch_1.length_counter.value  > 0)
+               | (pulse_ch_2.length_counter.value  > 0) << 1
+               | (triangle_ch.length_counter.value > 0) << 2
+               | (noise_ch.length_counter.value    > 0) << 3
+               | (dmc.bytes_remaining > 0             ) << 4
+               | (0x01                                ) << 5 // TODO: unclear if this should return 0 or 1
+               | (frame_counter.interrupt             ) << 6
+               | (dmc.IRQ_enable                      ) << 7;
         frame_counter.interrupt = false;
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
         return ret;
@@ -85,13 +85,10 @@ void APU::WriteRegister(u16 addr, u8 data)
     {
     case Bus::Addr::SQ1_VOL: // $4000
         pulse_ch_1.envelope.divider_period = data;
-        pulse_ch_1.const_vol = data & 0x10;
-        if (pulse_ch_1.const_vol)
-            pulse_ch_1.volume = pulse_ch_1.envelope.divider_period; // The divider period doubles as the volume.
-        else
-            pulse_ch_1.volume = pulse_ch_1.envelope.decay_level_cnt;
-        pulse_ch_1.len_cnt_halt = data & 0x20;
+        pulse_ch_1.envelope.const_vol = data & 0x10;
+        pulse_ch_1.length_counter.halt = data & 0x20;
         pulse_ch_1.duty = data >> 6;
+        pulse_ch_1.UpdateVolume();
         break;
 
     case Bus::Addr::SQ1_SWEEP: // $4001
@@ -105,27 +102,35 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::SQ1_LO: // $4002
         pulse_ch_1.timer_period = pulse_ch_1.timer_period & 0x700 | data;
         if (pulse_ch_1.timer_period < 8)
-            pulse_ch_1.muted = true;
+        {
+            pulse_ch_1.sweep.muting = true;
+            pulse_ch_1.UpdateVolume();
+        }
+        pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ1_HI: // $4003
         pulse_ch_1.timer_period = pulse_ch_1.timer_period & 0xFF | data << 8;
         if (pulse_ch_1.timer_period < 8)
-            pulse_ch_1.muted = true;
+        {
+            pulse_ch_1.sweep.muting = true;
+            pulse_ch_1.UpdateVolume();
+        }
         if (pulse_ch_1.enabled)
-            pulse_ch_1.len_cnt = data >> 3;
+        {
+            pulse_ch_1.length_counter.SetValue(data >> 3);
+            pulse_ch_1.UpdateVolume(); // TODO: possible to somehow call UpdateVolume from SetValue?
+        }
         pulse_ch_1.envelope.start_flag = true;
+        pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ2_VOL: // $4004
         pulse_ch_2.envelope.divider_period = data;
-        pulse_ch_2.const_vol = data & 0x10;
-        if (pulse_ch_2.const_vol)
-            pulse_ch_2.volume = pulse_ch_2.envelope.divider_period; // The divider period doubles as the volume.
-        else
-            pulse_ch_2.volume = pulse_ch_2.envelope.decay_level_cnt;
-        pulse_ch_2.len_cnt_halt = data & 0x20;
+        pulse_ch_2.envelope.const_vol = data & 0x10;
+        pulse_ch_2.length_counter.halt = data & 0x20;
         pulse_ch_2.duty = data >> 6;
+        pulse_ch_2.UpdateVolume();
         break;
 
     case Bus::Addr::SQ2_SWEEP: // $4005
@@ -139,23 +144,33 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::SQ2_LO: // $4006
         pulse_ch_2.timer_period = pulse_ch_2.timer_period & 0x700 | data;
         if (pulse_ch_2.timer_period < 8)
-            pulse_ch_2.muted = true;
+        {
+            pulse_ch_2.sweep.muting = true;
+            pulse_ch_2.UpdateVolume();
+        }
+        pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ2_HI: // $4007
         pulse_ch_2.timer_period = pulse_ch_2.timer_period & 0xFF | data << 8;
         if (pulse_ch_2.timer_period < 8)
-            pulse_ch_2.muted = true;
+        {
+            pulse_ch_2.sweep.muting = true;
+            pulse_ch_2.UpdateVolume();
+        }
         if (pulse_ch_2.enabled)
-            pulse_ch_2.len_cnt = data >> 3;
+        {
+            pulse_ch_2.length_counter.SetValue(data >> 3);
+            pulse_ch_2.UpdateVolume();
+        }
         pulse_ch_2.envelope.start_flag = true;
+        pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::TRI_LINEAR: // $4008
-        triangle_ch.linear_cnt_reload = data;
-        triangle_ch.linear_cnt = data;
-        triangle_ch.linear_cnt_control = data & 0x80;
-        triangle_ch.linear_cnt_reload_flag = triangle_ch.linear_cnt_control;
+        triangle_ch.linear_counter.reload_value = data;
+        triangle_ch.linear_counter.control = data & 0x80; // Doubles as the length counter halt flag
+        //triangle_ch.linear_counter.reload = triangle_ch.linear_counter.control; // TODO: why was this here?
         break;
 
     case Bus::Addr::TRI_LO: // $400A
@@ -165,18 +180,18 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::TRI_HI: // $400B
         triangle_ch.timer_period = triangle_ch.timer_period & 0xFF | data << 8;
         if (triangle_ch.enabled)
-            triangle_ch.len_cnt = data >> 3;
-        triangle_ch.linear_cnt_reload_flag = true;
+        {
+            triangle_ch.length_counter.SetValue(data >> 3);
+            triangle_ch.UpdateVolume();
+        }
+        triangle_ch.linear_counter.reload = true;
         break;
 
     case Bus::Addr::NOISE_VOL: // $400C
-        noise_ch.div_period = data;
-        noise_ch.const_vol = data & 0x10;
-        if (noise_ch.const_vol)
-            noise_ch.volume = noise_ch.envelope.divider_period; // The divider period doubles as the volume.
-        else
-            noise_ch.volume = noise_ch.envelope.decay_level_cnt;
-        noise_ch.len_cnt_halt = data & 0x20;
+        noise_ch.envelope.divider_period = data;
+        noise_ch.envelope.const_vol = data & 0x10;
+        noise_ch.length_counter.halt = data & 0x20;
+        noise_ch.UpdateVolume();
         break;
 
     case Bus::Addr::NOISE_LO: // $400E
@@ -186,7 +201,10 @@ void APU::WriteRegister(u16 addr, u8 data)
 
     case Bus::Addr::NOISE_HI: // $400F
         if (noise_ch.enabled)
-            noise_ch.len_cnt = noise_length[data >> 3];
+        {
+            noise_ch.length_counter.SetValue(noise_length[data >> 3]);
+            noise_ch.UpdateVolume();
+        }
         noise_ch.envelope.start_flag = true;
         break;
 
@@ -211,19 +229,19 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::SND_CHN: // $4015
         pulse_ch_1.enabled = data & 0x01;
         if (!pulse_ch_1.enabled)
-            pulse_ch_1.len_cnt = 0;
+            pulse_ch_1.length_counter.SetToZero();
 
         pulse_ch_2.enabled = data & 0x02;
         if (!pulse_ch_2.enabled)
-            pulse_ch_2.len_cnt = 0;
+            pulse_ch_2.length_counter.SetToZero();
 
         triangle_ch.enabled = data & 0x04;
         if (!triangle_ch.enabled)
-            triangle_ch.len_cnt = 0;
+            triangle_ch.length_counter.SetToZero();
 
         noise_ch.enabled = data & 0x08;
         if (!noise_ch.enabled)
-            noise_ch.len_cnt = 0;
+            noise_ch.length_counter.SetToZero();
 
         dmc.enabled = data & 0x10;
         // todo: not clear if the xor between the new dmc.enabled and previous one matters
@@ -344,11 +362,12 @@ void APU::PulseCh::ClockEnvelope()
             envelope.divider = envelope.divider_period;
             if (envelope.decay_level_cnt == 0)
             {
-                if (len_cnt_halt == 1)
+                if (length_counter.halt == 1) // doubles as the envelope loop flag
                     envelope.decay_level_cnt = 15;
             }
             else
                 envelope.decay_level_cnt--;
+            UpdateVolume();
         }
         else
             envelope.divider--;
@@ -358,31 +377,41 @@ void APU::PulseCh::ClockEnvelope()
         envelope.start_flag = 0;
         envelope.decay_level_cnt = 15;
         envelope.divider = envelope.divider_period;
+        UpdateVolume();
     }
 }
 
 
 void APU::PulseCh::ClockLength()
 {
-    if (len_cnt != 0 && !len_cnt_halt)
+    if (length_counter.halt || length_counter.has_reached_zero)
+        return;
+
+    // The length counter silences the channel when clocked while already zero.
+    if (length_counter.value == 0)
     {
-        len_cnt--;
-        if (len_cnt == 0)
-            volume = 0;
+        length_counter.has_reached_zero = true;
+        UpdateVolume(); // Set volume to 0
     }
+    else
+        length_counter.value--;
 }
 
 
 void APU::PulseCh::ClockSweep()
 {
-    if (sweep.divider == 0 && sweep.enabled && !muted)
+    if (sweep.divider == 0 && sweep.enabled && !sweep.muting)
     {
         // If the shift count is zero, the channel's period is never updated.
         if (sweep.shift_count != 0)
         {
-            timer_period = sweep.timer_target_period;
+            timer_period = sweep.target_timer_period;
+            ComputeTargetTimerPeriod();
             if (timer_period < 8)
-                muted = true;
+            {
+                sweep.muting = true;
+                UpdateVolume();
+            }
         }
     }
     if (sweep.divider == 0 || sweep.reload)
@@ -397,8 +426,6 @@ void APU::PulseCh::ClockSweep()
 
 void APU::PulseCh::ComputeTargetTimerPeriod()
 {
-    // TODO: when to call this function?
-
     int timer_period_change = timer_period >> sweep.shift_count;
     if (sweep.negate)
     {
@@ -408,10 +435,13 @@ void APU::PulseCh::ComputeTargetTimerPeriod()
         if (id == 1)
             timer_period_change--;
     }
-    sweep.timer_target_period = timer_period + timer_period_change;
+    sweep.target_timer_period = timer_period + timer_period_change;
 
-    if (sweep.timer_target_period > 0x7FF)
-        muted = true;
+    if (sweep.target_timer_period > 0x7FF)
+    {
+        sweep.muting = true;
+        UpdateVolume();
+    }
 }
 
 
@@ -430,41 +460,50 @@ void APU::PulseCh::Step()
 
 void APU::TriangleCh::ClockLength()
 {
-    if (len_cnt != 0 && !linear_cnt_control) // note: 'linear_cnt_control' doubles as the length counter halt flag
+    // Note: the control flag doubles as the length counter halt flag
+    if (!linear_counter.control || length_counter.has_reached_zero)
+        return;
+
+    // The length counter silences the channel when it reaches zero (unlike for e.g. pulse channels, which are silenced on the next clock).
+    if (--length_counter.value == 0)
     {
-        len_cnt--;
-        if (len_cnt == 0)
-            volume = 0;
+        length_counter.has_reached_zero = true;
+        UpdateVolume(); // Set volume to 0
     }
 }
 
 
 void APU::TriangleCh::ClockLinear()
 {
-    if (linear_cnt_reload_flag == 1)
+    if (linear_counter.reload)
     {
-        if (linear_cnt == 0)
-            linear_cnt = linear_cnt_reload;
-        else
-            linear_cnt--;
+        linear_counter.Reload();
+        UpdateVolume(); // TODO: what should happen when linear is reloaded, but length is still at 0? Currently, volume will still be 0.
     }
-    if (linear_cnt_control == 0)
-        linear_cnt_reload_flag = 0;
+    else if (linear_counter.value != 0)
+    {
+        if (--linear_counter.value == 0)
+        {
+            linear_counter.has_reached_zero = true;
+            UpdateVolume(); // Set volume to 0
+        }
+    }
+    if (!linear_counter.control)
+        linear_counter.reload = false;
 }
 
 
 void APU::TriangleCh::Step()
 {
-    // The sequencer is clocked by the timer as long as both the linear counter and the length counter are nonzero.
-    // TODO not sure if I have understood it correctly
-    if (linear_cnt == 0 || len_cnt == 0)
-        return;
-
     if (timer == 0)
     {
         timer = timer_period;
-        duty_pos++;
-        output = triangle_duty_table[duty_pos];
+        // The sequencer is clocked by the timer as long as both the linear counter and the length counter are nonzero.
+        if (linear_counter.value != 0 && length_counter.value != 0)
+        {
+            duty_pos++;
+            output = triangle_duty_table[duty_pos];
+        }
     }
     else
         timer--;
@@ -481,11 +520,12 @@ void APU::NoiseCh::ClockEnvelope()
             envelope.divider = envelope.divider_period;
             if (envelope.decay_level_cnt == 0)
             {
-                if (len_cnt_halt == 1)
+                if (length_counter.halt == 1) // doubles as the envelope loop flag
                     envelope.decay_level_cnt = 15;
             }
             else
                 envelope.decay_level_cnt--;
+            UpdateVolume();
         }
         else
             envelope.divider--;
@@ -495,18 +535,24 @@ void APU::NoiseCh::ClockEnvelope()
         envelope.start_flag = 0;
         envelope.decay_level_cnt = 15;
         envelope.divider = envelope.divider_period;
+        UpdateVolume();
     }
 }
 
 
 void APU::NoiseCh::ClockLength()
 {
-    if (len_cnt != 0 && !len_cnt_halt)
+    if (length_counter.halt || length_counter.has_reached_zero)
+        return;
+
+    // The length counter silences the channel when clocked while already zero.
+    if (length_counter.value == 0)
     {
-        len_cnt--;
-        if (len_cnt == 0)
-            volume = 0;
+        length_counter.has_reached_zero = true;
+        UpdateVolume(); // Set volume to 0
     }
+    else
+        length_counter.value--;
 }
 
 
@@ -518,11 +564,10 @@ void APU::NoiseCh::Step()
         output = (LFSR & 1) ^ (loop_noise ? (LFSR >> 6 & 1) : (LFSR >> 1 & 1));
         LFSR >>= 1;
         LFSR |= output << 14;
+        UpdateVolume(); // The volume is set to 0 if bit 0 of the LFSR is set.
     }
     else
         timer--;
-    // TODO  The mixer receives the current envelope volume except when
-    // 1) Bit 0 of the shift register is set, or 2)  The length counter is zero
 }
 
 
@@ -564,7 +609,7 @@ void APU::ReadSample()
     if (dmc.current_sample_addr == 0x0000)
         dmc.current_sample_addr = 0x8000;
 
-    if (dmc.bytes_remaining == 0)
+    if (--dmc.bytes_remaining == 0) // todo: make sure that underflow is not possible
     {
         if (dmc.loop)
         {
@@ -574,13 +619,13 @@ void APU::ReadSample()
         else if (dmc.IRQ_enable)
             dmc.interrupt_flag = true;
     }
-    else
-        dmc.bytes_remaining--;
 }
 
 
 void APU::Mix()
 {
+    // TODO: integrate channel volume into the mixing
+
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     u8 pulse_sum = pulse_ch_1.output + pulse_ch_2.output;
     f32 pulse_out = pulse_table[pulse_sum];
