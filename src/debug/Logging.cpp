@@ -23,7 +23,7 @@ void Logging::ReportCpuState(u8 A, u8 X, u8 Y, u8 P, u8 opcode, u16 SP, u16 PC, 
 	Logging::cpu_state.A = A;
 	Logging::cpu_state.X = X;
 	Logging::cpu_state.Y = Y;
-	Logging::cpu_state.P = P;
+	Logging::cpu_state.P = P & ~0x20; // Mesen always outputs bit 5 as 0 in the log
 	Logging::cpu_state.opcode = opcode;
 	Logging::cpu_state.SP = SP;
 	Logging::cpu_state.PC = PC;

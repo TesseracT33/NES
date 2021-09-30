@@ -19,6 +19,8 @@ void Emulator::CreateComponentVector()
 
 void Emulator::ConnectSystemComponents()
 {
+	apu.cpu = &cpu;
+
 	bus.apu = &apu;
 	bus.cpu = &cpu;
 	bus.joypad = &joypad;
@@ -143,7 +145,7 @@ void Emulator::MainLoop()
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
 
-		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
+		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU).
 		cpu.Run(cpu_first_run);
 		cpu_first_run = false;
 

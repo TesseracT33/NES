@@ -107,7 +107,6 @@ u8 BusImpl::ReadCycle(u16 addr)
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
-	cpu_cycle_counter++;
 	return val;
 }
 
@@ -118,7 +117,6 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
-	cpu_cycle_counter++;
 }
 
 
@@ -127,7 +125,6 @@ void BusImpl::WaitCycle()
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
-	cpu_cycle_counter++;
 }
 
 
@@ -145,6 +142,5 @@ void BusImpl::UpdateLogging()
 		Logging::Update();
 		update_logging_on_next_cycle = false;
 	}
-	total_cpu_cycle_counter++;
 #endif DEBUG
 }

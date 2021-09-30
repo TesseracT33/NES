@@ -25,6 +25,8 @@ public:
 	void Reset();
 	void Run(bool init);
 
+	void Stall();
+
 	void PollInterruptInputs()
 	{
 		// The NMI input is connected to an edge detector, which polls the status of the NMI line during the second half of each cpu cycle.
@@ -148,6 +150,7 @@ private:
 	struct Flags { bool N, V, B, D, I, Z, C; } flags;
 
 	bool odd_cpu_cycle;
+	bool stalled; // set to true by the APU when the DMC memory reader reads a byte from PRG.
 	bool stopped; // set to true by the STP instruction
 
 	// Interrupt-related
@@ -169,8 +172,13 @@ private:
 	void PerformOAMDMATransfer();
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
-	unsigned cpu_clocks_since_reset = 0;
-	unsigned cpu_clocks_until_all_ppu_regs_writable = 29658;
+	unsigned cpu_cycles_since_reset = 0;
+	unsigned cpu_cycles_until_all_ppu_regs_writable = 29658;
+	unsigned cpu_cycles_until_no_longer_stalled; // refers to stalling done by the APU when the DMC memory reader reads a byte from PRG
+
+#ifdef DEBUG
+	unsigned total_cpu_cycle_counter = 0; // todo: make u64
+#endif
 
 	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 

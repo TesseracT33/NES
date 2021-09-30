@@ -20,13 +20,13 @@ void CPU::Power()
 
 void CPU::Reset()
 {
-	cpu_clocks_since_reset = 0;
+	cpu_cycles_since_reset = 0;
 	all_ppu_regs_writable = false;
 	NMI_input_signal = prev_NMI_input_signal = 1;
 	need_NMI = false;
 	IRQ_num_inputs = 0;
 	set_I_on_next_update = clear_I_on_next_update = false;
-	stopped = false;
+	stalled = stopped = false;
 	oam_dma_transfer_pending = false;
 	odd_cpu_cycle = false;
 
@@ -38,18 +38,33 @@ void CPU::Reset()
 
 void CPU::Run(bool init)
 {
-	bus->cpu_cycle_counter = 0;
-	const unsigned cycle_run_len = 20000;
-
+	// Setup on reset/initialization; eight cycles before the CPU starts executing instructions.
 	if (init)
 		for (int i = 0; i < 8; i++)
 			WaitCycle();
 
 	// Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
-	while (bus->cpu_cycle_counter < cycle_run_len)
+	const unsigned cycle_run_len = 20000;
+	unsigned cpu_cycle_counter = 0;
+	while (cpu_cycle_counter++ < cycle_run_len)
 	{
+#ifdef DEBUG
+		total_cpu_cycle_counter++;
+#endif
+
 		if (stopped)
+		{
 			WaitCycle();
+			continue;
+		}
+
+		if (stalled)
+		{
+			if (--cpu_cycles_until_no_longer_stalled == 0)
+				stalled = false;
+			WaitCycle();
+			continue;
+		}
 
 		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		//	all_ppu_regs_writable = true;
@@ -81,6 +96,14 @@ void CPU::Run(bool init)
 				ServiceInterrupt(InterruptType::IRQ);
 		}
 	}
+}
+
+
+void CPU::Stall()
+{
+	// TODO: better emulate cpu stalling. Currently, it is always stalled for four cycles.
+	stalled = true;
+	cpu_cycles_until_no_longer_stalled = 4;
 }
 
 
@@ -1176,6 +1199,6 @@ void CPU::State(Serialization::BaseFunctor& functor)
 void CPU::LogState(Action action)
 {
 	bool nmi = action == Action::NMI;
-	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), bus->Read(PC), SP, PC, bus->total_cpu_cycle_counter, nmi);
+	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), bus->Read(PC), SP, PC, total_cpu_cycle_counter, nmi);
 	bus->update_logging_on_next_cycle = true;
 }
