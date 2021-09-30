@@ -34,9 +34,7 @@ void APU::Reset()
 
 void APU::Update()
 {
-    StepFrameCounter();
-    dmc.Step();
-    triangle_ch.Step();
+    frame_counter.Step();
 
     // APU::Update() is called every CPU cycle, and 2 CPU cycles = 1 APU cycle
     if (!on_apu_cycle)
@@ -49,6 +47,9 @@ void APU::Update()
         pulse_ch_1.Step();
         pulse_ch_2.Step();
     }
+
+    dmc.Step();
+    triangle_ch.Step();
 
     if (--cpu_cycles_until_sample == 0)
     {
@@ -209,7 +210,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         break;
 
     case Bus::Addr::DMC_FREQ: // $4010
-        dmc.rate = dmc_rate_ntsc[data & 0xF];
+        dmc.period = dmc_rate_ntsc[data & 0xF];
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
         break;
@@ -277,74 +278,74 @@ void APU::WriteRegister(u16 addr, u8 data)
 }
 
 
-void APU::StepFrameCounter()
+void APU::FrameCounter::Step()
 {
     // If $4017 was written to, the write doesn't apply until a few cpu cycles later.
-    if (frame_counter.pending_4017_write && --frame_counter.cpu_cycles_until_apply_4017_write == 0)
+    if (pending_4017_write && --cpu_cycles_until_apply_4017_write == 0)
     {
-        frame_counter.interrupt_inhibit = frame_counter.data_written_to_4017 & 0x40;
-        frame_counter.mode = frame_counter.data_written_to_4017 & 0x80;
-        frame_counter.pending_4017_write = false;
-        frame_counter.cpu_cycle_count = 0;
+        interrupt_inhibit = data_written_to_4017 & 0x40;
+        mode = data_written_to_4017 & 0x80;
+        pending_4017_write = false;
+        cpu_cycle_count = 0;
     }
 
     // The frame counter is clocked on every other CPU cycle, i.e. on every APU cycle.
     // This function is called every CPU cycle.
     // Therefore, the APU cycle counts from https://wiki.nesdev.org/w/index.php?title=APU_Frame_Counter have been doubled.
-    switch (++frame_counter.cpu_cycle_count)
+    switch (++cpu_cycle_count)
     {
     case 7457:
-        ClockEnvelopeUnits();
-        ClockLinearUnits();
+        apu->ClockEnvelopeUnits();
+        apu->ClockLinearUnits();
         break;
 
     case 14913:
-        ClockEnvelopeUnits();
-        ClockLengthUnits();
-        ClockLinearUnits();
-        ClockSweepUnits();
+        apu->ClockEnvelopeUnits();
+        apu->ClockLengthUnits();
+        apu->ClockLinearUnits();
+        apu->ClockSweepUnits();
         break;
 
     case 22371:
-        ClockEnvelopeUnits();
-        ClockLinearUnits();
+        apu->ClockEnvelopeUnits();
+        apu->ClockLinearUnits();
         break;
 
     case 29828:
-        if (frame_counter.mode == 0 && frame_counter.interrupt_inhibit == 0)
-            frame_counter.interrupt = 1;
+        if (mode == 0 && interrupt_inhibit == 0)
+            interrupt = 1;
         break;
 
     case 29829:
-        if (frame_counter.mode == 0)
+        if (mode == 0)
         {
-            ClockEnvelopeUnits();
-            ClockLengthUnits();
-            ClockLinearUnits();
-            ClockSweepUnits();
-            if (frame_counter.interrupt_inhibit == 0)
-                frame_counter.interrupt = 1;
+            apu->ClockEnvelopeUnits();
+            apu->ClockLengthUnits();
+            apu->ClockLinearUnits();
+            apu->ClockSweepUnits();
+            if (interrupt_inhibit == 0)
+                interrupt = 1;
         }
         break;
 
     case 29830:
-        if (frame_counter.mode == 0)
+        if (mode == 0)
         {
-            if (frame_counter.interrupt_inhibit == 0)
-                frame_counter.interrupt = 1;
-            frame_counter.cpu_cycle_count = 0;
+            if (interrupt_inhibit == 0)
+                interrupt = 1;
+            cpu_cycle_count = 0;
         }
         break;
 
     case 37281:
-        ClockEnvelopeUnits();
-        ClockLengthUnits();
-        ClockLinearUnits();
-        ClockSweepUnits();
+        apu->ClockEnvelopeUnits();
+        apu->ClockLengthUnits();
+        apu->ClockLinearUnits();
+        apu->ClockSweepUnits();
         break;
 
     case 37282:
-        frame_counter.cpu_cycle_count = 0;
+        cpu_cycle_count = 0;
         break;
 
     default:
@@ -573,6 +574,9 @@ void APU::NoiseCh::Step()
 
 void APU::DMC::Step()
 {
+    if (read_sample_on_next_apu_cycle)
+        ReadSample();
+
     if (--cpu_cycles_until_step > 0)
         return;
 
@@ -583,7 +587,7 @@ void APU::DMC::Step()
             output_level = new_output_level;
     }
 
-    // TODO: The right shift register is clocked.
+    shift_register >>= 1;
 
     if (--bits_remaining == 0)
     {
@@ -595,29 +599,35 @@ void APU::DMC::Step()
             silence_flag = false;
             shift_register = sample_buffer;
             sample_buffer_is_empty = true;
+            if (bytes_remaining > 0)
+            {
+                if (apu->on_apu_cycle)
+                    ReadSample();
+                else
+                    read_sample_on_next_apu_cycle = true;
+            }
         }
     }
 
-    cpu_cycles_until_step = rate;
+    cpu_cycles_until_step = period;
 }
 
 
-void APU::ReadSample()
+void APU::DMC::ReadSample()
 {
-    dmc.sample_buffer = mapper->ReadPRG(dmc.current_sample_addr);
-    dmc.current_sample_addr++;
-    if (dmc.current_sample_addr == 0x0000)
-        dmc.current_sample_addr = 0x8000;
+    
+    sample_buffer = apu->mapper->ReadPRG(current_sample_addr);
+    current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
 
-    if (--dmc.bytes_remaining == 0) // todo: make sure that underflow is not possible
+    if (--bytes_remaining == 0)
     {
-        if (dmc.loop)
+        if (loop)
         {
-            dmc.current_sample_addr = dmc.sample_addr;
-            dmc.bytes_remaining = dmc.sample_len;
+            current_sample_addr = sample_addr;
+            bytes_remaining = sample_len;
         }
-        else if (dmc.IRQ_enable)
-            dmc.interrupt_flag = true;
+        else if (IRQ_enable)
+            interrupt_flag = true;
     }
 }
 
