@@ -248,17 +248,17 @@ void APU::WriteRegister(u16 addr, u8 data)
         // todo: not clear if the xor between the new dmc.enabled and previous one matters
         if (dmc.enabled)
         {
-            if (dmc.bytes_remaining > 0)
+            if (dmc.bytes_remaining == 0)
             {
-                dmc.current_sample_addr = dmc.sample_addr;
-                dmc.bytes_remaining = dmc.sample_len;
-                // todo If there are bits remaining in the 1-byte sample buffer, these will finish playing before the next sample is fetched.
+                if (dmc.bits_remaining == 0)
+                    dmc.RestartSample();
+                else
+                    dmc.restart_sample_after_buffer_is_emptied = true;
             }
         }
         else
         {
             dmc.bytes_remaining = 0;
-            // TODO: DMC bytes remaining will be set to 0 and the DMC will silence when it empties.
         }
         dmc.interrupt_flag = false;
 
@@ -575,7 +575,10 @@ void APU::NoiseCh::Step()
 void APU::DMC::Step()
 {
     if (read_sample_on_next_apu_cycle)
+    {
         ReadSample();
+        read_sample_on_next_apu_cycle = false;
+    }
 
     if (--cpu_cycles_until_step > 0)
         return;
@@ -592,9 +595,14 @@ void APU::DMC::Step()
     if (--bits_remaining == 0)
     {
         bits_remaining = 8;
+        if (restart_sample_after_buffer_is_emptied)
+        {
+            RestartSample();
+            restart_sample_after_buffer_is_emptied = false;
+        }
         if (sample_buffer_is_empty)
             silence_flag = true;
-        else
+        else if (enabled)
         {
             silence_flag = false;
             shift_register = sample_buffer;
@@ -617,15 +625,13 @@ void APU::DMC::ReadSample()
 {
     apu->cpu->Stall();
     sample_buffer = apu->mapper->ReadPRG(current_sample_addr);
+    sample_buffer_is_empty = false;
     current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
 
     if (--bytes_remaining == 0)
     {
         if (loop)
-        {
-            current_sample_addr = sample_addr;
-            bytes_remaining = sample_len;
-        }
+            RestartSample();
         else if (IRQ_enable)
             interrupt_flag = true;
     }
@@ -634,13 +640,11 @@ void APU::DMC::ReadSample()
 
 void APU::Mix()
 {
-    // TODO: integrate channel volume into the mixing
-
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
     f32 pulse_out = pulse_table[pulse_sum];
     u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
-        2 * noise_ch.output * noise_ch.volume + dmc.output;
+        2 * noise_ch.output * noise_ch.volume + dmc.output_level * !dmc.silence_flag;
     f32 tnd_out = tnd_table[tnd_sum];
 
     f32 output = pulse_out + tnd_out;

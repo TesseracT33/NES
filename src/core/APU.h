@@ -235,8 +235,9 @@ private:
 		bool interrupt_flag;
 		bool IRQ_enable;
 		bool loop;
-		bool read_sample_on_next_apu_cycle;
-		bool sample_buffer_is_empty;
+		bool read_sample_on_next_apu_cycle = false;
+		bool restart_sample_after_buffer_is_emptied = false;
+		bool sample_buffer_is_empty = true;
 		bool silence_flag;
 		unsigned output_level : 7;
 		u8 bits_remaining;
@@ -250,6 +251,11 @@ private:
 		u16 sample_len;
 
 		void ReadSample();
+		void RestartSample()
+		{
+			current_sample_addr = sample_addr;
+			bytes_remaining = sample_len;
+		}
 		void Step();
 
 		void UpdateVolume() { /* TODO */ }
