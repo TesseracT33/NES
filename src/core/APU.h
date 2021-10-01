@@ -6,6 +6,7 @@
 
 #include "Bus.h"
 #include "Component.h"
+#include "CPU.h"
 
 #include "mappers/BaseMapper.h"
 
@@ -13,6 +14,7 @@ class APU final : public Component
 {
 public:
 	BaseMapper* mapper;
+	CPU* cpu;
 
 	void Initialize();
 	void Power();
@@ -227,9 +229,13 @@ private:
 
 	struct DMC : Channel
 	{
+		DMC(APU* apu) { this->apu = apu; }
+		APU* apu; /* This unit needs access to some members outside of the struct. */
+
 		bool interrupt_flag;
 		bool IRQ_enable;
 		bool loop;
+		bool read_sample_on_next_apu_cycle;
 		bool sample_buffer_is_empty;
 		bool silence_flag;
 		unsigned output_level : 7;
@@ -239,17 +245,21 @@ private:
 		u16 bytes_remaining;
 		u16 cpu_cycles_until_step;
 		u16 current_sample_addr;
-		u16 rate;
+		u16 period;
 		u16 sample_addr;
 		u16 sample_len;
 
+		void ReadSample();
 		void Step();
 
 		void UpdateVolume() { /* TODO */ }
-	} dmc;
+	} dmc{ this };
 
 	struct FrameCounter
 	{
+		FrameCounter(APU* apu) { this->apu = apu; }
+		APU* apu; /* This unit needs access to some members outside of the struct. */
+
 		bool interrupt = 0;
 		bool interrupt_inhibit = 0;
 		bool mode = 0;
@@ -257,7 +267,9 @@ private:
 		u8 data_written_to_4017;
 		unsigned cpu_cycle_count = 0;
 		unsigned cpu_cycles_until_apply_4017_write;
-	} frame_counter;
+
+		void Step();
+	} frame_counter{ this };
 
 	bool on_apu_cycle = 1;
 
@@ -295,8 +307,6 @@ private:
 	}
 
 	void Mix();
-	void ReadSample();
-	void StepFrameCounter();
 
 	void State(Serialization::BaseFunctor& functor);
 };

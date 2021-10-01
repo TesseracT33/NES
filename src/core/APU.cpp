@@ -615,7 +615,7 @@ void APU::DMC::Step()
 
 void APU::DMC::ReadSample()
 {
-    
+    apu->cpu->Stall();
     sample_buffer = apu->mapper->ReadPRG(current_sample_addr);
     current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
 
@@ -637,9 +637,10 @@ void APU::Mix()
     // TODO: integrate channel volume into the mixing
 
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
-    u8 pulse_sum = pulse_ch_1.output + pulse_ch_2.output;
+    u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
     f32 pulse_out = pulse_table[pulse_sum];
-    u16 tnd_sum = 3 * triangle_ch.output + 2 * noise_ch.output + dmc.output;
+    u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
+        2 * noise_ch.output * noise_ch.volume + dmc.output;
     f32 tnd_out = tnd_table[tnd_sum];
 
     f32 output = pulse_out + tnd_out;
