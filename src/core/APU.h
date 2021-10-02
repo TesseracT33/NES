@@ -7,6 +7,7 @@
 #include "Bus.h"
 #include "Component.h"
 #include "CPU.h"
+#include "IRQSources.h"
 
 #include "mappers/BaseMapper.h"
 
@@ -25,7 +26,7 @@ public:
 	void WriteRegister(u16 addr, u8 data);
 
 private:
-	static constexpr u8 noise_length[32] = {
+	static constexpr u8 length_table[32] = {
 		10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
 		12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
 	};
@@ -42,19 +43,19 @@ private:
 		 0,  1,  2,  3,  4,  5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 	};
 
-	static constexpr u16 dmc_rate_ntsc[16] = {
+	static constexpr u16 dmc_rate_table_ntsc[16] = {
 		428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54
 	};
 
-	static constexpr u16 dmc_rate_pal[16] = {
+	static constexpr u16 dmc_rate_table_pal[16] = {
 		398, 354, 316, 298, 276, 236, 210, 198, 176, 148, 132, 118, 98, 78, 66, 50
 	};
 
-	static constexpr u16 noise_period_ntsc[16] = {
+	static constexpr u16 noise_period_table_ntsc[16] = {
 		4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 
 	};
 
-	static constexpr u16 noise_period_pal[16] = {
+	static constexpr u16 noise_period_table_pal[16] = {
 		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778 
 	};
 
@@ -84,9 +85,10 @@ private:
 		return table;
 	}();
 
-	static constexpr unsigned sample_buffer_size = 1024;
+	static constexpr unsigned sample_buffer_size = 2048;
 	static constexpr unsigned sample_rate = 44100;
-	static constexpr unsigned cpu_cycles_per_sample = 1789773 / sample_rate;
+	static constexpr unsigned cpu_cycles_per_sample_ntsc = 1789773 / sample_rate;
+	static constexpr unsigned cpu_cycles_per_sample_pal  = 1662607 / sample_rate;
 
 	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 
@@ -232,7 +234,7 @@ private:
 		DMC(APU* apu) { this->apu = apu; }
 		APU* apu; /* This unit needs access to some members outside of the struct. */
 
-		bool interrupt_flag;
+		bool interrupt;
 		bool IRQ_enable;
 		bool loop;
 		bool read_sample_on_next_apu_cycle = false;
@@ -277,9 +279,9 @@ private:
 		void Step();
 	} frame_counter{ this };
 
-	bool on_apu_cycle = 1;
+	bool on_apu_cycle = true;
 
-	unsigned cpu_cycles_until_sample = cpu_cycles_per_sample;
+	unsigned cpu_cycles_until_sample = cpu_cycles_per_sample_ntsc;
 	unsigned sample_buffer_index = 0;
 
 	f32 sample_buffer[sample_buffer_size];

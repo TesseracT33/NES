@@ -39,7 +39,7 @@ public:
 		DMC_RAW    = 0x4011,
 		DMC_START  = 0x4012,
 		DMC_LEN    = 0x4013,
-		SND_CHN    = 0x4015,
+		APU_STAT   = 0x4015,
 		JOY1       = 0x4016,
 		JOY2       = 0x4017,
 		FRAME_CNT  = 0x4017,

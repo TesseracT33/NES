@@ -24,33 +24,32 @@ public:
 	void Power();
 	void Reset();
 	void Run(bool init);
-
 	void Stall();
 
 	void PollInterruptInputs()
 	{
-		// The NMI input is connected to an edge detector, which polls the status of the NMI line during the second half of each cpu cycle.
-		// It raises an internal signal if the input goes from being high during one cycle to being low during the next. 
-		// The internal signal goes high during the first half of the cycle that follows the one where the edge is detected, and stays high until the NMI has been handled.
-		// Note: 'need_NMI' is set to true as soon as the internal signal is raised, while 'need_NMI_polled' is updated to 'need_NMI' only one cycle after this. 'need_NMI_polled' is what determines whether to service an NMI after an instruction.
+		/* This function is called from within the PPU update function, 2/3 into each cpu cycle.
+		   The NMI input is connected to an edge detector, which polls the status of the NMI line during the second half of each cpu cycle.
+		   It raises an internal signal if the input goes from being high during one cycle to being low during the next.
+		   The internal signal goes high during the first half of the cycle that follows the one where the edge is detected, and stays high until the NMI has been handled.
+		   Note: 'need_NMI' is set to true as soon as the internal signal is raised, while 'need_NMI_polled' is updated to 'need_NMI' only one cycle after this. 'need_NMI_polled' is what determines whether to service an NMI after an instruction. */
 		prev_NMI_input_signal = NMI_input_signal;
 		NMI_input_signal = NMI_line;
 		if (NMI_input_signal == 0 && prev_NMI_input_signal == 1)
 			need_NMI = true;
 
-		// IRQ
-		// TODO
+		/* The IRQ input is connected to a level detector, which polls the status of the IRQ line during the second half of each cpu cycle.
+		   If a low level is detected (at least one bit of IRQ_line is clear), it raises an internal signal during the first half of the next cycle, which remains high for that cycle only. */
+		need_IRQ = IRQ_line != 0xFF;
 	}
 	void PollInterruptOutputs()
 	{
-		// NMI
+		/* This function is called at the start of each CPU cycle. */
 		need_NMI_polled = need_NMI;
-
-		// IRQ
-		// TODO
+		need_IRQ_polled = need_IRQ;
 	}
-	void SetIRQLow()  { IRQ_line = 0; }
-	void SetIRQHigh() { IRQ_line = 1; }
+	void SetIRQLow(u8 source_mask)  { IRQ_line &= ~source_mask; }
+	void SetIRQHigh(u8 source_mask) { IRQ_line |= source_mask; }
 	void SetNMILow()  { NMI_line = 0; }
 	void SetNMIHigh() { NMI_line = 1; }
 
@@ -155,14 +154,14 @@ private:
 
 	// Interrupt-related
 	enum class InterruptType { NMI, IRQ, BRK };
-	InterruptType handled_interrupt_type; // The type that was handled during the last interrupt servicing (different from the 'asserted' type; see ServiceInterrupt())
 	bool NMI_line = 1; // The NMI signal coming from the ppu.
 	bool NMI_input_signal = 1, prev_NMI_input_signal = 1; // The polled NMI line signal during the 2nd half of the last and second to last CPU cycle, respectively.
 	bool need_NMI = false; // Whether we need to service an NMI interrupt. Is set right after a negative edge is detected (prev_NMI_input_signal == 1 && NMI_input_signal == 0)
 	bool need_NMI_polled = false; // Same as above, but this only gets updated to 'need_NMI' only cycle after need_NMI is updated. If this is set after we have executed an instruction, we service the NMI.
-	bool clear_I_on_next_update = false, set_I_on_next_update = false; // refers to the I flag in the status register.
-	unsigned IRQ_num_inputs = 0; // how many devices are currently pulling the IRQ signal down.
-	bool IRQ_line = 1;
+	bool need_IRQ = false;
+	bool need_IRQ_polled = false;
+	bool clear_interrupt_disable_flag_on_next_cycle = false, set_interrupt_disable_flag_on_next_cycle = false;
+	u8 IRQ_line = 0xFF; // One bit for each IRQ source (there are eight according to https://wiki.nesdev.org/w/index.php?title=IRQ)
 
 	// OAMDMA-related
 	bool oam_dma_transfer_pending;

@@ -9,9 +9,16 @@ void APU::Initialize()
 
 void APU::Power()
 {
+    for (u16 addr = 0x4000; addr <= 0x4013; addr++)
+        WriteRegister(addr, 0x00);
+    WriteRegister(0x4015, 0x00);
+    WriteRegister(0x4017, 0x00);
+
+    pulse_ch_1.timer = pulse_ch_1.timer_period;
+    pulse_ch_2.timer = pulse_ch_2.timer_period;
+
     noise_ch.LFSR = 1;
     dmc.output_level = 0;
-    WriteRegister(Bus::Addr::SND_CHN, 0x00);
 }
 
 
@@ -20,7 +27,7 @@ void APU::Reset()
     // TODO: move this to somewhere else
     audio_spec.freq = sample_rate;
     audio_spec.format = AUDIO_F32;
-    audio_spec.channels = 1;
+    audio_spec.channels = 2;
     audio_spec.samples = sample_buffer_size;
     audio_spec.callback = NULL;
 
@@ -28,7 +35,7 @@ void APU::Reset()
     SDL_OpenAudio(&audio_spec, &obtainedSpec);
     SDL_PauseAudio(0);
 
-    WriteRegister(Bus::Addr::SND_CHN, 0x00);
+    WriteRegister(0x4015, 0x00);
 }
 
 
@@ -54,7 +61,7 @@ void APU::Update()
     if (--cpu_cycles_until_sample == 0)
     {
         Mix();
-        cpu_cycles_until_sample = cpu_cycles_per_sample;
+        cpu_cycles_until_sample = cpu_cycles_per_sample_ntsc;
     }
 }
 
@@ -62,7 +69,7 @@ void APU::Update()
 u8 APU::ReadRegister(u16 addr)
 {
     // Only $4015 is readable, the rest are write only.
-    if (addr == Bus::Addr::SND_CHN)
+    if (addr == Bus::Addr::APU_STAT)
     {
         u8 ret = (pulse_ch_1.length_counter.value  > 0)
                | (pulse_ch_2.length_counter.value  > 0) << 1
@@ -73,6 +80,7 @@ u8 APU::ReadRegister(u16 addr)
                | (frame_counter.interrupt             ) << 6
                | (dmc.IRQ_enable                      ) << 7;
         frame_counter.interrupt = false;
+        cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
         return ret;
     }
@@ -119,7 +127,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         }
         if (pulse_ch_1.enabled)
         {
-            pulse_ch_1.length_counter.SetValue(data >> 3);
+            pulse_ch_1.length_counter.SetValue(length_table[data >> 3]);
             pulse_ch_1.UpdateVolume(); // TODO: possible to somehow call UpdateVolume from SetValue?
         }
         pulse_ch_1.envelope.start_flag = true;
@@ -149,7 +157,7 @@ void APU::WriteRegister(u16 addr, u8 data)
             pulse_ch_2.sweep.muting = true;
             pulse_ch_2.UpdateVolume();
         }
-        pulse_ch_1.ComputeTargetTimerPeriod();
+        pulse_ch_2.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ2_HI: // $4007
@@ -161,11 +169,11 @@ void APU::WriteRegister(u16 addr, u8 data)
         }
         if (pulse_ch_2.enabled)
         {
-            pulse_ch_2.length_counter.SetValue(data >> 3);
+            pulse_ch_2.length_counter.SetValue(length_table[data >> 3]);
             pulse_ch_2.UpdateVolume();
         }
         pulse_ch_2.envelope.start_flag = true;
-        pulse_ch_1.ComputeTargetTimerPeriod();
+        pulse_ch_2.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::TRI_LINEAR: // $4008
@@ -182,7 +190,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         triangle_ch.timer_period = triangle_ch.timer_period & 0xFF | data << 8;
         if (triangle_ch.enabled)
         {
-            triangle_ch.length_counter.SetValue(data >> 3);
+            triangle_ch.length_counter.SetValue(length_table[data >> 3]);
             triangle_ch.UpdateVolume();
         }
         triangle_ch.linear_counter.reload = true;
@@ -196,23 +204,25 @@ void APU::WriteRegister(u16 addr, u8 data)
         break;
 
     case Bus::Addr::NOISE_LO: // $400E
-        noise_ch.timer_period = noise_period_ntsc[data & 0xF];
+        noise_ch.timer_period = noise_period_table_ntsc[data & 0xF];
         noise_ch.loop_noise = data & 0x80;
         break;
 
     case Bus::Addr::NOISE_HI: // $400F
         if (noise_ch.enabled)
         {
-            noise_ch.length_counter.SetValue(noise_length[data >> 3]);
+            noise_ch.length_counter.SetValue(length_table[data >> 3]);
             noise_ch.UpdateVolume();
         }
         noise_ch.envelope.start_flag = true;
         break;
 
     case Bus::Addr::DMC_FREQ: // $4010
-        dmc.period = dmc_rate_ntsc[data & 0xF];
+        dmc.period = dmc_rate_table_ntsc[data & 0xF];
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
+        if (!dmc.IRQ_enable)
+            cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::DMC_RAW: // $4011
@@ -227,7 +237,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         dmc.sample_len = 1 | data << 4;
         break;
 
-    case Bus::Addr::SND_CHN: // $4015
+    case Bus::Addr::APU_STAT: // $4015
         pulse_ch_1.enabled = data & 0x01;
         if (!pulse_ch_1.enabled)
             pulse_ch_1.length_counter.SetToZero();
@@ -257,11 +267,9 @@ void APU::WriteRegister(u16 addr, u8 data)
             }
         }
         else
-        {
             dmc.bytes_remaining = 0;
-        }
-        dmc.interrupt_flag = false;
 
+        cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::FRAME_CNT: // $4017
@@ -270,6 +278,11 @@ void APU::WriteRegister(u16 addr, u8 data)
         frame_counter.pending_4017_write = true;
         frame_counter.cpu_cycles_until_apply_4017_write = on_apu_cycle ? 3 : 4;
         frame_counter.data_written_to_4017 = data;
+
+        /* Writing $80 to $4017 should clock length immediately. Source: blarrg apu test */
+        /* TODO: is only $80 allowed, or any number with bit 7 set? */
+        if (data == 0x80)
+            ClockLengthUnits();
         break;
 
     default:
@@ -287,6 +300,7 @@ void APU::FrameCounter::Step()
         mode = data_written_to_4017 & 0x80;
         pending_4017_write = false;
         cpu_cycle_count = 0;
+        return;
     }
 
     // The frame counter is clocked on every other CPU cycle, i.e. on every APU cycle.
@@ -294,29 +308,32 @@ void APU::FrameCounter::Step()
     // Therefore, the APU cycle counts from https://wiki.nesdev.org/w/index.php?title=APU_Frame_Counter have been doubled.
     switch (++cpu_cycle_count)
     {
-    case 7457:
+    case 7459: // APU cycle 3728.5
         apu->ClockEnvelopeUnits();
         apu->ClockLinearUnits();
         break;
 
-    case 14913:
+    case 14915: // APU cycle 7456.5
         apu->ClockEnvelopeUnits();
         apu->ClockLengthUnits();
         apu->ClockLinearUnits();
         apu->ClockSweepUnits();
         break;
 
-    case 22371:
+    case 22373: // APU cycle 11185.5
         apu->ClockEnvelopeUnits();
         apu->ClockLinearUnits();
         break;
 
-    case 29828:
+    case 29830: // APU cycle 14914
         if (mode == 0 && interrupt_inhibit == 0)
-            interrupt = 1;
+        {
+            apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+            interrupt = true;
+        }
         break;
 
-    case 29829:
+    case 29831: // APU cycle 14914.5
         if (mode == 0)
         {
             apu->ClockEnvelopeUnits();
@@ -324,28 +341,34 @@ void APU::FrameCounter::Step()
             apu->ClockLinearUnits();
             apu->ClockSweepUnits();
             if (interrupt_inhibit == 0)
-                interrupt = 1;
+            {
+                apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+                interrupt = true;
+            }
         }
         break;
 
-    case 29830:
+    case 29832: // APU cycle 14915
         if (mode == 0)
         {
             if (interrupt_inhibit == 0)
-                interrupt = 1;
-            cpu_cycle_count = 0;
+            {
+                apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+                interrupt = true;
+            }
+            cpu_cycle_count = 1;
         }
         break;
 
-    case 37281:
+    case 37283: // APU cycle 18640.5
         apu->ClockEnvelopeUnits();
         apu->ClockLengthUnits();
         apu->ClockLinearUnits();
         apu->ClockSweepUnits();
         break;
 
-    case 37282:
-        cpu_cycle_count = 0;
+    case 37284: // APU cycle 18641
+        cpu_cycle_count = 1;
         break;
 
     default:
@@ -364,11 +387,16 @@ void APU::PulseCh::ClockEnvelope()
             if (envelope.decay_level_cnt == 0)
             {
                 if (length_counter.halt == 1) // doubles as the envelope loop flag
+                {
                     envelope.decay_level_cnt = 15;
+                    UpdateVolume();
+                }
             }
             else
+            {
                 envelope.decay_level_cnt--;
-            UpdateVolume();
+                UpdateVolume();
+            }
         }
         else
             envelope.divider--;
@@ -451,7 +479,7 @@ void APU::PulseCh::Step()
     if (timer == 0)
     {
         timer = timer_period;
-        duty_pos--; // The counter counts downward rather than upward.
+        duty_pos++;
         output = pulse_duty_table[duty][duty_pos];
     }
     else
@@ -522,11 +550,16 @@ void APU::NoiseCh::ClockEnvelope()
             if (envelope.decay_level_cnt == 0)
             {
                 if (length_counter.halt == 1) // doubles as the envelope loop flag
+                {
                     envelope.decay_level_cnt = 15;
+                    UpdateVolume();
+                }
             }
             else
+            {
                 envelope.decay_level_cnt--;
-            UpdateVolume();
+                UpdateVolume();
+            }
         }
         else
             envelope.divider--;
@@ -633,7 +666,7 @@ void APU::DMC::ReadSample()
         if (loop)
             RestartSample();
         else if (IRQ_enable)
-            interrupt_flag = true;
+            apu->cpu->SetIRQLow(IRQ_APU_DMC_mask);
     }
 }
 
@@ -649,6 +682,7 @@ void APU::Mix()
 
     f32 output = pulse_out + tnd_out;
 
+    sample_buffer[sample_buffer_index++] = output;
     sample_buffer[sample_buffer_index++] = output;
 
     if (sample_buffer_index == sample_buffer_size)
