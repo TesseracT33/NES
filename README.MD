@@ -1,6 +1,6 @@
 # Summary
 nes-dono is a Nintendo Entertainment System (NES) emulator written in C++ with a graphical interface (using wxWidgets-3). It relies on SDL2 for video, audio and input. 
-Its an *attempt* at cycle-accurate APU, CPU and PPU emulation.
+It's an *attempt* at cycle-accurate APU, CPU and PPU emulation. Currently, the CPU implementation is mostly complete and correct, while the APU and PPU implementations could be much improved.
 
 ![nes1](https://thumbs2.imgbox.com/d7/ab/XT59O1N4_t.png)
 ![nes2](https://thumbs2.imgbox.com/ec/21/IztWylQt_t.png)
