@@ -6,9 +6,14 @@ class MMC1 final : public BaseMapper
 {
 public:
 	MMC1(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
-		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
+		: BaseMapper(chr_size, prg_rom_size, prg_ram_size)
+	{
+		/* It is possible for 'prg_ram_size' to be 0 (from the header parsing process), but the cart may actually have PRG RAM still. */
+		/* TODO: currently, prg_ram is resized even if the cart doesn't have any ram (we don't know 'has_prg_ram' yet. Fix. */
+		prg_ram_size = 0x2000;
+		prg_ram.resize(prg_ram_size);
+	}
 
-	const size_t prg_ram_size = 0x8000; // todo: this is not actually the same for every game
 	// TODO: how to distinguish between the different SxROM boards with CHR ram?
 
 	u8 ReadPRG(u16 addr) override
