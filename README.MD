@@ -1,5 +1,20 @@
 # Summary
-Heavily WIP NES emulator written in C++, using wxWidgets and SDL2.
+nes-dono is a Nintendo Entertainment System (NES) emulator written in C++ with a graphical interface (using wxWidgets-3). It relies on SDL2 for video, audio and input. 
+Its an *attempt* at cycle-accurate APU, CPU and PPU emulation.
+
+![nes1](https://thumbs2.imgbox.com/d7/ab/XT59O1N4_t.png)
+![nes2](https://thumbs2.imgbox.com/ec/21/IztWylQt_t.png)
+![nes3](https://thumbs2.imgbox.com/63/94/MwUdqO17_t.png)
+
+# Current features
+- GUI
+- Supported mappers are (AxROM, CNROM, MMC1, NROM, UxROM).
+- Audio output
+
+# WIP/future features
+- MMC3 carts.
+- Save states.
+- Controller input support (non-functioning).
 
 # Compiling and running
 Current external dependencies are wxWidgets and SDL2. I only supply Visual Studio solution files. The project settings were as follows:
@@ -12,3 +27,5 @@ F:\SDKs\wxWidgets-3.1.3\lib\vc_x64_lib; F:\SDKs\SDL2-2.0.12\lib\x64;
 
 Linker -- Input -- Additional Dependencies:
 SDL2.lib; SDL2main.lib;
+
+[URL=https://imgbox.com/XT59O1N4][IMG]https://thumbs2.imgbox.com/d7/ab/XT59O1N4_t.png[/IMG][/URL] [URL=https://imgbox.com/IztWylQt][IMG]https://thumbs2.imgbox.com/ec/21/IztWylQt_t.png[/IMG][/URL] [URL=https://imgbox.com/MwUdqO17][IMG]https://thumbs2.imgbox.com/63/94/MwUdqO17_t.png[/IMG][/URL]
