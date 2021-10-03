@@ -20,7 +20,7 @@ private:
 		bool has_prg_nvram;
 		bool has_trainer;
 		bool mirroring;
-		u8 cpu_ppu_timing : 3;
+		u8 tv_system : 3;
 		u8 submapper_num;
 		u16 mapper_num;
 		size_t chr_nvram_size;
@@ -41,6 +41,7 @@ private:
 			mapper_info.has_prg_ram ? mapper_info.prg_ram_size : 0); }
 
 	static bool ParseHeader(u8 header[]);
+	static void ParseFirstEightBytesOfHeader(u8 header[]);
 	static void ParseiNESHeader(u8 header[]);
 	static void ParseNES20Header(u8 header[]);
 	static void SetupMapperProperties();

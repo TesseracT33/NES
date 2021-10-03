@@ -71,26 +71,29 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 bool Cartridge::ParseHeader(u8 header[])
 {
 	// https://wiki.nesdev.com/w/index.php/NES_2.0#Identification
-	// Check if the header is a valid iNES header
+	/* Check if the header is a valid iNES header */
 	if (!(header[0] == 'N' && header[1] == 'E' && header[2] == 'S' && header[3] == 0x1A))
 	{
 		wxMessageBox("Error: Could not parse rom file header; rom is not a valid iNES or NES 2.0 image file.");
 		return false;
 	}
 
-	ParseiNESHeader(header);
+	/* The first eight bytes of both the iNES and NES 2.0 headers have the same meaning. */
+	ParseFirstEightBytesOfHeader(header);
 
-	// Check if the header is a valid NES 2.0 header
+	/* Check if the header is a valid NES 2.0 header. Then, parse bytes 8-15. */
 	if ((header[7] & 0x0C) == 0x08)
 		ParseNES20Header(header);
+	else
+		ParseiNESHeader(header);
 
 	return true;
 }
 
 
-void Cartridge::ParseiNESHeader(u8 header[])
+void Cartridge::ParseFirstEightBytesOfHeader(u8 header[])
 {
-	// Parse bytes 0-7 of the header. These have the same meaning on iNES and NES 2.0 headers.
+	/* Parse bytes 0-7 of the header. These have the same meaning on both iNES and NES 2.0 headers. */
 	mapper_info.prg_rom_size = header[4] * BaseMapper::prg_rom_bank_size;
 	if (header[5] == 0)
 	{
@@ -112,9 +115,17 @@ void Cartridge::ParseiNESHeader(u8 header[])
 }
 
 
+void Cartridge::ParseiNESHeader(u8 header[])
+{
+	/* Parse bytes 8-15 of an iNES header. */
+	mapper_info.prg_ram_size = header[8];
+	mapper_info.tv_system = header[9] & 1;
+}
+
+
 void Cartridge::ParseNES20Header(u8 header[])
 {
-	// Parse bytes 8-15 of the header.
+	/* Parse bytes 8-15 of a NES 2.0 header. */
 	mapper_info.mapper_num |= (header[8] & 0xF) << 8;
 	mapper_info.submapper_num = header[8] >> 4;
 	if (!mapper_info.has_chr_ram)
@@ -145,7 +156,7 @@ void Cartridge::ParseNES20Header(u8 header[])
 	else
 		mapper_info.has_chr_nvram = false;
 
-	mapper_info.cpu_ppu_timing = header[12] & 3;
+	mapper_info.tv_system = header[12] & 3;
 }
 
 
