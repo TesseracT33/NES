@@ -27,5 +27,3 @@ F:\SDKs\wxWidgets-3.1.3\lib\vc_x64_lib; F:\SDKs\SDL2-2.0.12\lib\x64;
 
 Linker -- Input -- Additional Dependencies:
 SDL2.lib; SDL2main.lib;
-
-[URL=https://imgbox.com/XT59O1N4][IMG]https://thumbs2.imgbox.com/d7/ab/XT59O1N4_t.png[/IMG][/URL] [URL=https://imgbox.com/IztWylQt][IMG]https://thumbs2.imgbox.com/ec/21/IztWylQt_t.png[/IMG][/URL] [URL=https://imgbox.com/MwUdqO17][IMG]https://thumbs2.imgbox.com/63/94/MwUdqO17_t.png[/IMG][/URL]
