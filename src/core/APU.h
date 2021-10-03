@@ -87,8 +87,8 @@ private:
 
 	static constexpr unsigned sample_buffer_size = 2048;
 	static constexpr unsigned sample_rate = 44100;
-	static constexpr unsigned cpu_cycles_per_sample_ntsc = 1789773 / sample_rate;
-	static constexpr unsigned cpu_cycles_per_sample_pal  = 1662607 / sample_rate;
+	static constexpr unsigned cpu_cycles_per_sec_ntsc = 1789773;
+	static constexpr unsigned cpu_cycles_per_sec_pal  = 1662607;
 
 	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 
@@ -281,7 +281,7 @@ private:
 
 	bool on_apu_cycle = true;
 
-	unsigned cpu_cycles_until_sample = cpu_cycles_per_sample_ntsc;
+	unsigned cpu_cycle_sample_counter = 0;
 	unsigned sample_buffer_index = 0;
 
 	f32 sample_buffer[sample_buffer_size];
@@ -314,7 +314,7 @@ private:
 		pulse_ch_2.ClockSweep();
 	}
 
-	void Mix();
+	void MixAndSample();
 
 	void State(Serialization::BaseFunctor& functor);
 };

@@ -58,10 +58,11 @@ void APU::Update()
     dmc.Step();
     triangle_ch.Step();
 
-    if (--cpu_cycles_until_sample == 0)
+    cpu_cycle_sample_counter += sample_rate;
+    if (cpu_cycle_sample_counter >= cpu_cycles_per_sec_ntsc)
     {
-        Mix();
-        cpu_cycles_until_sample = cpu_cycles_per_sample_ntsc;
+        MixAndSample();
+        cpu_cycle_sample_counter -= cpu_cycles_per_sec_ntsc;
     }
 }
 
@@ -671,7 +672,7 @@ void APU::DMC::ReadSample()
 }
 
 
-void APU::Mix()
+void APU::MixAndSample()
 {
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
