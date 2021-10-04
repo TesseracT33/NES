@@ -18,10 +18,10 @@ void CPU::Reset()
 {
 	cpu_cycles_since_reset = 0;
 	all_ppu_regs_writable = false;
-	NMI_input_signal = prev_NMI_input_signal = 1;
+	polled_NMI_line = prev_polled_NMI_line = 1;
 	need_NMI = false;
 	need_IRQ = false;
-	set_interrupt_disable_flag_on_next_cycle = clear_interrupt_disable_flag_on_next_cycle = false;
+	write_to_interrupt_disable_flag_on_next_cycle = false;
 	stalled = stopped = false;
 	oam_dma_transfer_pending = false;
 	odd_cpu_cycle = false;
@@ -33,6 +33,7 @@ void CPU::Reset()
 void CPU::Run(bool init)
 {
 	// Setup on reset/initialization; eight cycles before the CPU starts executing instructions.
+	// TODO: this loop will currently get executed every time Emulator::MainLoop() is called; fix.
 	if (init)
 		for (int i = 0; i < 8; i++)
 			WaitCycle();
@@ -63,17 +64,11 @@ void CPU::Run(bool init)
 		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		//	all_ppu_regs_writable = true;
 
-		if (set_interrupt_disable_flag_on_next_cycle)
+		if (write_to_interrupt_disable_flag_on_next_cycle)
 		{
-			flags.I = 1;
-			set_interrupt_disable_flag_on_next_cycle = false;
+			flags.I = bit_to_write_to_interrupt_disable_flag;
+			write_to_interrupt_disable_flag_on_next_cycle = false;
 		}
-		else if (clear_interrupt_disable_flag_on_next_cycle)
-		{
-			flags.I = 0;
-			clear_interrupt_disable_flag_on_next_cycle = false;
-		}
-
 		if (oam_dma_transfer_pending)
 		{
 			PerformOAMDMATransfer();
@@ -84,9 +79,9 @@ void CPU::Run(bool init)
 
 			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
 			// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
-			if (need_NMI_polled)
+			if (polled_need_NMI)
 				ServiceInterrupt(InterruptType::NMI);
-			else if (need_IRQ_polled && !flags.I)
+			else if (polled_need_IRQ && !flags.I)
 				ServiceInterrupt(InterruptType::IRQ);
 		}
 	}
@@ -350,14 +345,14 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	InterruptType handled_interrupt_type;
 	// Interrupt hijacking: If both an NMI and an IRQ are pending, the NMI will be handled and the pending status of the IRQ forgotten
 	// The same applies to IRQ and BRK; an IRQ can hijack a BRK
-	if (asserted_interrupt_type == InterruptType::NMI || need_NMI_polled)
+	if (asserted_interrupt_type == InterruptType::NMI || polled_need_NMI)
 	{
 		handled_interrupt_type = InterruptType::NMI;
-		need_IRQ = need_IRQ_polled = false; /* The possible pending status of the IRQ is forgotten */
+		need_IRQ = polled_need_IRQ = false; /* The possible pending status of the IRQ is forgotten */
 	}
 	else
 	{
-		if (asserted_interrupt_type == InterruptType::IRQ || need_IRQ_polled && !flags.I)
+		if (asserted_interrupt_type == InterruptType::IRQ || polled_need_IRQ && !flags.I)
 			handled_interrupt_type = InterruptType::IRQ;
 		else
 			handled_interrupt_type = InterruptType::BRK;
@@ -372,14 +367,14 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	{
 		lo = ReadCycle(Bus::Addr::NMI_VEC);
 		hi = ReadCycle(Bus::Addr::NMI_VEC + 1);
-		need_NMI = need_NMI_polled = false; // todo: it's not entirely clear if this is the right place to clear this.
-		NMI_line = NMI_input_signal = prev_NMI_input_signal = 1; /* TODO should NMI line even be set, or is it the job of the interrupt handler? */
+		need_NMI = polled_need_NMI = false; // todo: it's not entirely clear if this is the right place to clear this.
+		NMI_line = polled_NMI_line = prev_polled_NMI_line = 1; /* TODO should NMI line even be set, or is it the job of the interrupt handler? */
 	}
 	else
 	{
 		lo = ReadCycle(Bus::Addr::IRQ_BRK_VEC);
 		hi = ReadCycle(Bus::Addr::IRQ_BRK_VEC + 1);
-		need_IRQ = need_IRQ_polled = false;
+		need_IRQ = polled_need_IRQ = false;
 	}
 	PC = lo | hi << 8;
 
@@ -532,7 +527,8 @@ void CPU::CLD()
 void CPU::CLI()
 {
 	// CLI clears the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
-	clear_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_on_next_cycle = true;
+	bit_to_write_to_interrupt_disable_flag = 0;
 }
 
 
@@ -762,10 +758,8 @@ void CPU::PLP()
 	// PLP changes the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
 	bool I_tmp = flags.I;
 	SetStatusReg(PullByteFromStack());
-	if (flags.I)
-		set_interrupt_disable_flag_on_next_cycle = true;
-	else
-		clear_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_on_next_cycle = true;
+	bit_to_write_to_interrupt_disable_flag = flags.I;
 	flags.I = I_tmp;
 
 	WaitCycle();
@@ -874,7 +868,8 @@ void CPU::SED()
 void CPU::SEI()
 {
 	// SEI sets the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
-	set_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_on_next_cycle = true;
+	bit_to_write_to_interrupt_disable_flag = 1;
 }
 
 
