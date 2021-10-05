@@ -132,30 +132,30 @@ void Cartridge::ParseNES20Header(u8 header[])
 	mapper_properties.mapper_num |= (header[8] & 0xF) << 8;
 	mapper_properties.submapper_num = header[8] >> 4;
 	if (!mapper_properties.has_chr_ram)
-		mapper_properties.chr_size += ((header[9] & 0x0F) << 8) * chr_bank_size;
-	mapper_properties.prg_rom_size += ((header[9] & 0xF0) << 4) * prg_rom_bank_size;
+		mapper_properties.chr_size += (size_t(header[9] & 0x0F) << 8) * chr_bank_size;
+	mapper_properties.prg_rom_size += (size_t(header[9] & 0xF0) << 4) * prg_rom_bank_size;
 
 	// Check for PRG-RAM
 	if (header[10] & 0x0F)
-		mapper_properties.prg_ram_size = 64 << (header[10] & 0xF);
+		mapper_properties.prg_ram_size = size_t(64) << (header[10] & 0xF);
 	else
 		mapper_properties.has_prg_ram = false;
 
 	// Check for PRG-NVRAM
 	if (header[10] & 0xF0)
-		mapper_properties.prg_nvram_size = 64 << (header[10] >> 4);
+		mapper_properties.prg_nvram_size = size_t(64) << (header[10] >> 4);
 	else
 		mapper_properties.has_prg_nvram = false;
 
 	// Check for CHR-RAM
 	if (header[11] & 0x0F)
-		mapper_properties.chr_size = 64 << (header[11] & 0xF);
+		mapper_properties.chr_size = size_t(64) << (header[11] & 0xF);
 	else
 		mapper_properties.has_chr_ram = false;
 
 	// Check for CHR-NVRAM
 	if (header[11] & 0xF0)
-		mapper_properties.chr_nvram_size = 64 << (header[11] >> 4);
+		mapper_properties.chr_nvram_size = size_t(64) << (header[11] >> 4);
 	else
 		mapper_properties.has_chr_nvram = false;
 
