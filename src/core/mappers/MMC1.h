@@ -156,7 +156,7 @@ private:
 	// TODO: what are the default values of these?
 	unsigned chr_bank_0   : 5 = 0;
 	unsigned chr_bank_1   : 5 = 0;
-	unsigned control_reg  : 5 = 0;
+	unsigned control_reg  : 5 = 0xC; /* nesdev seem to suggest that many carts start in PRG ROM bank mode 3. */
 	unsigned prg_bank     : 4 = 0;
 	unsigned prg_ram_bank : 2 = 0;
 	unsigned shift_reg    : 5 = 0x10;
