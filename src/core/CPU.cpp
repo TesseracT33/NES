@@ -26,7 +26,7 @@ void CPU::Reset()
 	oam_dma_transfer_pending = false;
 	odd_cpu_cycle = false;
 
-	PC = bus->Read(Bus::Addr::RESET_VEC) | bus->Read(Bus::Addr::RESET_VEC + 1) << 8;
+	PC = ReadWord(Bus::Addr::RESET_VEC);
 }
 
 
@@ -362,21 +362,17 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	PushByteToStack(GetStatusRegInterrupt());
 
 	// cycles 6-7
-	u8 lo, hi;
 	if (handled_interrupt_type == InterruptType::NMI)
 	{
-		lo = ReadCycle(Bus::Addr::NMI_VEC);
-		hi = ReadCycle(Bus::Addr::NMI_VEC + 1);
+		PC = ReadWord(Bus::Addr::NMI_VEC);
 		need_NMI = polled_need_NMI = false; // todo: it's not entirely clear if this is the right place to clear this.
 		NMI_line = polled_NMI_line = prev_polled_NMI_line = 1; /* TODO should NMI line even be set, or is it the job of the interrupt handler? */
 	}
 	else
 	{
-		lo = ReadCycle(Bus::Addr::IRQ_BRK_VEC);
-		hi = ReadCycle(Bus::Addr::IRQ_BRK_VEC + 1);
+		PC = ReadWord(Bus::Addr::IRQ_BRK_VEC);
 		need_IRQ = polled_need_IRQ = false;
 	}
-	PC = lo | hi << 8;
 
 	flags.I = 1; // it's OK if this is set in cycle 7 instead of 6; the flag isn't used until after this function returns
 

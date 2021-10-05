@@ -328,6 +328,13 @@ private:
 		return hi << 8 | lo;
 	}
 
+	u16 ReadWord(u16 addr)
+	{
+		u8 lo = ReadCycle(addr);
+		u8 hi = ReadCycle(addr + 1);
+		return lo | hi << 8;
+	}
+
 	void Branch(bool cond)
 	{
 		if (cond)
