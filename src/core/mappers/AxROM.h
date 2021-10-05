@@ -5,8 +5,7 @@
 class AxROM final : public BaseMapper
 {
 public:
-	AxROM(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
-		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
+	AxROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -22,7 +21,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 7) % num_prg_rom_banks;
+			prg_bank = (data & 7) % properties.num_prg_rom_banks;
 			vram_page = data & 0x10;
 		}
 	};

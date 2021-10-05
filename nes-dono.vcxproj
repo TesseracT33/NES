@@ -20,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\IRQSources.h" />
+    <ClInclude Include="src\core\mappers\MapperProperties.h" />
     <ClInclude Include="src\core\NES.h" />
     <ClInclude Include="src\core\Header.h" />
     <ClInclude Include="src\core\mappers\AxROM.h" />

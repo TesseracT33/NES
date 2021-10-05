@@ -5,8 +5,7 @@
 class MMC3 final : public BaseMapper
 {
 public:
-	MMC3(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
-		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
+	MMC3(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -15,7 +14,7 @@ public:
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		case 0x6: case 0x7:
 			// Disabling PRG RAM causes reads from the PRG RAM region to return open bus.
-			if (has_prg_ram && prg_ram_enabled)
+			if (properties.has_prg_ram && prg_ram_enabled)
 				return value_last_read_from_prg_ram = prg_ram[addr - 0x6000];
 			return value_last_read_from_prg_ram;
 
@@ -23,7 +22,7 @@ public:
 		case 0x8: case 0x9:
 			if (prg_rom_bank_mode == 0)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0x8000];
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0x8000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0x8000];
 
 		// CPU $A000-$BFFF: 8 KiB switchable PRG ROM bank
 		case 0xA: case 0xB:
@@ -33,11 +32,11 @@ public:
 		case 0xC: case 0xD:
 			if (prg_rom_bank_mode == 1)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0xC000];
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0xC000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0xC000];
 
 		// CPU $E000-$FFFF: 8 KiB PRG ROM bank, fixed to the last bank
 		case 0xE: case 0xF:
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 1) - 0xE000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 1) - 0xE000];
 
 		default: return 0xFF;
 		}
@@ -49,7 +48,7 @@ public:
 		{
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		case 0x6: case 0x7:
-			if (has_prg_ram && !prg_ram_write_protection)
+			if (properties.has_prg_ram && !prg_ram_write_protection)
 				prg_ram[addr - 0x6000] = data;
 			break;
 
@@ -159,13 +158,13 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (has_chr_ram)
+		if (properties.has_chr_ram)
 			chr[addr] = data;
 	}
 
 	u16 GetNametableAddr(u16 addr) override
 	{
-		if (mirroring == 0)
+		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
 		return NametableAddrVertical(addr);
 	};

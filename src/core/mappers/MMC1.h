@@ -5,14 +5,7 @@
 class MMC1 final : public BaseMapper
 {
 public:
-	MMC1(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
-		: BaseMapper(chr_size, prg_rom_size, prg_ram_size)
-	{
-		/* It is possible for 'prg_ram_size' to be 0 (from the header parsing process), but the cart may actually have PRG RAM still. */
-		/* TODO: currently, prg_ram is resized even if the cart doesn't have any ram (we don't know 'has_prg_ram' yet. Fix. */
-		prg_ram_size = 0x2000;
-		prg_ram.resize(prg_ram_size);
-	}
+	MMC1(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
 
 	// TODO: how to distinguish between the different SxROM boards with CHR ram?
 
@@ -25,7 +18,7 @@ public:
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		if (addr <= 0x7FFF)
 		{
-			if (has_prg_ram)
+			if (properties.has_prg_ram)
 				return prg_ram[addr - 0x6000];
 			return 0xFF;
 		}
@@ -33,7 +26,7 @@ public:
 		switch (control_reg >> 2 & 3)
 		{
 		case 0: case 1: // 32 KiB mode; $8000-$FFFF is mapped to a 32 KiB bank (bit 0 of the bank number is ignored).
-			if (prg_rom_size >= 0x8000)
+			if (properties.prg_rom_size >= 0x8000)
 				return prg_rom[addr - 0x8000 + (prg_bank & 0xE) * 0x8000];
 			// If PRG ROM is smaller than 32 KiB (in that case 16 KiB), transform addresses $C000-$FFFF into $8000-$BFFF.
 			return prg_rom[(addr & ~0x4000) - 0x8000];
@@ -46,7 +39,7 @@ public:
 		case 3: // 16 KiB mode 2; Switch 16 KiB bank at $8000-$BFFF and fix the last bank at $C000-$FFFF.
 			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
-			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
 
 		default: return 0xFF; // impossible
 		}
@@ -60,7 +53,7 @@ public:
 		}
 		else if (addr <= 0x7FFF)
 		{
-			if (has_prg_ram)
+			if (properties.has_prg_ram)
 				prg_ram[addr - 0x6000] = data;
 		}
 		else
@@ -87,7 +80,7 @@ public:
 						break;
 
 					case 0xA: case 0xB:
-						if (has_chr_ram)
+						if (properties.has_chr_ram)
 						{
 							chr_bank_0 = shift_reg & 1;
 							prg_ram_bank = shift_reg >> 2;
@@ -97,7 +90,7 @@ public:
 						break;
 
 					case 0xC: case 0xD:
-						if (has_chr_ram)
+						if (properties.has_chr_ram)
 						{
 							chr_bank_1 = shift_reg & 1;
 							prg_ram_bank = shift_reg >> 2;
@@ -107,7 +100,7 @@ public:
 						break;
 
 					case 0xE: case 0xF:
-						prg_bank = shift_reg % num_prg_rom_banks;
+						prg_bank = shift_reg % properties.num_prg_rom_banks;
 						break;
 
 					default: break; // impossible
@@ -134,7 +127,7 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (!has_chr_ram)
+		if (!properties.has_chr_ram)
 			return;
 
 		if (control_reg & 0x10)

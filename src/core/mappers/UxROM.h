@@ -5,8 +5,7 @@
 class UxROM final : public BaseMapper
 {
 public:
-	UxROM(size_t chr_size, size_t prg_rom_size, size_t prg_ram_size)
-		: BaseMapper(chr_size, prg_rom_size, prg_ram_size) {}
+	UxROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -22,7 +21,7 @@ public:
 		// $C000-$FFFF: 16 KiB PRG ROM bank, fixed to the last bank
 		else
 		{
-			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
 		}
 	};
 
@@ -30,7 +29,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 0xF) % num_prg_rom_banks;
+			prg_bank = (data & 0xF) % properties.num_prg_rom_banks;
 		}
 	};
 
@@ -42,13 +41,13 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		if (has_chr_ram)
+		if (properties.has_chr_ram)
 			chr[addr] = data;
 	};
 
 	u16 GetNametableAddr(u16 addr) override
 	{
-		if (mirroring == 0)
+		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
 		return NametableAddrVertical(addr);
 	};

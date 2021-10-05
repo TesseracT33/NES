@@ -2,7 +2,7 @@
 #include "Cartridge.h"
 
 
-Cartridge::MapperInfo Cartridge::mapper_info{};
+MapperProperties Cartridge::mapper_properties{};
 std::shared_ptr<BaseMapper> Cartridge::mapper{};
 
 
@@ -34,7 +34,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 
 	// Setup the various vectors (e.g. prg_rom, chr_rom) inside of the mapper, by reading the full rom file
 	const size_t trainer_size = 0x200;
-	const size_t read_start = header_size + (mapper_info.has_trainer ? trainer_size : 0);
+	const size_t read_start = header_size + (mapper_properties.has_trainer ? trainer_size : 0);
 	const size_t chr_prg_rom_size = rom_size - read_start;
 	u8* rom_arr = new u8[chr_prg_rom_size];
 	fseek(rom_file, read_start, SEEK_SET);
@@ -43,16 +43,13 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 	delete[] rom_arr;
 	fclose(rom_file);
 
-	// Setup various properties of the mapper
-	SetupMapperProperties();
-
 	return mapper;
 }
 
 
 std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 {
-	switch (mapper_info.mapper_num)
+	switch (mapper_properties.mapper_num)
 	{
 	case 0x00: MapperFactory<NROM>(); break;
 	case 0x01: MapperFactory<MMC1>(); break;
@@ -61,7 +58,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 	case 0x04: MapperFactory<MMC3>(); break;
 	case 0x07: MapperFactory<AxROM>(); break;
 	default:
-		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_info.mapper_num));
+		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_properties.mapper_num));
 		return std::nullopt;
 	}
 	return std::make_optional<std::shared_ptr<BaseMapper>>(mapper);
@@ -87,6 +84,11 @@ bool Cartridge::ParseHeader(u8 header[])
 	else
 		ParseiNESHeader(header);
 
+	// Setup a few more mapper properties
+	mapper_properties.num_chr_banks = mapper_properties.chr_size / chr_bank_size;
+	mapper_properties.num_prg_ram_banks = mapper_properties.prg_ram_size / prg_ram_bank_size;
+	mapper_properties.num_prg_rom_banks = mapper_properties.prg_rom_size / prg_rom_bank_size;
+
 	return true;
 }
 
@@ -94,75 +96,68 @@ bool Cartridge::ParseHeader(u8 header[])
 void Cartridge::ParseFirstEightBytesOfHeader(u8 header[])
 {
 	/* Parse bytes 0-7 of the header. These have the same meaning on both iNES and NES 2.0 headers. */
-	mapper_info.prg_rom_size = header[4] * BaseMapper::prg_rom_bank_size;
+	mapper_properties.prg_rom_size = header[4] * prg_rom_bank_size;
+
+	/* Check CHR ROM size. A value of 0 means that the board uses CHR RAM. How much depends on the cart/mapper. */
 	if (header[5] == 0)
 	{
-		mapper_info.chr_size = BaseMapper::chr_bank_size; // TODO: not correct
-		mapper_info.has_chr_ram = true;
+		mapper_properties.has_chr_ram = true;
 	}
 	else
 	{
-		mapper_info.chr_size = header[5] * BaseMapper::chr_bank_size;
-		mapper_info.has_chr_ram = false;
+		mapper_properties.chr_size = header[5] * chr_bank_size;
+		mapper_properties.has_chr_ram = false;
 	}
 
-	mapper_info.mirroring = header[6] & 0x01;
-	mapper_info.has_prg_ram = header[6] & 0x02;
-	mapper_info.has_trainer = header[6] & 0x04;
-	mapper_info.hard_wired_four_screen = header[6] & 0x08;
+	mapper_properties.mirroring = header[6] & 0x01;
+	mapper_properties.has_prg_ram = header[6] & 0x02;
+	mapper_properties.has_trainer = header[6] & 0x04;
+	mapper_properties.hard_wired_four_screen = header[6] & 0x08;
 
-	mapper_info.mapper_num = header[7] & 0xF0 | header[6] >> 4;
+	mapper_properties.mapper_num = header[7] & 0xF0 | header[6] >> 4;
 }
 
 
 void Cartridge::ParseiNESHeader(u8 header[])
 {
 	/* Parse bytes 8-15 of an iNES header. */
-	mapper_info.prg_ram_size = header[8];
-	mapper_info.tv_system = header[9] & 1;
+	mapper_properties.prg_ram_size = header[8];
+	mapper_properties.tv_system = header[9] & 1;
 }
 
 
 void Cartridge::ParseNES20Header(u8 header[])
 {
 	/* Parse bytes 8-15 of a NES 2.0 header. */
-	mapper_info.mapper_num |= (header[8] & 0xF) << 8;
-	mapper_info.submapper_num = header[8] >> 4;
-	if (!mapper_info.has_chr_ram)
-		mapper_info.chr_size += ((header[9] & 0x0F) << 8) * BaseMapper::chr_bank_size;
-	mapper_info.prg_rom_size += ((header[9] & 0xF0) << 4) * BaseMapper::prg_rom_bank_size;
+	mapper_properties.mapper_num |= (header[8] & 0xF) << 8;
+	mapper_properties.submapper_num = header[8] >> 4;
+	if (!mapper_properties.has_chr_ram)
+		mapper_properties.chr_size += ((header[9] & 0x0F) << 8) * chr_bank_size;
+	mapper_properties.prg_rom_size += ((header[9] & 0xF0) << 4) * prg_rom_bank_size;
 
 	// Check for PRG-RAM
 	if (header[10] & 0x0F)
-		mapper_info.prg_ram_size = 64 << (header[10] & 0xF);
+		mapper_properties.prg_ram_size = 64 << (header[10] & 0xF);
 	else
-		mapper_info.has_prg_ram = false;
+		mapper_properties.has_prg_ram = false;
 
 	// Check for PRG-NVRAM
 	if (header[10] & 0xF0)
-		mapper_info.prg_nvram_size = 64 << (header[10] >> 4);
+		mapper_properties.prg_nvram_size = 64 << (header[10] >> 4);
 	else
-		mapper_info.has_prg_nvram = false;
+		mapper_properties.has_prg_nvram = false;
 
 	// Check for CHR-RAM
 	if (header[11] & 0x0F)
-		mapper_info.chr_size = 64 << (header[11] & 0xF);
+		mapper_properties.chr_size = 64 << (header[11] & 0xF);
 	else
-		mapper_info.has_chr_ram = false;
+		mapper_properties.has_chr_ram = false;
 
 	// Check for CHR-NVRAM
 	if (header[11] & 0xF0)
-		mapper_info.chr_nvram_size = 64 << (header[11] >> 4);
+		mapper_properties.chr_nvram_size = 64 << (header[11] >> 4);
 	else
-		mapper_info.has_chr_nvram = false;
+		mapper_properties.has_chr_nvram = false;
 
-	mapper_info.tv_system = header[12] & 3;
-}
-
-
-void Cartridge::SetupMapperProperties()
-{
-	mapper->has_chr_ram = mapper_info.has_chr_ram;
-	mapper->has_prg_ram = mapper_info.has_prg_ram;
-	mapper->mirroring = mapper_info.mirroring;
+	mapper_properties.tv_system = header[12] & 3;
 }

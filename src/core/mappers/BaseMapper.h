@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include "MapperProperties.h"
+
 #include "../Header.h"
 
 #include "../../Types.h"
@@ -9,27 +11,28 @@
 class BaseMapper
 {
 public:
-	BaseMapper(size_t _chr_size, size_t _prg_rom_size, size_t _prg_ram_size) :
-		chr_size(_chr_size),
-		prg_rom_size(_prg_rom_size),
-		prg_ram_size(_prg_ram_size),
-		num_chr_banks(_chr_size / chr_bank_size),
-		num_prg_rom_banks(prg_rom_size / prg_rom_bank_size),
-		num_prg_ram_banks(prg_ram_size / prg_ram_bank_size)
+	BaseMapper(MapperProperties _mapper_properties) : properties(_mapper_properties)
 	{
-		chr.resize(chr_size);
-		prg_rom.resize(prg_rom_size);
-		prg_ram.resize(prg_ram_size);
-	}
+		/* If CHR is RAM, then its size won't be given by the rom header. Instead, the mapper construct should take care of this. */
+		if (properties.has_chr_ram)
+			chr.resize(0x2000); /* Default behaviour for now: 8 KiB CHR RAM. */
+		else
+			chr.resize(properties.chr_size);
 
-	static const size_t chr_bank_size = 0x2000;
-	static const size_t prg_ram_bank_size = 0x2000;
-	static const size_t prg_rom_bank_size = 0x4000;
+		/* If the cart has PRG RAM, then its size may not be given by the rom header. Instead, the mapper construct should take care of this. */
+		if (properties.has_prg_ram)
+			prg_ram.resize(0x2000); /* Default behaviour for now: 8 KiB PRG RAM. */
+		else
+			prg_ram.resize(properties.prg_ram_size);
+
+		prg_rom.resize(properties.prg_rom_size);
+	}
 
 	void LayoutMemory(u8* rom_arr)
 	{
-		memcpy(&prg_rom[0], rom_arr, prg_rom_size);
-		memcpy(&chr[0], rom_arr + prg_rom_size, chr_size);
+		/* Copy ROM data into PRG and CHR ROM. */
+		memcpy(&prg_rom[0], rom_arr, properties.prg_rom_size);
+		memcpy(&chr[0], rom_arr + properties.prg_rom_size, properties.chr_size);
 	}
 
 	virtual u8   ReadPRG(u16 addr) = 0;
@@ -41,21 +44,9 @@ public:
 	virtual u16 GetNametableAddr(u16 addr) = 0;
 
 protected:
-	friend class Cartridge;
+	const MapperProperties properties;
 
-	const size_t chr_size;
-	const size_t prg_ram_size;
-	const size_t prg_rom_size;
-
-	const size_t num_chr_banks;
-	const size_t num_prg_ram_banks;
-	const size_t num_prg_rom_banks;
-
-	bool has_chr_ram;
-	bool has_prg_ram;
-	bool mirroring;
-
-	std::vector<u8> chr;
+	std::vector<u8> chr; /* Either RAM or ROM (a cart cannot have both). */
 	std::vector<u8> prg_ram;
 	std::vector<u8> prg_rom;
 
