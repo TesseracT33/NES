@@ -82,16 +82,22 @@ void Emulator::SaveState()
 	save_state_on_next_cycle = false;
 }
 
+
 void Emulator::State(Serialization::BaseFunctor& functor)
 {
+
 }
+
 
 void Emulator::Configure(Serialization::BaseFunctor& functor)
 {
+
 }
+
 
 void Emulator::SetDefaultConfig()
 {
+
 }
 
 
@@ -130,6 +136,7 @@ void Emulator::StartGame(std::string rom_path)
 
 	//std::thread t(&Emulator::MainLoop, this);
 	//t.detach();
+	run_cpu_init_cycles = true;
 	MainLoop();
 }
 
@@ -139,15 +146,20 @@ void Emulator::MainLoop()
 	emu_is_running = true;
 	emu_is_paused = false;
 	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
-	bool cpu_first_run = true;
+	
+	/* If this is the first time that MainLoop is called after starting a game, we run eight cpu cycles where the cpu is not executing any instructions. */
+	if (run_cpu_init_cycles)
+	{
+		cpu.RunInitialCycles();
+		run_cpu_init_cycles = false;
+	}
 
 	while (emu_is_running && !emu_is_paused)
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
 
 		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU).
-		cpu.Run(cpu_first_run);
-		cpu_first_run = false;
+		cpu.Run();
 
 		joypad.PollInput();
 

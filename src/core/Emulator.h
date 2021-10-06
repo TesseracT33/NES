@@ -73,7 +73,9 @@ private:
 	const unsigned cycles_per_frame_Dendy = 0;
 
 	const unsigned microseconds_per_frame_NTSC = 0;
+
 	bool load_state_on_next_cycle = false, save_state_on_next_cycle = false;
+	bool run_cpu_init_cycles = true;
 
 	unsigned cycle_counter;
 

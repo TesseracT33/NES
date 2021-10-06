@@ -23,7 +23,8 @@ public:
 
 	void Power();
 	void Reset();
-	void Run(bool init);
+	void Run();
+	void RunInitialCycles();
 	void Stall();
 
 	void PollInterruptInputs()
@@ -173,14 +174,12 @@ private:
 	u16 oam_dma_base_read_addr;
 	void PerformOAMDMATransfer();
 
-	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
-	unsigned cpu_cycles_since_reset = 0;
+	unsigned cpu_cycle_counter; /* Cycles elapsed during the current call to Update(). */
+	unsigned total_cpu_cycle_counter = 0; /* Cycles elapsed since the game was started. */
+
+	unsigned cpu_cycles_since_reset = 0; /* Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC) */
 	unsigned cpu_cycles_until_all_ppu_regs_writable = 29658;
 	unsigned cpu_cycles_until_no_longer_stalled; // refers to stalling done by the APU when the DMC memory reader reads a byte from PRG
-
-#ifdef DEBUG
-	unsigned total_cpu_cycle_counter = 0; // todo: make u64
-#endif
 
 	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 
@@ -284,58 +283,65 @@ private:
 	void XAA();
 
 	// Helper functions. Defined in the header to enable inlining
-	u8 ReadCycle(u16 addr)
+	__forceinline void StartCycle()
 	{
+#ifdef DEBUG
+		total_cpu_cycle_counter++;
+#endif
+		cpu_cycle_counter++;
 		odd_cpu_cycle = !odd_cpu_cycle;
 		PollInterruptOutputs();
+	}
+
+	__forceinline u8 ReadCycle(u16 addr)
+	{
+		StartCycle();
 		return bus->ReadCycle(addr);
 	}
 
-	void WriteCycle(u16 addr, u8 data)
+	__forceinline void WriteCycle(u16 addr, u8 data)
 	{
-		odd_cpu_cycle = !odd_cpu_cycle;
-		PollInterruptOutputs();
+		StartCycle();
 		bus->WriteCycle(addr, data);
 	}
 
-	void WaitCycle()
+	__forceinline void WaitCycle()
 	{
-		odd_cpu_cycle = !odd_cpu_cycle;
-		PollInterruptOutputs();
+		StartCycle();
 		bus->WaitCycle();
 	}
 
-	void PushByteToStack(u8 byte)
+	__forceinline void PushByteToStack(u8 byte)
 	{
 		WriteCycle(0x0100 | SP--, byte);
 	}
 
-	void PushWordToStack(u16 word)
+	__forceinline void PushWordToStack(u16 word)
 	{
 		WriteCycle(0x0100 | SP--, word >> 8);
 		WriteCycle(0x0100 | SP--, word & 0xFF);
 	}
 
-	u8 PullByteFromStack()
+	__forceinline u8 PullByteFromStack()
 	{
 		return ReadCycle(0x0100 | ++SP);
 	}
 
-	u16 PullWordFromStack()
+	__forceinline u16 PullWordFromStack()
 	{
 		u8 lo = ReadCycle(0x0100 | ++SP);
 		u8 hi = ReadCycle(0x0100 | ++SP);
 		return hi << 8 | lo;
 	}
 
-	u16 ReadWord(u16 addr)
+	__forceinline u16 ReadWord(u16 addr)
 	{
 		u8 lo = ReadCycle(addr);
 		u8 hi = ReadCycle(addr + 1);
 		return lo | hi << 8;
 	}
 
-	void Branch(bool cond)
+	__forceinline void Branch(bool cond)
 	{
 		if (cond)
 		{

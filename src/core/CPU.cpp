@@ -16,6 +16,7 @@ void CPU::Power()
 
 void CPU::Reset()
 {
+	cpu_cycle_counter = total_cpu_cycle_counter = 0;
 	cpu_cycles_since_reset = 0;
 	all_ppu_regs_writable = false;
 	polled_NMI_line = prev_polled_NMI_line = 1;
@@ -25,28 +26,29 @@ void CPU::Reset()
 	stalled = stopped = false;
 	oam_dma_transfer_pending = false;
 	odd_cpu_cycle = false;
-
-	PC = ReadWord(Bus::Addr::RESET_VEC);
 }
 
 
-void CPU::Run(bool init)
+void CPU::RunInitialCycles()
 {
-	// Setup on reset/initialization; eight cycles before the CPU starts executing instructions.
-	// TODO: this loop will currently get executed every time Emulator::MainLoop() is called; fix.
-	if (init)
-		for (int i = 0; i < 8; i++)
-			WaitCycle();
+	/* Call this function after reset/initialization, where eight cycles pass before the CPU starts executing instructions. */
+	/* Two of them pass above from when the initial program counter is fetched. */
+	/* TODO: Not sure what the CPU is actually doing during the rest of the cycles. */
+	
+	PC = ReadWord(Bus::Addr::RESET_VEC);
 
-	// Run the CPU for roughly 2/3 of a frame (exact timing is not important; synchronization is done by the APU).
-	const unsigned cycle_run_len = 20000;
-	unsigned cpu_cycle_counter = 0;
-	while (cpu_cycle_counter++ < cycle_run_len)
+	for (int i = 0; i < 6; i++)
+		WaitCycle();
+}
+
+
+void CPU::Run()
+{
+	/* Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU). */
+	const unsigned cycle_run_len = 20000; /* A frame is roughly 30,000 cpu cycles. */
+	cpu_cycle_counter = 0; /* The ReadCycle/WriteCycle/WaitCycle functions increment this variable. */
+	while (cpu_cycle_counter < cycle_run_len)
 	{
-#ifdef DEBUG
-		total_cpu_cycle_counter++;
-#endif
-
 		if (stopped)
 		{
 			WaitCycle();
