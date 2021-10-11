@@ -4,6 +4,7 @@
 
 #include "MapperProperties.h"
 
+#include "../CPU.h"
 #include "../Header.h"
 
 #include "../../Types.h"
@@ -11,6 +12,8 @@
 class BaseMapper
 {
 public:
+	CPU* cpu;
+
 	BaseMapper(MapperProperties _mapper_properties) : properties(_mapper_properties)
 	{
 		/* If CHR is RAM, then its size won't be given by the rom header. Instead, the mapper construct should take care of this. */
@@ -42,6 +45,8 @@ public:
 	virtual void WriteCHR(u16 addr, u8 data) = 0;
 
 	virtual u16 GetNametableAddr(u16 addr) = 0;
+
+	virtual void ClockIRQ() {};
 
 protected:
 	const MapperProperties properties;

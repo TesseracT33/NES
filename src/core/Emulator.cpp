@@ -126,6 +126,7 @@ void Emulator::StartGame(std::string rom_path)
 	if (!mapper.has_value()) return;
 	this->mapper = mapper.value();
 	apu.mapper = bus.mapper = ppu.mapper = this->mapper.get();
+	this->mapper.get()->cpu = &cpu;
 
 	this->current_rom_path = rom_path;
 

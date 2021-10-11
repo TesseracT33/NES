@@ -258,6 +258,12 @@ void PPU::StepCycle()
 					reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
 				sprite_index = 0;
 			}
+			else if (scanline_cycle_counter == 260)
+			{
+				/* When using 8x8 sprites, if the BG uses $0000, and the sprites use $1000, the MMC3 IRQ counter should decrement on PPU cycle 260. */
+				if (!PPUCTRL_sprite_height && !PPUCTRL_bg_tile_sel && PPUCTRL_sprite_tile_sel)
+					mapper->ClockIRQ();
+			}
 
 			// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
 			// On cycle 0-3: read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM.
@@ -314,6 +320,11 @@ void PPU::StepCycle()
 				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th sprite.
 				tile_fetcher.SetBGTileFetchingActive();
 				break;
+
+			case 324:
+				/* When using 8x8 sprites, if the BG uses $1000, and the sprites use $0000, the MMC3 IRQ counter should decrement on PPU cycle 324 */
+				if (!PPUCTRL_sprite_height && PPUCTRL_bg_tile_sel && !PPUCTRL_sprite_tile_sel)
+					mapper->ClockIRQ();
 
 			case 328: case 336:
 				UpdateBGTileFetching();

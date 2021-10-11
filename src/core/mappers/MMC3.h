@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../IRQSources.h"
+
 #include "BaseMapper.h"
 
 class MMC3 final : public BaseMapper
@@ -88,9 +90,9 @@ public:
 		// CPU $C000-$DFFF; IRQ latch (even), IRQ reload (odd)
 		case 0xC: case 0xD:
 			if (addr & 0x01)
-				IRQ_counter_reload = data;
+				reload_IRQ_counter_on_next_clock = true;
 			else
-				; // TODO
+				IRQ_counter_reload = data;
 			break;
 
 		// CPU $E000-$FFFF: IRQ disable (even), IRQ enable (odd)
@@ -169,6 +171,21 @@ public:
 		return NametableAddrVertical(addr);
 	};
 
+	void ClockIRQ() override
+	{
+		/* TODO: unsure about timing; should IRQ be triggered immediately when the counter becomes 0?*/
+		if (IRQ_counter == 0 && IRQ_enabled)
+			cpu->SetIRQLow(IRQ_MMC3_mask);
+
+		if (IRQ_counter == 0 || reload_IRQ_counter_on_next_clock)
+		{
+			IRQ_counter = IRQ_counter_reload;
+			reload_IRQ_counter_on_next_clock = false;
+		}
+		else
+			IRQ_counter--;
+	}
+
 private:
 	bool nametable_mirroring;
 	bool chr_a12_inversion;
@@ -176,7 +193,9 @@ private:
 	bool prg_ram_enabled;
 	bool prg_ram_write_protection;
 	bool prg_rom_bank_mode;
+	bool reload_IRQ_counter_on_next_clock;
 	unsigned bank_reg_select : 3 = 0;
+	u8 IRQ_counter = 0;
 	u8 IRQ_counter_reload;
 	u8 value_last_read_from_prg_ram = 0;
 	u8 rom_bank[8]{}; // 0..5 : CHR.    6, 7 : PRG
