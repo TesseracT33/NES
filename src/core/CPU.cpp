@@ -137,7 +137,7 @@ void CPU::ExecuteInstruction()
 #endif
 
 	curr_instr.opcode = ReadCycle(PC++);
-	curr_instr.addr_mode = GetAddressingModeFromOpcode(curr_instr.opcode);
+	curr_instr.addr_mode = addr_mode_table[curr_instr.opcode];
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
 	curr_instr.page_crossing_possible = curr_instr.page_crossed = false;
@@ -264,49 +264,6 @@ void CPU::ExecIndirectIndexed()
 		curr_instr.addr = ((addr_hi + 1) & 0xFF) << 8 | addr_lo;
 
 	std::invoke(curr_instr.instr, this);
-}
-
-
-CPU::AddrMode CPU::GetAddressingModeFromOpcode(u8 opcode) const
-{
-	switch (opcode & 0x1F)
-	{
-	case 0x00:
-		if (opcode == 0x20)           return AddrMode::Absolute;
-		if ((opcode & ~0x1F) >= 0x80) return AddrMode::Immediate;
-		return AddrMode::Implied;
-	case 0x01: return AddrMode::Indexed_indirect;
-	case 0x02: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implied;
-	case 0x03: return AddrMode::Indexed_indirect;
-	case 0x04:
-	case 0x05:
-	case 0x06:
-	case 0x07: return AddrMode::Zero_page;
-	case 0x08: return AddrMode::Implied;
-	case 0x09: return AddrMode::Immediate;
-	case 0x0A: return (opcode & ~0x1F) >= 0x80 ? AddrMode::Implied : AddrMode::Accumulator;
-	case 0x0B: return AddrMode::Immediate;
-	case 0x0C: return (opcode == 0x6C) ? AddrMode::Indirect : AddrMode::Absolute;
-	case 0x0D:
-	case 0x0E:
-	case 0x0F: return AddrMode::Absolute;
-	case 0x10: return AddrMode::Relative;
-	case 0x11: return AddrMode::Indirect_indexed;
-	case 0x12: return AddrMode::Implied;
-	case 0x13: return AddrMode::Indirect_indexed;
-	case 0x14:
-	case 0x15: return AddrMode::Zero_page_X;
-	case 0x16:
-	case 0x17: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Zero_page_Y : AddrMode::Zero_page_X;
-	case 0x18: return AddrMode::Implied;
-	case 0x19: return AddrMode::Absolute_Y;
-	case 0x1A: return AddrMode::Implied;
-	case 0x1B: return AddrMode::Absolute_Y;
-	case 0x1C:
-	case 0x1D: return AddrMode::Absolute_X;
-	case 0x1E:
-	case 0x1F: return (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Absolute_Y : AddrMode::Absolute_X;
-	}
 }
 
 
