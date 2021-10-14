@@ -151,7 +151,7 @@ void Emulator::MainLoop()
 	/* If this is the first time that MainLoop is called after starting a game, we run eight cpu cycles where the cpu is not executing any instructions. */
 	if (run_cpu_init_cycles)
 	{
-		cpu.RunInitialCycles();
+		cpu.RunStartUpCycles();
 		run_cpu_init_cycles = false;
 	}
 
