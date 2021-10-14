@@ -29,7 +29,7 @@ void CPU::Reset()
 }
 
 
-void CPU::RunInitialCycles()
+void CPU::RunStartUpCycles()
 {
 	/* Call this function after reset/initialization, where eight cycles pass before the CPU starts executing instructions. */
 	/* Two of them pass above from when the initial program counter is fetched. */
@@ -133,7 +133,7 @@ void CPU::PerformOAMDMATransfer()
 void CPU::ExecuteInstruction()
 {
 #ifdef DEBUG
-	LogState(Action::Instruction);
+	LogStateBeforeAction(Action::Instruction);
 #endif
 
 	curr_instr.opcode = ReadCycle(PC++);
@@ -271,24 +271,24 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 {
 #ifdef DEBUG
 	if (asserted_interrupt_type == InterruptType::NMI)
-		LogState(Action::NMI);
+		LogStateBeforeAction(Action::NMI);
 #endif
 
 	/* IRQ and NMI tick-by-tick execution
-	  #  address R/W description
-	 --- ------- --- -----------------------------------------------
-	  1    PC     R  fetch opcode (and discard it - $00 (BRK) is forced into the opcode register instead)
-	  2    PC     R  read next instruction byte (actually the same as above, since PC increment is suppressed. Also discarded.)
-	  3  $0100,S  W  push PCH on stack, decrement S
-	  4  $0100,S  W  push PCL on stack, decrement S
-	 *** At this point, the signal status determines which interrupt vector is used ***
-	  5  $0100,S  W  push P on stack (with B flag *clear*), decrement S
-	  6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
-	  7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
-
-	 For BRK: the first two cycles differ as follows:
-	  1    PC     R  fetch opcode, increment PC
-	  2    PC     R  read next instruction byte (and throw it away), increment PC
+	   #  address R/W description
+	  --- ------- --- -----------------------------------------------
+	   1    PC     R  fetch opcode (and discard it - $00 (BRK) is forced into the opcode register instead)
+	   2    PC     R  read next instruction byte (actually the same as above, since PC increment is suppressed. Also discarded.)
+	   3  $0100,S  W  push PCH on stack, decrement S
+	   4  $0100,S  W  push PCL on stack, decrement S
+	  *** At this point, the signal status determines which interrupt vector is used ***
+	   5  $0100,S  W  push P on stack (with B flag *clear*), decrement S
+	   6   A       R  fetch PCL (A = FFFE for IRQ, A = FFFA for NMI), set I flag
+	   7   A       R  fetch PCH (A = FFFF for IRQ, A = FFFB for NMI)
+ 
+	  For BRK: the first two cycles differ as follows:
+	   1    PC     R  fetch opcode, increment PC
+	   2    PC     R  read next instruction byte (and throw it away), increment PC
 	*/
 
 	// Cycles 1-2. If the interrupt source is the BRK instruction, then the first two reads have already been handled (in the BRK() function).
@@ -1142,10 +1142,34 @@ void CPU::State(Serialization::BaseFunctor& functor)
 	functor.fun(&SP, sizeof(u8));
 	functor.fun(&PC, sizeof(u16));
 	functor.fun(&flags, sizeof(Flags));
+
+	functor.fun(&odd_cpu_cycle, sizeof(bool));
+	functor.fun(&stalled, sizeof(bool));
+	functor.fun(&stopped, sizeof(bool));
+
+	functor.fun(&NMI_line, sizeof(bool));
+	functor.fun(&polled_NMI_line, sizeof(bool));
+	functor.fun(&prev_polled_NMI_line, sizeof(bool));
+	functor.fun(&need_NMI, sizeof(bool));
+	functor.fun(&polled_need_NMI, sizeof(bool));
+	functor.fun(&need_IRQ, sizeof(bool));
+	functor.fun(&polled_need_IRQ, sizeof(bool));
+	functor.fun(&write_to_interrupt_disable_flag_on_next_cycle, sizeof(bool));
+	functor.fun(&bit_to_write_to_interrupt_disable_flag, sizeof(bool));
+	functor.fun(&IRQ_line, sizeof(u8));
+
+	functor.fun(&cpu_cycle_counter, sizeof(unsigned));
+	functor.fun(&total_cpu_cycle_counter, sizeof(unsigned));
+	functor.fun(&cpu_cycles_since_reset, sizeof(unsigned));
+	functor.fun(&cpu_cycles_until_all_ppu_regs_writable, sizeof(unsigned));
+	functor.fun(&cpu_cycles_until_no_longer_stalled, sizeof(unsigned));
+
+	/* Note: OAMDMA transfers cannot be interrupted by loading a state,
+	   so the associated variables do not need to be saved/loaded. */
 }
 
 
-void CPU::LogState(Action action)
+void CPU::LogStateBeforeAction(Action action)
 {
 	bool nmi = action == Action::NMI;
 	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), bus->Read(PC), SP, PC, total_cpu_cycle_counter, nmi);

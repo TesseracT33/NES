@@ -10,9 +10,6 @@
 #include "Bus.h"
 #include "Component.h"
 
-// https://www.masswerk.at/6502/6502_instruction_set.html
-// http://www.6502.org/tutorials/65c02opcodes.html
-
 class CPU final : public Component
 {
 public:
@@ -24,10 +21,10 @@ public:
 	void Power();
 	void Reset();
 	void Run();
-	void RunInitialCycles();
+	void RunStartUpCycles();
 	void Stall();
 
-	void PollInterruptInputs()
+	__forceinline void PollInterruptInputs()
 	{
 		/* This function is called from within the PPU update function, 2/3 into each cpu cycle.
 		   The NMI input is connected to an edge detector, which polls the status of the NMI line during the second half of each cpu cycle.
@@ -43,7 +40,7 @@ public:
 		   If a low level is detected (at least one bit of IRQ_line is clear), it raises an internal signal during the first half of the next cycle, which remains high for that cycle only. */
 		need_IRQ = IRQ_line != 0xFF;
 	}
-	void PollInterruptOutputs()
+	__forceinline void PollInterruptOutputs()
 	{
 		/* This function is called at the start of each CPU cycle.
 		   need_NMI/need_IRQ signifies that we need to service an interrupt.
@@ -51,10 +48,10 @@ public:
 		polled_need_NMI = need_NMI;
 		polled_need_IRQ = need_IRQ;
 	}
-	void SetIRQLow(u8 source_mask)  { IRQ_line &= ~source_mask; }
-	void SetIRQHigh(u8 source_mask) { IRQ_line |= source_mask; }
-	void SetNMILow()  { NMI_line = 0; }
-	void SetNMIHigh() { NMI_line = 1; }
+	__forceinline void SetIRQLow(u8 source_mask)  { IRQ_line &= ~source_mask; }
+	__forceinline void SetIRQHigh(u8 source_mask) { IRQ_line |= source_mask; }
+	__forceinline void SetNMILow()  { NMI_line = 0; }
+	__forceinline void SetNMIHigh() { NMI_line = 1; }
 
 	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset);
 
@@ -80,10 +77,12 @@ private:
 		Indirect_indexed
 	};
 
+	enum class InterruptType { NMI, IRQ, BRK };
+
 	typedef void (CPU::* instr_t)();
 	typedef instr_t addr_mode_fun_t;
 
-	struct InstrDetails // properties of the instruction currently being executed
+	struct InstrDetails // Details/properties of the instruction currently being executed
 	{
 		u8 opcode;
 		instr_t instr;
@@ -99,6 +98,7 @@ private:
 
 	static const size_t num_opcodes = 0x100;
 
+	/* Maps opcodes to instructions */
 	const instr_t instr_table[num_opcodes] =
 	{// $x0 / $x8  $x1 / $x9  $x2 / $xA  $x3 / $xB  $x4 / $xC  $x5 / $xD  $x6 / $xE  $x7 / $xF
 		&CPU::BRK, &CPU::ORA, &CPU::STP, &CPU::SLO, &CPU::NOP, &CPU::ORA, &CPU::ASL, &CPU::SLO, // $0x
@@ -138,6 +138,7 @@ private:
 		&CPU::SED, &CPU::SBC, &CPU::NOP, &CPU::ISC, &CPU::NOP, &CPU::SBC, &CPU::INC, &CPU::ISC  // $Fx
 	};
 
+	/* Maps opcodes to addressing modes */
 	static constexpr std::array<CPU::AddrMode, num_opcodes> addr_mode_table = []
 	{
 		std::array<CPU::AddrMode, num_opcodes> table{};
@@ -186,6 +187,7 @@ private:
 		return table;
 	}();
 
+	/* Maps addressing modes to functions to be executed for the given addressing mode */
 	const addr_mode_fun_t addr_mode_fun_table[13] =
 	{
 		&CPU::ExecImplied, &CPU::ExecAccumulator, &CPU::ExecImmediate, &CPU::ExecZeroPage, &CPU::ExecZeroPageX,
@@ -193,18 +195,31 @@ private:
 		&CPU::ExecIndirect, &CPU::ExecIndexedIndirect, &CPU::ExecIndirectIndexed
 	};
 
-	u8 A, X, Y; // registers
+	u8 A, X, Y; // general-purpose registers
 	u8 SP; // stack pointer
 	u16 PC; // program counter
 
+	/* Status flags, encoded in the processor status register (P)
+	  7  bit  0
+	  ---- ----
+	  NV1B DIZC
+	  |||| ||||
+	  |||| |||+- Carry
+	  |||| ||+-- Zero
+	  |||| |+--- Interrupt Disable
+	  |||| +---- Decimal
+	  |||+------ The B flag; no CPU effect. Reads either 0 or 1 in different situations.
+	  ||+------- Always reads 1.
+	  |+-------- Overflow
+	  +--------- Negative
+	*/
 	struct Flags { bool N, V, B, D, I, Z, C; } flags;
 
-	bool odd_cpu_cycle;
+	bool odd_cpu_cycle; // if the current cpu cycle is odd_numbered
 	bool stalled; // set to true by the APU when the DMC memory reader reads a byte from PRG.
 	bool stopped; // set to true by the STP instruction
 
 	// Interrupt-related
-	enum class InterruptType { NMI, IRQ, BRK };
 	bool NMI_line = 1; // The NMI signal coming from the ppu.
 	bool polled_NMI_line = 1, prev_polled_NMI_line = 1; // The polled NMI line signal during the 2nd half of the last and second to last CPU cycle, respectively.
 	bool need_NMI = false; // Whether we need to service an NMI interrupt. Is set right after a negative edge is detected (prev_polled_NMI_line == 1 && polled_NMI_line == 0)
@@ -228,8 +243,6 @@ private:
 	unsigned cpu_cycles_since_reset = 0; /* Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC) */
 	unsigned cpu_cycles_until_all_ppu_regs_writable = 29658;
 	unsigned cpu_cycles_until_no_longer_stalled; // refers to stalling done by the APU when the DMC memory reader reads a byte from PRG
-
-	AddrMode GetAddressingModeFromOpcode(u8 opcode) const;
 
 	void ExecuteInstruction();
 
@@ -309,7 +322,7 @@ private:
 	void TXS();
 	void TYA();
 
-	// unoffical instructions
+	// "unoffical" instructions; these are not used by the vast majority of games
 	void AHX();
 	void ALR();
 	void ANC();
@@ -403,19 +416,19 @@ private:
 	}
 
 	// called when an instruction wants access to the status register
-	u8 GetStatusRegInstr(instr_t instr) const
+	__forceinline u8 GetStatusRegInstr(instr_t instr) const
 	{
 		bool bit4 = (instr == &CPU::BRK || instr == &CPU::PHP);
 		return flags.N << 7 | flags.V << 6 | 1 << 5 | bit4 << 4 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
 	// called when an interrupt is being serviced and the status register is pushed to the stack
-	u8 GetStatusRegInterrupt() const
+	__forceinline u8 GetStatusRegInterrupt() const
 	{
 		return flags.N << 7 | flags.V << 6 | 1 << 5 | flags.D << 3 | flags.I << 2 | flags.Z << 1 | flags.C;
 	}
 
-	void SetStatusReg(u8 value)
+	__forceinline void SetStatusReg(u8 value)
 	{
 		flags.N = value & 0x80;
 		flags.V = value & 0x40;
@@ -426,7 +439,7 @@ private:
 		flags.C = value & 0x01;
 	}
 
-	u8 GetReadInstrOperand()
+	__forceinline u8 GetReadInstrOperand()
 	{
 		if (curr_instr.addr_mode == AddrMode::Immediate)
 			return ReadCycle(PC++);
@@ -437,6 +450,6 @@ private:
 
 	/// Debugging-related
 	enum class Action { Instruction, NMI };
-	void LogState(Action action);
+	void LogStateBeforeAction(Action action);
 };
 
