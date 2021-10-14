@@ -148,14 +148,14 @@ void CPU::ExecuteInstruction()
 
 void CPU::ExecImplied()
 {
-	ReadCycle(PC);
+	ReadCycle(PC); /* Dummy read */
 	std::invoke(curr_instr.instr, this);
 }
 
 
 void CPU::ExecAccumulator()
 {
-	ReadCycle(PC);
+	ReadCycle(PC); /* Dummy read */
 	std::invoke(curr_instr.instr, this);
 }
 
@@ -176,7 +176,7 @@ void CPU::ExecZeroPage()
 void CPU::ExecZeroPageIndexed(u8& index_reg)
 {
 	curr_instr.addr = ReadCycle(PC++);
-	ReadCycle(curr_instr.addr);
+	ReadCycle(curr_instr.addr); /* Dummy read */
 	curr_instr.addr = (curr_instr.addr + index_reg) & 0xFF;
 
 	std::invoke(curr_instr.instr, this);
@@ -238,7 +238,7 @@ void CPU::ExecIndirect()
 void CPU::ExecIndexedIndirect()
 {
 	curr_instr.addr = ReadCycle(PC++);
-	ReadCycle(curr_instr.addr);
+	ReadCycle(curr_instr.addr); /* Dummy read */
 	curr_instr.addr = (curr_instr.addr + X) & 0xFF;
 	curr_instr.read_addr = ReadCycle(curr_instr.addr);
 	curr_instr.addr = (curr_instr.addr + 1) & 0xFF;
@@ -294,8 +294,8 @@ void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
 	// Cycles 1-2. If the interrupt source is the BRK instruction, then the first two reads have already been handled (in the BRK() function).
 	if (asserted_interrupt_type != InterruptType::BRK)
 	{
-		ReadCycle(PC);
-		ReadCycle(PC);
+		ReadCycle(PC); /* Dummy read */
+		ReadCycle(PC); /* Dummy read */
 	}
 
 	// Cycles 3-4
@@ -381,7 +381,7 @@ void CPU::ASL()
 	else
 	{
 		u8 M = ReadCycle(curr_instr.addr);
-		WriteCycle(curr_instr.addr, M);
+		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		u8 new_M = M << 1;
 		WriteCycle(curr_instr.addr, new_M);
 		flags.C = M & 0x80;
@@ -531,7 +531,7 @@ void CPU::CPY()
 void CPU::DEC()
 {
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M - 1;
 	WriteCycle(curr_instr.addr, new_M);
 	flags.Z = new_M == 0;
@@ -571,7 +571,7 @@ void CPU::EOR()
 void CPU::INC()
 {
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M + 1;
 	WriteCycle(curr_instr.addr, new_M);
 	flags.Z = new_M == 0;
@@ -656,7 +656,7 @@ void CPU::LSR()
 	else
 	{
 		u8 M = ReadCycle(curr_instr.addr);
-		WriteCycle(curr_instr.addr, M);
+		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		u8 new_M = M >> 1;
 		WriteCycle(curr_instr.addr, new_M);
 		flags.C = M & 1;
@@ -735,7 +735,7 @@ void CPU::ROL()
 	else
 	{
 		u8 M = ReadCycle(curr_instr.addr);
-		WriteCycle(curr_instr.addr, M);
+		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		bool new_carry = M & 0x80;
 		u8 new_M = M << 1 | flags.C;
 		WriteCycle(curr_instr.addr, new_M);
@@ -760,7 +760,7 @@ void CPU::ROR()
 	else
 	{
 		u8 M = ReadCycle(curr_instr.addr);
-		WriteCycle(curr_instr.addr, M);
+		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		bool new_carry = M & 1;
 		u8 new_M = M >> 1 | flags.C << 7;
 		WriteCycle(curr_instr.addr, new_M);
@@ -959,7 +959,7 @@ void CPU::DCP() // DCM
 {
 	// DEC
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M - 1;
 	WriteCycle(curr_instr.addr, new_M);
 	// CMP
@@ -976,7 +976,7 @@ void CPU::ISC() // ISB, INS
 	// TODO: https://www.masswerk.at/6502/6502_instruction_set.html#ANC gives four cycles for (indirect),Y
 	// INC
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M + 1;
 	WriteCycle(curr_instr.addr, new_M);
 	// SBC
@@ -1019,7 +1019,7 @@ void CPU::RLA()
 	// TODO: Mesen states that this is a combined LSR and EOR
 	// ROL
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	bool new_carry = M & 0x80;
 	u8 new_M = M << 1 | flags.C;
 	WriteCycle(curr_instr.addr, new_M);
@@ -1036,7 +1036,7 @@ void CPU::RRA()
 {
 	// ROR
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M >> 1 | flags.C << 7;
 	WriteCycle(curr_instr.addr, new_M);
 	// ADC
@@ -1079,7 +1079,7 @@ void CPU::SLO()
 {
 	// ASL
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M << 1;
 	WriteCycle(curr_instr.addr, new_M);
 	flags.C = M & 0x80;
@@ -1095,7 +1095,7 @@ void CPU::SRE() // LSE
 {
 	// LSR
 	u8 M = ReadCycle(curr_instr.addr);
-	WriteCycle(curr_instr.addr, M);
+	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M >> 1;
 	WriteCycle(curr_instr.addr, new_M);
 	flags.C = M & 1;
