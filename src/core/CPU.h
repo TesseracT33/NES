@@ -97,9 +97,9 @@ private:
 		u16 addr;
 	} curr_instr;
 
-	static const size_t num_instr = 0x100;
+	static const size_t num_opcodes = 0x100;
 
-	const instr_t instr_table[num_instr] =
+	const instr_t instr_table[num_opcodes] =
 	{// $x0 / $x8  $x1 / $x9  $x2 / $xA  $x3 / $xB  $x4 / $xC  $x5 / $xD  $x6 / $xE  $x7 / $xF
 		&CPU::BRK, &CPU::ORA, &CPU::STP, &CPU::SLO, &CPU::NOP, &CPU::ORA, &CPU::ASL, &CPU::SLO, // $0x
 		&CPU::PHP, &CPU::ORA, &CPU::ASL, &CPU::ANC, &CPU::NOP, &CPU::ORA, &CPU::ASL, &CPU::SLO, // $0x
@@ -138,49 +138,53 @@ private:
 		&CPU::SED, &CPU::SBC, &CPU::NOP, &CPU::ISC, &CPU::NOP, &CPU::SBC, &CPU::INC, &CPU::ISC  // $Fx
 	};
 
-	typedef CPU::AddrMode AM;
-	const AM addr_mode_table[num_instr] =
+	static constexpr std::array<CPU::AddrMode, num_opcodes> addr_mode_table = []
 	{
-		AM::Implied , AM::Indexed_indirect, AM::Implied    , AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $0x
-		AM::Implied , AM::Immediate       , AM::Accumulator, AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $0x
-		AM::Relative, AM::Indirect_indexed, AM::Implied    , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $1x
-		AM::Implied , AM::Absolute_Y      , AM::Implied    , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $1x
-
-		AM::Absolute, AM::Indexed_indirect, AM::Implied    , AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $2x
-		AM::Implied , AM::Immediate       , AM::Accumulator, AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $2x
-		AM::Relative, AM::Indirect_indexed, AM::Implied    , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $3x
-		AM::Implied , AM::Absolute_Y      , AM::Implied    , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $3x
-
-		AM::Implied , AM::Indexed_indirect, AM::Implied    , AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $4x
-		AM::Implied , AM::Immediate       , AM::Accumulator, AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $4x
-		AM::Relative, AM::Indirect_indexed, AM::Implied    , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $5x
-		AM::Implied , AM::Absolute_Y      , AM::Implied    , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $5x
-
-		AM::Implied , AM::Indexed_indirect, AM::Implied    , AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $6x
-		AM::Implied , AM::Immediate       , AM::Accumulator, AM::Immediate       , AM::Indirect   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $6x
-		AM::Relative, AM::Indirect_indexed, AM::Implied    , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $7x
-		AM::Implied , AM::Absolute_Y      , AM::Implied    , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $7x
-
-		AM::Immediate, AM::Indexed_indirect, AM::Immediate, AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $8x
-		AM::Implied  , AM::Immediate       , AM::Implied  , AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $8x
-		AM::Relative , AM::Indirect_indexed, AM::Implied  , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_Y, AM::Zero_page_Y, // $9x
-		AM::Implied  , AM::Absolute_Y      , AM::Implied  , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_Y , AM::Absolute_Y , // $9x
-
-		AM::Immediate, AM::Indexed_indirect, AM::Immediate, AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $Ax
-		AM::Implied  , AM::Immediate       , AM::Implied  , AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $Ax
-		AM::Relative , AM::Indirect_indexed, AM::Implied  , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_Y, AM::Zero_page_Y, // $Bx
-		AM::Implied  , AM::Absolute_Y      , AM::Implied  , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_Y , AM::Absolute_Y , // $Bx
-
-		AM::Immediate, AM::Indexed_indirect, AM::Immediate, AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $Cx
-		AM::Implied  , AM::Immediate       , AM::Implied  , AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $Cx
-		AM::Relative , AM::Indirect_indexed, AM::Implied  , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $Dx
-		AM::Implied  , AM::Absolute_Y      , AM::Implied  , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $Dx
-
-		AM::Immediate, AM::Indexed_indirect, AM::Immediate, AM::Indexed_indirect, AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , AM::Zero_page  , // $Ex
-		AM::Implied  , AM::Immediate       , AM::Implied  , AM::Immediate       , AM::Absolute   , AM::Absolute   , AM::Absolute   , AM::Absolute   , // $Ex
-		AM::Relative , AM::Indirect_indexed, AM::Implied  , AM::Indirect_indexed, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, AM::Zero_page_X, // $Fx
-		AM::Implied  , AM::Absolute_Y      , AM::Implied  , AM::Absolute_Y      , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , AM::Absolute_X , // $Fx
-	};
+		std::array<CPU::AddrMode, num_opcodes> table{};
+		for (unsigned opcode = 0x00; opcode < num_opcodes; opcode++)
+		{
+			switch (opcode & 0x1F)
+			{
+			case 0x00:
+				if (opcode == 0x20)                table[opcode] = AddrMode::Absolute;
+				else if ((opcode & ~0x1F) >= 0x80) table[opcode] = AddrMode::Immediate;
+				else                               table[opcode] = AddrMode::Implied;
+				break;
+			case 0x01: table[opcode] = AddrMode::Indexed_indirect; break;
+			case 0x02: table[opcode] = (opcode & ~0x1F) >= 0x80 ? AddrMode::Immediate : AddrMode::Implied; break;
+			case 0x03: table[opcode] = AddrMode::Indexed_indirect; break;
+			case 0x04:
+			case 0x05:
+			case 0x06:
+			case 0x07: table[opcode] = AddrMode::Zero_page; break;
+			case 0x08: table[opcode] = AddrMode::Implied; break;
+			case 0x09: table[opcode] = AddrMode::Immediate; break;
+			case 0x0A: table[opcode] = (opcode & ~0x1F) >= 0x80 ? AddrMode::Implied : AddrMode::Accumulator; break;
+			case 0x0B: table[opcode] = AddrMode::Immediate; break;
+			case 0x0C: table[opcode] = (opcode == 0x6C) ? AddrMode::Indirect : AddrMode::Absolute; break;
+			case 0x0D:
+			case 0x0E:
+			case 0x0F: table[opcode] = AddrMode::Absolute; break;
+			case 0x10: table[opcode] = AddrMode::Relative; break;
+			case 0x11: table[opcode] = AddrMode::Indirect_indexed; break;
+			case 0x12: table[opcode] = AddrMode::Implied; break;
+			case 0x13: table[opcode] = AddrMode::Indirect_indexed; break;
+			case 0x14:
+			case 0x15: table[opcode] = AddrMode::Zero_page_X; break;
+			case 0x16:
+			case 0x17: table[opcode] = (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Zero_page_Y : AddrMode::Zero_page_X; break;
+			case 0x18: table[opcode] = AddrMode::Implied; break;
+			case 0x19: table[opcode] = AddrMode::Absolute_Y; break;
+			case 0x1A: table[opcode] = AddrMode::Implied; break;
+			case 0x1B: table[opcode] = AddrMode::Absolute_Y; break;
+			case 0x1C:
+			case 0x1D: table[opcode] = AddrMode::Absolute_X; break;
+			case 0x1E:
+			case 0x1F: table[opcode] = (opcode & ~0x1F) == 0x80 || (opcode & ~0x1F) == 0xA0 ? AddrMode::Absolute_Y : AddrMode::Absolute_X; break;
+			}
+		}
+		return table;
+	}();
 
 	const addr_mode_fun_t addr_mode_fun_table[13] =
 	{
