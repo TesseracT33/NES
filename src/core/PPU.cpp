@@ -325,6 +325,8 @@ void PPU::StepCycle()
 				/* When using 8x8 sprites, if the BG uses $1000, and the sprites use $0000, the MMC3 IRQ counter should decrement on PPU cycle 324 */
 				if (!PPUCTRL_sprite_height && PPUCTRL_bg_tile_sel && !PPUCTRL_sprite_tile_sel)
 					mapper->ClockIRQ();
+				UpdateBGTileFetching();
+				break;
 
 			case 328: case 336:
 				UpdateBGTileFetching();
