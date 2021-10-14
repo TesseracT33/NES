@@ -47,7 +47,7 @@ private:
 	wxStaticText* static_text_bind_p1 = nullptr;
 	wxStaticText* static_text_bind_p2 = nullptr;
 
-	/// gameboy unit front image ///
+	/// NES controller front image ///
 	const unsigned image_width = 384;
 	const unsigned image_height = 206;
 	const wxString image_path = "resources//nes_controller_front.png";
