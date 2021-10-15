@@ -99,9 +99,6 @@
     <ClInclude Include="src\debug\DebugOptions.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\Header.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\core\mappers\CNROM.h">
       <Filter>Header Files</Filter>
     </ClInclude>
