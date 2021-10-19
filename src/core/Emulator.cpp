@@ -122,18 +122,18 @@ void Emulator::SetEmulationSpeed(unsigned speed)
 void Emulator::StartGame(std::string rom_path)
 {
 	// Construct a mapper class instance given the rom file. If it failed (e.g. if the mapper is not supported), return.
-	std::optional<std::shared_ptr<BaseMapper>> mapper = Cartridge::ConstructMapperFromRom(rom_path);
-	if (!mapper.has_value()) return;
-	this->mapper = mapper.value();
-	apu.mapper = bus.mapper = ppu.mapper = this->mapper.get();
-	this->mapper.get()->cpu = &cpu;
+	std::optional<std::shared_ptr<BaseMapper>> mapper_opt = Cartridge::ConstructMapperFromRom(rom_path);
+	if (!mapper_opt.has_value()) return;
+	std::shared_ptr<BaseMapper> mapper = mapper_opt.value();
+	apu.mapper = bus.mapper = ppu.mapper = mapper.get();
+	mapper->cpu = &cpu;
 
 	this->current_rom_path = rom_path;
 
-	apu.Reset();
+	apu.PowerOn();
 	bus.Reset();
-	cpu.Power();
-	ppu.Power();
+	cpu.PowerOn();
+	ppu.PowerOn();
 
 	//std::thread t(&Emulator::MainLoop, this);
 	//t.detach();

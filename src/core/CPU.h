@@ -18,7 +18,7 @@ public:
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	bool all_ppu_regs_writable = false;
 
-	void Power();
+	void PowerOn();
 	void Reset();
 	void Run();
 	void RunStartUpCycles();

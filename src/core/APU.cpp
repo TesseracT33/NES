@@ -7,7 +7,7 @@ void APU::Initialize()
 }
 
 
-void APU::Power()
+void APU::PowerOn()
 {
     for (u16 addr = 0x4000; addr <= 0x4013; addr++)
         WriteRegister(addr, 0x00);
@@ -19,6 +19,8 @@ void APU::Power()
 
     noise_ch.LFSR = 1;
     dmc.output_level = 0;
+
+    Reset();
 }
 
 
@@ -223,7 +225,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
         if (!dmc.IRQ_enable)
-            cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+			cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::DMC_RAW: // $4011
@@ -270,7 +272,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         else
             dmc.bytes_remaining = 0;
 
-        cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+		cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::FRAME_CNT: // $4017

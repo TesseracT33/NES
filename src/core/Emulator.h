@@ -35,8 +35,6 @@ public:
 	Joypad joypad;
 	PPU ppu;
 
-	std::shared_ptr<BaseMapper> mapper;
-
 	Observer* gui;
 
 	void StartGame(std::string rom_path);

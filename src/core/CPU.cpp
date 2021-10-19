@@ -2,7 +2,7 @@
 
 
 
-void CPU::Power()
+void CPU::PowerOn()
 {
 	// https://wiki.nesdev.com/w/index.php?title=CPU_power_up_state
 

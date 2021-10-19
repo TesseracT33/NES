@@ -22,15 +22,13 @@ class PPU final : public Component
 public:
 	~PPU();
 
+	BaseMapper* mapper;
 	Bus* bus;
 	CPU* cpu;
-
 	Observer* gui;
 
-	BaseMapper* mapper;
-
 	bool CreateRenderer(const void* window_handle);
-	void Power();
+	void PowerOn();
 	void Reset();
 	void Update();
 

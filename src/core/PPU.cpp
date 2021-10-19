@@ -101,7 +101,7 @@ PPU::~PPU()
 }
 
 
-void PPU::Power()
+void PPU::PowerOn()
 {
 	Reset();
 

@@ -18,7 +18,7 @@ public:
 	CPU* cpu;
 
 	void Initialize();
-	void Power();
+	void PowerOn();
 	void Reset();
 	void Update();
 
