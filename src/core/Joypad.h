@@ -26,6 +26,7 @@ public:
 	void ResetBindings(Player player);
 	void RevertBindingChanges();
 	void SaveBindings();
+	void UnbindAll(Player player);
 	void UpdateBinding(Button button, SDL_GameControllerButton bind, Player player);
 	void UpdateBinding(Button button, SDL_Keycode key, Player player);
 

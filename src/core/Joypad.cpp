@@ -54,7 +54,7 @@ u8 Joypad::ReadRegister(u16 addr)
 
 	// Every returned value is ANDed with $40, which is the upper byte of the address ($4016 or $4017)
 	// From https://wiki.nesdev.com/w/index.php?title=Standard_controller: 
-	//   "In the NES and Famicom, the top three (or five) bits are not driven, and so retain the bits of the previous byte on the bus. Usually this is the most significant byte of the address of the controller port—0x40"
+	//   "In the NES and Famicom, the top three (or five) bits are not driven, and so retain the bits of the previous byte on the bus. Usually this is the most significant byte of the address of the controller portâ€”0x40"
 	return ret | 0x40;
 }
 
@@ -157,6 +157,12 @@ void Joypad::SaveBindings()
 			bindings[button][player] = new_bindings[button][player];
 		}
 	}
+}
+
+
+void Joypad::UnbindAll(Player player)
+{
+
 }
 
 

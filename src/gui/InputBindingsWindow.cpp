@@ -3,10 +3,12 @@
 #define SDL_KEYCODE_NOT_FOUND -1
 
 wxBEGIN_EVENT_TABLE(InputBindingsWindow, wxFrame)
-	EVT_BUTTON(ID_SET_TO_KEYBOARD_DEFAULT, InputBindingsWindow::OnResetKeyboard)
-	EVT_BUTTON(ID_SET_TO_JOYPAD_DEFAULT, InputBindingsWindow::OnResetJoypad)
-	EVT_BUTTON(ID_CANCEL_AND_EXIT, InputBindingsWindow::OnCancelAndExit)
-	EVT_BUTTON(ID_SAVE_AND_EXIT, InputBindingsWindow::OnSaveAndExit)
+	EVT_BUTTON(ButtonID::set_to_keyboard_defaults, InputBindingsWindow::OnResetKeyboard)
+	EVT_BUTTON(ButtonID::set_to_joypad_defaults, InputBindingsWindow::OnResetJoypad)
+	EVT_BUTTON(ButtonID::cancel_and_exit, InputBindingsWindow::OnCancelAndExit)
+	EVT_BUTTON(ButtonID::save_and_exit, InputBindingsWindow::OnSaveAndExit)
+	EVT_BUTTON(ButtonID::unbind_p1, InputBindingsWindow::OnUnbindAll)
+	EVT_BUTTON(ButtonID::unbind_p2, InputBindingsWindow::OnUnbindAll)
 	EVT_CLOSE(InputBindingsWindow::OnCloseWindow)
 wxEND_EVENT_TABLE()
 
@@ -20,33 +22,35 @@ InputBindingsWindow::InputBindingsWindow(wxWindow* parent, Config* config, Joypa
 	this->window_active = window_active;
 
 	// determine and set size of window
-	int sizeX = 2 * padding + label_size.x + 2 * button_size.x + image_width;
-	int sizeY = std::max(2 * padding + label_size.y + (NUM_INPUT_KEYS + 2) * button_size.y, (int)image_height);
+	int sizeX = 2 * padding + label_size.x + 2 * button_bind_size.x + controller_image_size.GetWidth();
+	int sizeY = std::max(2 * padding + label_size.y + (num_input_keys + 2) * button_bind_size.y, (int)controller_image_size.GetHeight());
 	SetClientSize(sizeX, sizeY);
 
 	// create and layout all labels and buttons
-	static_text_control = new wxStaticText(this, wxID_ANY, "Control", wxPoint(padding                               , 0), label_size);
-	static_text_bind_p1 = new wxStaticText(this, wxID_ANY, "Bind P1", wxPoint(padding + label_size.x                , 0), label_size);
-	static_text_bind_p1 = new wxStaticText(this, wxID_ANY, "Bind P2", wxPoint(padding + label_size.x + button_size.x, 0), label_size);
+	static_text_control = new wxStaticText(this, wxID_ANY, "Control", wxPoint(padding                                    , 0), label_size);
+	static_text_bind_p1 = new wxStaticText(this, wxID_ANY, "Bind P1", wxPoint(padding + label_size.x                     , 0), label_size);
+	static_text_bind_p1 = new wxStaticText(this, wxID_ANY, "Bind P2", wxPoint(padding + label_size.x + button_bind_size.x, 0), label_size);
 
-	for (int i = 0; i < NUM_INPUT_KEYS; i++)
+	for (int i = 0; i < num_input_keys; i++)
 	{
-		static_text_buttons[i] = new wxStaticText(this, wxID_ANY, button_labels[i], wxPoint(padding                               , label_size.y + label_size.y  * i), label_size );
-		buttons_p1[i] = new wxButton(this, ID_BUTTON_BASE_P1 + i, button_labels[i], wxPoint(padding + label_size.x                , label_size.y + button_size.y * i), button_size);
-		buttons_p2[i] = new wxButton(this, ID_BUTTON_BASE_P2 + i, button_labels[i], wxPoint(padding + label_size.x + button_size.x, label_size.y + button_size.y * i), button_size);
+		static_text_buttons[i] = new wxStaticText(this, wxID_ANY                   , button_labels[i], wxPoint(padding                                    , label_size.y + label_size.y       * i), label_size      );
+		buttons_p1         [i] = new wxButton    (this, ButtonID::bind_start_p1 + i, button_labels[i], wxPoint(padding + label_size.x                     , label_size.y + button_bind_size.y * i), button_bind_size);
+		buttons_p2         [i] = new wxButton    (this, ButtonID::bind_start_p2 + i, button_labels[i], wxPoint(padding + label_size.x + button_bind_size.x, label_size.y + button_bind_size.y * i), button_bind_size);
 	}
 
-	unsigned end_of_input_buttons_y = padding + label_size.y + std::max(label_size.y * NUM_INPUT_KEYS, button_size.y * NUM_INPUT_KEYS);
-	button_set_to_keyboard_defaults = new wxButton(this, ID_SET_TO_KEYBOARD_DEFAULT, "Reset to keyboard defaults", wxPoint(padding, end_of_input_buttons_y), button_options_size);
-	button_set_to_joypad_defaults = new wxButton(this, ID_SET_TO_JOYPAD_DEFAULT, "Reset to joypad defaults", wxPoint(padding + button_options_size.x, end_of_input_buttons_y), button_options_size);
-	button_cancel_and_exit = new wxButton(this, ID_CANCEL_AND_EXIT, "Cancel and exit", wxPoint(padding, end_of_input_buttons_y + button_options_size.y), button_options_size);
-	button_save_and_exit = new wxButton(this, ID_SAVE_AND_EXIT, "Save and exit", wxPoint(padding + button_options_size.x, end_of_input_buttons_y + button_options_size.y), button_options_size);
+	unsigned end_of_input_buttons_y = padding + label_size.y + std::max(label_size.y * num_input_keys, button_bind_size.y * num_input_keys);
+	button_set_to_keyboard_defaults = new wxButton(this, ButtonID::set_to_keyboard_defaults, "Reset to keyboard defaults", wxPoint(padding                            , end_of_input_buttons_y                        ), button_options_size);
+	button_set_to_joypad_defaults   = new wxButton(this, ButtonID::set_to_joypad_defaults  , "Reset to joypad defaults"  , wxPoint(padding +     button_options_size.x, end_of_input_buttons_y                        ), button_options_size);
+	button_unbind_p1                = new wxButton(this, ButtonID::unbind_p1               , "Unbind player 1"           , wxPoint(padding + 2 * button_options_size.x, end_of_input_buttons_y                        ), button_options_size);
+	button_cancel_and_exit          = new wxButton(this, ButtonID::cancel_and_exit         , "Cancel and exit"           , wxPoint(padding                            , end_of_input_buttons_y + button_options_size.y), button_options_size);
+	button_save_and_exit            = new wxButton(this, ButtonID::save_and_exit           , "Save and exit"             , wxPoint(padding +     button_options_size.x, end_of_input_buttons_y + button_options_size.y), button_options_size);
+	button_unbind_p2                = new wxButton(this, ButtonID::unbind_p2               , "Unbind player 2"           , wxPoint(padding + 2 * button_options_size.x, end_of_input_buttons_y + button_options_size.y), button_options_size);
 
 	// setup image
 	{
 		wxLogNull logNo; // stops wxwidgets from logging a message about the png when the window is opened
 		wxImage::AddHandler(new wxPNGHandler());
-		image = new wxStaticBitmap(this, wxID_ANY, wxBitmap(image_path, wxBITMAP_TYPE_PNG), wxPoint(2 * padding + label_size.x + 2 * button_size.x, 0));
+		controller_image = new wxStaticBitmap(this, wxID_ANY, wxBitmap(controller_image_path, wxBITMAP_TYPE_PNG), wxPoint(2 * padding + label_size.x + 2 * button_bind_size.x, 0));
 	}
 
 	GetAndSetButtonLabels();
@@ -54,13 +58,18 @@ InputBindingsWindow::InputBindingsWindow(wxWindow* parent, Config* config, Joypa
 	SetBackgroundColour(*wxWHITE);
 
 	// setup event bindings
-	for (int i = 0; i < NUM_INPUT_KEYS; i++)
+	for (int i = 0; i < num_input_keys; i++)
 	{
 		// https://wiki.wxwidgets.org/Catching_key_events_globally
 		buttons_p1[i]->Bind(wxEVT_CHAR_HOOK, &InputBindingsWindow::OnKeyDown, this);
 		buttons_p1[i]->Bind(wxEVT_JOY_BUTTON_DOWN, &InputBindingsWindow::OnJoyDown, this);
 		buttons_p1[i]->Bind(wxEVT_BUTTON, &InputBindingsWindow::OnInputButtonPress, this);
 		buttons_p1[i]->Bind(wxEVT_KILL_FOCUS, &InputBindingsWindow::OnButtonLostFocus, this);
+
+		buttons_p2[i]->Bind(wxEVT_CHAR_HOOK, &InputBindingsWindow::OnKeyDown, this);
+		buttons_p2[i]->Bind(wxEVT_JOY_BUTTON_DOWN, &InputBindingsWindow::OnJoyDown, this);
+		buttons_p2[i]->Bind(wxEVT_BUTTON, &InputBindingsWindow::OnInputButtonPress, this);
+		buttons_p2[i]->Bind(wxEVT_KILL_FOCUS, &InputBindingsWindow::OnButtonLostFocus, this);
 	}
 
 	*window_active = true;
@@ -69,9 +78,19 @@ InputBindingsWindow::InputBindingsWindow(wxWindow* parent, Config* config, Joypa
 
 void InputBindingsWindow::OnInputButtonPress(wxCommandEvent& event)
 {
-	int button_index = event.GetId() - ID_BUTTON_BASE_P1;
-	prev_input_button_label = buttons_p1[button_index]->GetLabel();
-	buttons_p1[button_index]->SetLabel("...");
+	int button_index = event.GetId() - ButtonID::bind_start_p1;
+	Joypad::Player player = static_cast<Joypad::Player>(button_index / num_input_keys);
+	if (player == Joypad::Player::ONE)
+	{
+		prev_input_button_label = buttons_p1[button_index]->GetLabel();
+		buttons_p1[button_index]->SetLabel("...");
+	}
+	else
+	{
+		prev_input_button_label = buttons_p2[button_index]->GetLabel();
+		buttons_p2[button_index]->SetLabel("...");
+	}
+
 	index_of_awaited_input_button = button_index;
 	awaiting_input = true;
 }
@@ -168,6 +187,26 @@ void InputBindingsWindow::OnSaveAndExit(wxCommandEvent& event)
 }
 
 
+void InputBindingsWindow::OnUnbindAll(wxCommandEvent& event)
+{
+	const wxString unbound_button_text = "Unbound";
+
+	int id = event.GetId();
+	if (id == ButtonID::unbind_p1)
+	{
+		for (int i = 0; i < num_input_keys; i++)
+			buttons_p1[i]->SetLabel(unbound_button_text);
+		joypad->UnbindAll(Joypad::Player::ONE);
+	}
+	else /* Player 2 */
+	{
+		for (int i = 0; i < num_input_keys; i++)
+			buttons_p2[i]->SetLabel(unbound_button_text);
+		joypad->UnbindAll(Joypad::Player::TWO);
+	}
+}
+
+
 void InputBindingsWindow::OnCloseWindow(wxCloseEvent& event)
 {
 	joypad->RevertBindingChanges();
@@ -178,23 +217,11 @@ void InputBindingsWindow::OnCloseWindow(wxCloseEvent& event)
 
 void InputBindingsWindow::GetAndSetButtonLabels()
 {
-	//buttons_keyboard[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::KEYBOARD));
-	//buttons_keyboard[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::KEYBOARD));
-
-	//buttons_joypad[0]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::A, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[1]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::B, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[2]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::SELECT, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[3]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::START, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[4]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::RIGHT, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[5]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::LEFT, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[6]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::UP, Joypad::InputMethod::JOYPAD));
-	//buttons_joypad[7]->SetLabel(joypad->GetCurrentBindingString(Joypad::Button::DOWN, Joypad::InputMethod::JOYPAD));
+	for (int i = 0; i < num_input_keys; i++)
+	{
+		buttons_p1[i]->SetLabel(joypad->GetCurrentBindingString(static_cast<Joypad::Button>(Joypad::Button::A + i), Joypad::Player::ONE));
+		buttons_p1[i]->SetLabel(joypad->GetCurrentBindingString(static_cast<Joypad::Button>(Joypad::Button::A + i), Joypad::Player::TWO));
+	}
 }
 
 
@@ -268,7 +295,7 @@ u8 InputBindingsWindow::Convert_WX_Joybutton_To_SDL_Joybutton(int wx_joybutton)
 void InputBindingsWindow::CheckForDuplicateBindings(const char* new_bound_key_name)
 {
 	// TODO
-	for (int button_id = 0; button_id <= 2 * NUM_INPUT_KEYS; button_id++)
+	for (int button_id = 0; button_id <= 2 * num_input_keys; button_id++)
 	{
 
 	}
