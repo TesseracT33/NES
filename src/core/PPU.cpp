@@ -447,8 +447,8 @@ u8 PPU::ReadRegister(u16 addr)
 		}
 	}
 
-	default: //throw std::invalid_argument(std::format("Invalid argument addr %04X given to PPU::ReadFromPPUReg", (int)addr));
-		return 0xFF;
+	default:
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::ReadRegister(u16).", addr));
 	}
 }
 
@@ -466,21 +466,21 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		WriteOpenBus(data);
 		CheckNMI();
 		reg.t = reg.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
-		return;
+		break;
 
 	case Bus::Addr::PPUMASK: // $2001 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
 		PPUMASK = data;
 		WriteOpenBus(data);
-		return;
+		break;
 
 	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
 		WriteOpenBus(data); // bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
-		return;
+		break;
 
 	case Bus::Addr::OAMADDR: // $2003 (write-only)
 		OAMADDR = data;
-		return;
+		break;
 
 	case Bus::Addr::OAMDATA: // $2004 (read/write)
 		// OAM can only be written to during vertical or forced blanking
@@ -494,7 +494,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
 			OAMADDR += 0b100; // todo: not sure what 'bumping only the high 6 bits' means
 		}
-		return;
+		break;
 
 	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
@@ -510,7 +510,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 			reg.t = reg.t & ~0x73E0 | (data & 7) << 12 | (data & 0xF8) << 2;
 		}
 		reg.w = !reg.w;
-		return;
+		break;
 
 	case Bus::Addr::PPUADDR: // $2006 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
@@ -526,7 +526,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 			reg.v = reg.t;
 		}
 		reg.w = !reg.w;
-		return;
+		break;
 
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
@@ -542,7 +542,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 			reg.increment_coarse_x();
 			reg.increment_y();
 		}
-		return;
+		break;
 
 	case Bus::Addr::OAMDMA: // $4014 (write-only)
 	{
@@ -551,7 +551,11 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
 		cpu->StartOAMDMATransfer(data, memory.oam, OAMADDR);
+		break;
 	}
+
+	default:
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteRegister(u16).", addr));
 
 	}
 }
@@ -1011,10 +1015,7 @@ u8 PPU::ReadMemory(u16 addr)
 		return memory.palette_ram[addr];
 	}
 	else
-	{
-		// throw exception
-		return 0xFF;
-	}
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::ReadMemory(u16, u8). The range is $0000-$3FFF.", addr));
 }
 
 
@@ -1043,6 +1044,8 @@ void PPU::WriteMemory(u16 addr, u8 data)
 			memory.palette_ram[addr & 0x30] = data;
 		memory.palette_ram[addr] = data;
 	}
+	else
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteMemory(u16, u8). The range is $0000-$3FFF.", addr));
 }
 
 
@@ -1064,7 +1067,7 @@ void PPU::PrepareForNewScanline()
 
 void PPU::SetWindowSize(wxSize size)
 {
-	unsigned width = size.GetWidth(), height = size.GetHeight();
+	const unsigned width = size.GetWidth(), height = size.GetHeight();
 
 	if (width > 0 && height > 0)
 	{

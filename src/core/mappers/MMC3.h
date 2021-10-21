@@ -40,7 +40,8 @@ public:
 		case 0xE: case 0xF:
 			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 1) - 0xE000];
 
-		default: return 0xFF;
+		default:
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::ReadPRG(u16).", addr));
 		}
 	};
 
@@ -102,7 +103,8 @@ public:
 			IRQ_enabled = addr & 0x01;
 			break;
 
-		default: break;
+		default:
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::WritePRG(u16, u8).", addr));
 		}
 	};
 
@@ -187,48 +189,56 @@ public:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x800 * rom_bank[0]] = data;
 			chr[addr + 0x400 * rom_bank[2]] = data;
+			break;
 
 		case 1:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x800 * rom_bank[0]] = data;
 			chr[addr + 0x400 * rom_bank[3] - 0x400] = data;
+			break;
 
 			// PPU $0800-$0FFF (or $1800-$1FFF): 2 KiB switchable CHR bank
 		case 2:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x800 * rom_bank[1] - 0x800] = data;
 			chr[addr + 0x400 * rom_bank[4] - 0x800] = data;
+			break;
 
 		case 3:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x800 * rom_bank[1] - 0x800] = data;
 			chr[addr + 0x400 * rom_bank[5] - 0xC00] = data;
+			break;
 
 			// PPU $1000-$13FF (or $0000-$03FF): 1 KiB switchable CHR bank
 		case 4:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x400 * rom_bank[2] - 0x1000] = data;
 			chr[addr + 0x800 * rom_bank[0] - 0x1000] = data;
+			break;
 
 			// PPU $1400-$17FF (or $0400-$07FF): 1 KiB switchable CHR bank
 		case 5:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x400 * rom_bank[3] - 0x1400] = data;
 			chr[addr + 0x800 * rom_bank[0] - 0x1000] = data;
+			break;
 
 			// PPU $1800-$1BFF (or $0800-$0BFF): 1 KiB switchable CHR bank
 		case 6:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x400 * rom_bank[4] - 0x1800] = data;
 			chr[addr + 0x800 * rom_bank[1] - 0x1800] = data;
+			break;
 
 			// PPU $1C00-$1FFF (or $0C00-$0FFF): 1 KiB switchable CHR bank
 		case 7:
 			if (chr_a12_inversion == 0)
 				chr[addr + 0x400 * rom_bank[5] - 0x1C00] = data;
 			chr[addr + 0x800 * rom_bank[1] - 0x1800] = data;
+			break;
 
-		default: return; // impossible
+		default: break; // impossible
 		}
 	}
 

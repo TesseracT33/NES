@@ -11,7 +11,7 @@ public:
 	{
 		if (addr <= 0x7FFF)
 		{
-			return 0xFF;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to CNROM::ReadPRG(u16).", addr));
 		}
 		// CPU $8000-$BFFF: First 16 KiB of ROM.
 		if (addr <= 0xBFFF)

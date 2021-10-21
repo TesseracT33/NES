@@ -13,7 +13,7 @@ public:
 	{
 		if (addr <= 0x5FFF)
 		{
-			return 0xFF;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC1::ReadPRG(u16).", addr));
 		}
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		if (addr <= 0x7FFF)
@@ -49,7 +49,7 @@ public:
 	{
 		if (addr <= 0x5FFF)
 		{
-			return;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC1::WritePRG(u16, u8).", addr));
 		}
 		else if (addr <= 0x7FFF)
 		{

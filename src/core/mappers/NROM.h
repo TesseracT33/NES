@@ -11,7 +11,7 @@ public:
 	{
 		if (addr <= 0x5FFF)
 		{
-			return 0xFF;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to NROM::ReadPRG(u16).", addr));
 		}
 		// CPU $6000-$7FFF: Family Basic only: PRG RAM, mirrored as necessary to fill entire 8 KiB window, write protectable with an external switch
 		if (addr <= 0x7FFF)

@@ -11,7 +11,7 @@ public:
 	{
 		if (addr <= 0x7FFF)
 		{
-			return 0xFF;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to UxROM::ReadPRG(u16).", addr));
 		}
 		// $8000-$BFFF: 16 KiB switchable PRG ROM bank
 		else if (addr <= 0xBFFF)
@@ -31,6 +31,7 @@ public:
 		{
 			prg_bank = (data & 0xF) % properties.num_prg_rom_banks;
 		}
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to UxROM::WritePRG(u16, u8).", addr));
 	};
 
 	u8 ReadCHR(u16 addr) override

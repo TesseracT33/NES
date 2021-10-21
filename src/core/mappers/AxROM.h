@@ -11,7 +11,7 @@ public:
 	{
 		if (addr <= 0x7FFF)
 		{
-			return 0xFF;
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to AxROM::ReadPRG(u16).", addr));
 		}
 		// $8000-$BFFF: 32 KiB switchable PRG ROM bank
 		return prg_rom[addr - 0x8000 + prg_bank * 0x8000];

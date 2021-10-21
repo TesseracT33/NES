@@ -3,8 +3,9 @@
 #include "wx/wx.h"
 #include "SDL.h"
 
-#include <stdexcept>
+#include <format>
 #include <limits>
+#include <stdexcept>
 
 #include "../Observer.h"
 #include "../Types.h"
@@ -23,7 +24,6 @@ public:
 	~PPU();
 
 	BaseMapper* mapper;
-	Bus* bus;
 	CPU* cpu;
 	Observer* gui;
 

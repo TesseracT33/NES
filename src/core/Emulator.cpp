@@ -28,7 +28,6 @@ void Emulator::ConnectSystemComponents()
 
 	cpu.bus = &bus;
 
-	ppu.bus = &bus;
 	ppu.cpu = &cpu;
 }
 
@@ -160,7 +159,13 @@ void Emulator::MainLoop()
 		auto frame_start_t = std::chrono::steady_clock::now();
 
 		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU).
-		cpu.Run();
+		try {
+			cpu.Run();
+		}
+		catch (const std::runtime_error& e)
+		{
+			wxMessageBox(wxString("Error: ") + e.what());
+		}
 
 		joypad.PollInput();
 
