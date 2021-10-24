@@ -317,7 +317,7 @@ void PPU::StepCycle()
 			switch (scanline_cycle_counter)
 			{
 			case 321:
-				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th sprite.
+				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th and last sprite.
 				tile_fetcher.SetBGTileFetchingActive();
 				break;
 
@@ -492,7 +492,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		else
 		{
 			// Do not modify values in OAM, but do perform a glitchy increment of OAMADDR, bumping only the high 6 bits
-			OAMADDR += 0b100; // todo: not sure what 'bumping only the high 6 bits' means
+			OAMADDR += 0b100;
 		}
 		break;
 
@@ -677,7 +677,7 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 	if (col_id == 0)
 	{
 		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
-		if (reg.v >= 0x3F00 && !RenderingIsEnabled())
+		if (reg.v >= 0x3F00 && reg.v <= 0x3FFF && !RenderingIsEnabled())
 			return ReadMemory(reg.v) & 0x3F;
 		return memory.palette_ram[0] & 0x3F;
 	}
