@@ -79,7 +79,6 @@ u8 APU::ReadRegister(u16 addr)
                | (triangle_ch.length_counter.value > 0) << 2
                | (noise_ch.length_counter.value    > 0) << 3
                | (dmc.bytes_remaining > 0             ) << 4
-               | (0x01                                ) << 5 // TODO: unclear if this should return 0 or 1
                | (frame_counter.interrupt             ) << 6
                | (dmc.IRQ_enable                      ) << 7;
         frame_counter.interrupt = false;
