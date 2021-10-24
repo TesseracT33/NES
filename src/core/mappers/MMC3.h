@@ -24,7 +24,7 @@ public:
 		case 0x8: case 0x9:
 			if (prg_rom_bank_mode == 0)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0x8000];
-			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0x8000];
+			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 2) - 0x8000];
 
 		// CPU $A000-$BFFF: 8 KiB switchable PRG ROM bank
 		case 0xA: case 0xB:
@@ -34,11 +34,11 @@ public:
 		case 0xC: case 0xD:
 			if (prg_rom_bank_mode == 1)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0xC000];
-			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0xC000];
+			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 2) - 0xC000];
 
 		// CPU $E000-$FFFF: 8 KiB PRG ROM bank, fixed to the last bank
 		case 0xE: case 0xF:
-			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 1) - 0xE000];
+			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 1) - 0xE000];
 
 		default:
 			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::ReadPRG(u16).", addr));
@@ -265,6 +265,12 @@ public:
 	}
 
 private:
+	static constexpr size_t chr_bank_size     = 0x1000;
+	static constexpr size_t prg_rom_bank_size = 0x2000;
+
+	constexpr size_t GetNumCHRBanks   () const override { return properties.chr_size     / chr_bank_size    ; };
+	constexpr size_t GetNumPRGROMBanks() const override { return properties.prg_rom_size / prg_rom_bank_size; };
+
 	bool nametable_mirroring;
 
 	/* 0: two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF;

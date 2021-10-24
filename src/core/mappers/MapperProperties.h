@@ -19,7 +19,4 @@ struct MapperProperties
 	size_t prg_nvram_size;
 	size_t prg_ram_size;
 	size_t prg_rom_size;
-	size_t num_chr_banks;
-	size_t num_prg_ram_banks;
-	size_t num_prg_rom_banks;
 };

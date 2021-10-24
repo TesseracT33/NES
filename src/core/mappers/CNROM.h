@@ -35,7 +35,7 @@ public:
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
-		chr_bank = data & (properties.num_chr_banks - 1);
+		chr_bank = data & (GetNumCHRBanks() - 1);
 	}
 
 	u16 GetNametableAddr(u16 addr) override

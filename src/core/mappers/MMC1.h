@@ -39,7 +39,7 @@ public:
 		case 3: // 16 KiB mode 2; Switch 16 KiB bank at $8000-$BFFF and fix the last bank at $C000-$FFFF.
 			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
-			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (GetNumPRGROMBanks() - 1) * 0x4000];
 
 		default: return 0xFF; // impossible
 		}
@@ -100,7 +100,7 @@ public:
 						break;
 
 					case 0xE: case 0xF:
-						prg_bank = shift_reg % properties.num_prg_rom_banks;
+						prg_bank = shift_reg % GetNumPRGROMBanks();
 						break;
 
 					default: break; // impossible

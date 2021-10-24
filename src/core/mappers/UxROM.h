@@ -21,7 +21,7 @@ public:
 		// $C000-$FFFF: 16 KiB PRG ROM bank, fixed to the last bank
 		else
 		{
-			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (GetNumPRGROMBanks() - 1) * 0x4000];
 		}
 	};
 
@@ -29,7 +29,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 0xF) % properties.num_prg_rom_banks;
+			prg_bank = (data & 0xF) % GetNumPRGROMBanks();
 		}
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to UxROM::WritePRG(u16, u8).", addr));
 	};

@@ -21,7 +21,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 7) % properties.num_prg_rom_banks;
+			prg_bank = (data & 7) % GetNumPRGROMBanks();
 			vram_page = data & 0x10;
 		}
 	};

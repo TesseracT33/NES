@@ -84,11 +84,6 @@ bool Cartridge::ParseHeader(u8 header[])
 	else
 		ParseiNESHeader(header);
 
-	// Setup a few more mapper properties
-	mapper_properties.num_chr_banks = mapper_properties.chr_size / chr_bank_size;
-	mapper_properties.num_prg_ram_banks = mapper_properties.prg_ram_size / prg_ram_bank_size;
-	mapper_properties.num_prg_rom_banks = mapper_properties.prg_rom_size / prg_rom_bank_size;
-
 	return true;
 }
 
