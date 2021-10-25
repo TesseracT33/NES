@@ -99,11 +99,12 @@ void Logging::LogLine()
 		return;
 	}
 
-	char buf[100]{};
-	sprintf(buf, "CPU cycle %u \t PC:%04X \t OP:%02X \t SP:%02X  A:%02X  X:%02X  Y:%02X  P:%02X  SL:%u  PPU cycle %u",
-		cpu_state.cpu_cycle_counter, (int)cpu_state.PC, (int)cpu_state.opcode, (int)cpu_state.SP, 
-		(int)cpu_state.A, (int)cpu_state.X, (int)cpu_state.Y, (int)cpu_state.P, ppu_state.scanline, ppu_state.ppu_cycle_counter);
-	log_ofs << buf << std::endl;
+	const std::string output = std::format(
+		"CPU cycle {} \t PC:{:04X} \t OP:{:02X} \t SP:{:02X}  A:{:02X}  X:{:02X}  Y:{:02X}  P:{:02X}  SL:{}  PPU cycle:{}",
+		cpu_state.cpu_cycle_counter, cpu_state.PC, cpu_state.opcode, cpu_state.SP,
+		cpu_state.A, cpu_state.X, cpu_state.Y, cpu_state.P, ppu_state.scanline, ppu_state.ppu_cycle_counter);
+
+	log_ofs << output << std::endl;
 }
 
 
