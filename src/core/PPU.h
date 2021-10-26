@@ -27,7 +27,7 @@ public:
 	CPU* cpu;
 	Observer* gui;
 
-	bool CreateRenderer(const void* window_handle);
+	[[nodiscard]] bool CreateRenderer(const void* window_handle);
 	void PowerOn();
 	void Reset();
 	void Update();
@@ -49,12 +49,12 @@ public:
 private:
 	friend class Logging;
 
-	static const unsigned oam_size = 0x100;
-	static const unsigned secondary_oam_size = 0x20;
-	static const unsigned resolution_x = 256;
-	static const unsigned resolution_y = 240;
-	static const unsigned colour_channels = 3;
-	static const unsigned framebuffer_size = resolution_x * resolution_y * colour_channels;
+	static const size_t oam_size = 0x100;
+	static const size_t secondary_oam_size = 0x20;
+	static const size_t resolution_x = 256;
+	static const size_t resolution_y = 240;
+	static const size_t colour_channels = 3;
+	static const size_t framebuffer_size = resolution_x * resolution_y * colour_channels;
 
 	const unsigned default_scale = 3;
 	const unsigned number_of_cycles_per_scanline_ntsc = 341; // Is actually 340 on scanline 261 if on an odd-numbered frame
@@ -85,7 +85,7 @@ private:
 		u8 secondary_oam[secondary_oam_size]{}; // not mapped
 	} memory;
 
-	struct Regs
+	struct ScrollRegs
 	{
 		/* Composition of 'v' (and 't'):
 		  yyy NN YYYYY XXXXX
@@ -159,7 +159,9 @@ private:
 
 		u16 pattern_table_data_addr;
 
-		enum Step { fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high } step;
+		enum class Step {
+			fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high
+		} step;
 
 		void SetBGTileFetchingActive()     { step = Step::fetch_nametable_byte; }
 		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
@@ -208,7 +210,6 @@ private:
 
 	void CheckNMI();
 	void UpdateSpriteEvaluation();
-	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
 	void PushPixel(u8 nes_col);
@@ -221,12 +222,12 @@ private:
 	void StepCycle();
 	void UpdateBGTileFetching();
 	void UpdateSpriteTileFetching();
-
-	u8 ReadMemory(u16 addr);
 	void WriteMemory(u16 addr, u8 data);
-
-	u8 ReadOpenBus();
 	void WriteOpenBus(u8 data);
+
+	[[nodiscard]] u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
+	[[nodiscard]] u8 ReadMemory(u16 addr);
+	[[nodiscard]] u8 ReadOpenBus();
 
 	/// Debugging-related
 	void LogState();

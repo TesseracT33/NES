@@ -952,21 +952,23 @@ void PPU::UpdateSpriteTileFetching()
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
 		// TODO: not sure if reg.v should be used instead of current_scanline
-		u8 sprite_row_num = (current_scanline - tile_fetcher.sprite_y_pos) % 8; // which row of the sprite the scanline falls on (0-7)
+		u8 scanline_sprite_y_delta = current_scanline - tile_fetcher.sprite_y_pos;
+		u8 sprite_row_num =  scanline_sprite_y_delta; // which row of the sprite the scanline falls on (0-7)
 		bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
 		if (flip_sprite_y)
 			sprite_row_num = 7 - sprite_row_num;
 
 		if (PPUCTRL_sprite_height) // 8x16 sprites
 		{
+			bool sprite_table_half = tile_fetcher.tile_num & 0x01;
 			u8 tile_num = tile_fetcher.tile_num & 0xFE; // Tile number of the top of sprite (0 to 254; bottom half gets the next tile)
-			// If the coarse y scroll is odd, fetch the bottom tile.
-			// However, if sprites are flipped vertically, the top and bottom tiles are also flipped.
-			bool coarse_y_is_odd = reg.v & 0x20;
-			bool fetch_bottom_tile = coarse_y_is_odd ^ flip_sprite_y;
+			// Check if we are on the top or bottom tile of the sprite.
+			// If sprites are flipped vertically, the top and bottom tiles are flipped.
+			bool on_bottom_tile = scanline_sprite_y_delta > 7;
+			bool fetch_bottom_tile = on_bottom_tile ^ flip_sprite_y;
 			if (fetch_bottom_tile)
 				tile_num++;
-			tile_fetcher.pattern_table_data_addr = (tile_fetcher.tile_num & 1) << 12 | tile_num << 4 | sprite_row_num;
+			tile_fetcher.pattern_table_data_addr = sprite_table_half << 12 | tile_num << 4 | sprite_row_num;
 		}
 		else // 8x8 sprites
 		{
