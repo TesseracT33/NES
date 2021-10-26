@@ -224,10 +224,12 @@ private:
 	void UpdateSpriteTileFetching();
 	void WriteMemory(u16 addr, u8 data);
 	void WriteOpenBus(u8 data);
+	void WritePaletteRAM(u16 addr, u8 data);
 
 	[[nodiscard]] u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
 	[[nodiscard]] u8 ReadMemory(u16 addr);
 	[[nodiscard]] u8 ReadOpenBus();
+	[[nodiscard]] u8 ReadPaletteRAM(u16 addr);
 
 	/// Debugging-related
 	void LogState();

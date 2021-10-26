@@ -577,6 +577,31 @@ void PPU::WriteOpenBus(u8 data)
 }
 
 
+u8 PPU::ReadPaletteRAM(u16 addr)
+{
+	addr &= 0x1F;
+	// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
+	// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
+	if ((addr & 0x13) == 0x10)
+		addr -= 0x10;
+	if (PPUMASK_greyscale)
+		return memory.palette_ram[addr & 0x30]; // TODO: ???
+	return memory.palette_ram[addr];
+}
+
+
+void PPU::WritePaletteRAM(u16 addr, u8 data)
+{
+	addr &= 0x1F;
+	data &= 0x3F; // Each value is 6 bits (0-63)
+	if ((addr & 0x13) == 0x10)
+		addr -= 0x10;
+	if (PPUMASK_greyscale)
+		memory.palette_ram[addr & 0x30] = data; // TODO: ???
+	memory.palette_ram[addr] = data;
+}
+
+
 void PPU::CheckNMI()
 {
 	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are set.
@@ -669,24 +694,23 @@ void PPU::UpdateSpriteEvaluation()
 }
 
 
-// Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given palette attribute data
+// Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given the palette id (0-3)
 u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 {
 	// If the color ID is 0, then the 'universal background color', located at $3F00, is used.
-	// This is equal to palette_ram[0]
 	if (col_id == 0)
 	{
 		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
 		if (reg.v >= 0x3F00 && reg.v <= 0x3FFF && !RenderingIsEnabled())
-			return ReadMemory(reg.v) & 0x3F;
-		return memory.palette_ram[0] & 0x3F;
+			return ReadPaletteRAM(reg.v);
+		return ReadPaletteRAM(0x3F00);
 	}
 	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
 	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
 	if (PPUMASK_greyscale)
-		return memory.palette_ram[(0x10 * palette_id) & 0x1F] & 0x3F; // todo: wrong
-	return ReadMemory(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ)) & 0x3F;
+		return ReadPaletteRAM(0x10 * palette_id); // todo: wrong
+	return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ));
 }
 
 
@@ -866,6 +890,11 @@ void PPU::ReloadSpriteShiftRegisters(unsigned sprite_index)
 
 void PPU::UpdateBGTileFetching()
 {
+	if (scanline_cycle_counter == 2)
+	{
+		int a = 3;
+	}
+
 	switch (tile_fetcher.step)
 	{
 	case TileFetcher::Step::fetch_nametable_byte:
@@ -1007,14 +1036,7 @@ u8 PPU::ReadMemory(u16 addr)
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
 	{
-		addr &= 0x1F;
-		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
-		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
-		if ((addr & 0b10011) == 0b10000)
-			addr -= 0x10;
-		if (PPUMASK_greyscale)
-			return memory.palette_ram[addr & 0x30];
-		return memory.palette_ram[addr];
+		return ReadPaletteRAM(addr);
 	}
 	else
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::ReadMemory(u16, u8). The range is $0000-$3FFF.", addr));
@@ -1037,14 +1059,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
 	{
-		addr &= 0x1F;
-		// Addresses $3F10/$3F14/$3F18/$3F1C are mirrors of $3F00/$3F04/$3F08/$3F0C
-		// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
-		if ((addr & 0b10011) == 0b10000)
-			addr -= 0x10;
-		if (PPUMASK_greyscale)
-			memory.palette_ram[addr & 0x30] = data;
-		memory.palette_ram[addr] = data;
+		WritePaletteRAM(addr, data);
 	}
 	else
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteMemory(u16, u8). The range is $0000-$3FFF.", addr));
