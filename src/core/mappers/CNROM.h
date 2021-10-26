@@ -24,18 +24,16 @@ public:
 
 	void WritePRG(u16 addr, u8 data) override
 	{
-
+		if (addr >= 0x8000)
+		{
+			chr_bank = data; // The CHR capacity is 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
+		}
 	};
 
 	u8 ReadCHR(u16 addr) override
 	{
-		// PPU $0000-$1FFF: 8 KiB switchable CHR ROM bank (up to four banks in total).
+		// PPU $0000-$1FFF: 8 KiB switchable CHR ROM bank.
 		return chr[addr + 0x2000 * chr_bank];
-	}
-
-	void WriteCHR(u16 addr, u8 data) override
-	{
-		chr_bank = data & (GetNumCHRBanks() - 1);
 	}
 
 	u16 GetNametableAddr(u16 addr) override
