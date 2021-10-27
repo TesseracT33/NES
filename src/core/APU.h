@@ -8,6 +8,7 @@
 #include "Component.h"
 #include "CPU.h"
 #include "IRQSources.h"
+#include "System.h"
 
 #include "mappers/BaseMapper.h"
 
@@ -18,7 +19,7 @@ public:
 	CPU* cpu;
 
 	void Initialize();
-	void PowerOn();
+	void PowerOn(const System::VideoStandard standard);
 	void Reset();
 	void Update();
 
@@ -89,6 +90,18 @@ private:
 	static constexpr unsigned sample_rate = 44100;
 	static constexpr unsigned cpu_cycles_per_sec_ntsc = 1789773;
 	static constexpr unsigned cpu_cycles_per_sec_pal  = 1662607;
+
+	struct Standard
+	{
+		const u16* dmc_rate_table;
+		const u16* noise_period_table;
+		unsigned cpu_cycles_per_sec;
+	};
+
+	const Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc };
+	const Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
+	const Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , cpu_cycles_per_sec_pal  };
+	Standard standard = NTSC; /* The default */
 
 	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 

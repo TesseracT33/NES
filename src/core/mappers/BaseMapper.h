@@ -6,6 +6,7 @@
 #include "MapperProperties.h"
 
 #include "../CPU.h"
+#include "../System.h"
 
 #include "../../Types.h"
 
@@ -38,11 +39,13 @@ public:
 		memcpy(&chr[0], rom_arr + properties.prg_rom_size, properties.chr_size);
 	}
 
-	virtual u8   ReadPRG(u16 addr) = 0;
-	virtual void WritePRG(u16 addr, u8 data) = 0;
+	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
 
-	virtual u8   ReadCHR(u16 addr) = 0;
-	virtual void WriteCHR(u16 addr, u8 data) = 0;
+	virtual u8 ReadPRG(u16 addr) = 0;
+	virtual u8 ReadCHR(u16 addr) = 0;
+
+	virtual void WritePRG(u16 addr, u8 data) {};
+	virtual void WriteCHR(u16 addr, u8 data) {};
 
 	virtual u16 GetNametableAddr(u16 addr) = 0;
 

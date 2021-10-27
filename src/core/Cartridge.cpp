@@ -117,7 +117,13 @@ void Cartridge::ParseiNESHeader(u8 header[])
 {
 	/* Parse bytes 8-15 of an iNES header. */
 	mapper_properties.prg_ram_size = header[8];
-	mapper_properties.tv_system = header[9] & 1;
+
+	// Note: Dendy is not supported from this
+	switch (header[9] & 1)
+	{
+	case 0: mapper_properties.video_standard = System::VideoStandard::NTSC; break;
+	case 1: mapper_properties.video_standard = System::VideoStandard::PAL; break;
+	}
 }
 
 
@@ -154,5 +160,11 @@ void Cartridge::ParseNES20Header(u8 header[])
 	else
 		mapper_properties.has_chr_nvram = false;
 
-	mapper_properties.tv_system = header[12] & 3;
+	switch (header[12] & 3)
+	{
+	case 0: mapper_properties.video_standard = System::VideoStandard::NTSC ; break;
+	case 1: mapper_properties.video_standard = System::VideoStandard::PAL  ; break;
+	case 2: mapper_properties.video_standard = System::VideoStandard::NTSC ; break; // TODO: this is actually "Multi-region"
+	case 3: mapper_properties.video_standard = System::VideoStandard::Dendy; break;
+	}
 }

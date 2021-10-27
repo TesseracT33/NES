@@ -7,8 +7,10 @@ void APU::Initialize()
 }
 
 
-void APU::PowerOn()
+void APU::PowerOn(const System::VideoStandard standard)
 {
+	Reset();
+
     for (u16 addr = 0x4000; addr <= 0x4013; addr++)
         WriteRegister(addr, 0x00);
     WriteRegister(0x4015, 0x00);
@@ -20,7 +22,12 @@ void APU::PowerOn()
     noise_ch.LFSR = 1;
     dmc.output_level = 0;
 
-    Reset();
+	switch (standard)
+	{
+	case System::VideoStandard::NTSC : this->standard = NTSC ; break;
+	case System::VideoStandard::PAL  : this->standard = PAL  ; break;
+	case System::VideoStandard::Dendy: this->standard = Dendy; break;
+	}
 }
 
 
@@ -61,10 +68,10 @@ void APU::Update()
     triangle_ch.Step();
 
     cpu_cycle_sample_counter += sample_rate;
-    if (cpu_cycle_sample_counter >= cpu_cycles_per_sec_ntsc)
+    if (cpu_cycle_sample_counter >= standard.cpu_cycles_per_sec)
     {
         MixAndSample();
-        cpu_cycle_sample_counter -= cpu_cycles_per_sec_ntsc;
+        cpu_cycle_sample_counter -= standard.cpu_cycles_per_sec;
     }
 }
 
@@ -206,7 +213,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         break;
 
     case Bus::Addr::NOISE_LO: // $400E
-        noise_ch.timer_period = noise_period_table_ntsc[data & 0xF];
+        noise_ch.timer_period = standard.noise_period_table[data & 0xF];
         noise_ch.loop_noise = data & 0x80;
         break;
 
@@ -220,7 +227,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         break;
 
     case Bus::Addr::DMC_FREQ: // $4010
-        dmc.period = dmc_rate_table_ntsc[data & 0xF];
+        dmc.period = standard.dmc_rate_table[data & 0xF];
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
         if (!dmc.IRQ_enable)

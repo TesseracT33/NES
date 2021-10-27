@@ -118,25 +118,33 @@ void Emulator::SetEmulationSpeed(unsigned speed)
 }
 
 
-void Emulator::StartGame(std::string rom_path)
+/* Returns true on success, otherwise false. */
+bool Emulator::PrepareLaunchOfGame(std::string rom_path)
 {
 	// Construct a mapper class instance given the rom file. If it failed (e.g. if the mapper is not supported), return.
 	std::optional<std::shared_ptr<BaseMapper>> mapper_opt = Cartridge::ConstructMapperFromRom(rom_path);
-	if (!mapper_opt.has_value()) return;
+	if (!mapper_opt.has_value()) return false;
 	std::shared_ptr<BaseMapper> mapper = mapper_opt.value();
 	apu.mapper = bus.mapper = ppu.mapper = mapper.get();
 	mapper->cpu = &cpu;
 
 	this->current_rom_path = rom_path;
 
-	apu.PowerOn();
 	bus.Reset();
 	cpu.PowerOn();
-	ppu.PowerOn();
 
-	//std::thread t(&Emulator::MainLoop, this);
-	//t.detach();
-	run_cpu_init_cycles = true;
+	/* The operations of the apu and ppu are affected by the video standard (NTSC/PAL/Dendy). */
+	const System::VideoStandard video_standard = mapper.get()->GetVideoStandard();
+	apu.PowerOn(video_standard);
+	ppu.PowerOn(video_standard);
+
+	return true;
+}
+
+
+void Emulator::LaunchGame()
+{
+	cpu.RunStartUpCycles();
 	MainLoop();
 }
 
@@ -146,13 +154,6 @@ void Emulator::MainLoop()
 	emu_is_running = true;
 	emu_is_paused = false;
 	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
-	
-	/* If this is the first time that MainLoop is called after starting a game, we run eight cpu cycles where the cpu is not executing any instructions. */
-	if (run_cpu_init_cycles)
-	{
-		cpu.RunStartUpCycles();
-		run_cpu_init_cycles = false;
-	}
 
 	while (emu_is_running && !emu_is_paused)
 	{
@@ -207,7 +208,7 @@ void Emulator::Pause()
 
 void Emulator::Reset()
 {
-	StartGame(this->current_rom_path);
+	PrepareLaunchOfGame(this->current_rom_path);
 }
 
 

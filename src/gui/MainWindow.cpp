@@ -139,8 +139,11 @@ void MainWindow::LaunchGame()
 			return;
 	}
 
+	bool success = emulator.PrepareLaunchOfGame(std::string(active_rom_path.mb_str()));
+	if (!success)
+		return;
 	SwitchToGameView();
-	emulator.StartGame(std::string(active_rom_path.mb_str()));
+	emulator.LaunchGame();
 }
 
 
@@ -300,11 +303,10 @@ void MainWindow::Quit()
 void MainWindow::UpdateWindowLabel(bool gameIsRunning)
 {
 	wxSize window_size = GetClientSize();
-	int scale = std::min(window_size.GetWidth() / 256, window_size.GetHeight() / 240); // TODO: hardcoded; fix
 
 	if (gameIsRunning)
 		this->SetLabel(wxString::Format("%s | %s | %ix%i | FPS: %i",
-			emulator_name, wxFileName(active_rom_path).GetName(), 256 * scale, 240 * scale, frames_since_update));
+			emulator_name, wxFileName(active_rom_path).GetName(), window_size.GetWidth(), window_size.GetHeight(), frames_since_update));
 	else
 		this->SetLabel(emulator_name);
 }

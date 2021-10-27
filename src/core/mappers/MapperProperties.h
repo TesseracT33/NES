@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../System.h"
+
 #include "../../Types.h"
 
 struct MapperProperties
@@ -11,7 +13,6 @@ struct MapperProperties
 	bool has_prg_nvram;
 	bool has_trainer;
 	bool mirroring;
-	u8 tv_system;
 	u8 submapper_num;
 	u16 mapper_num;
 	size_t chr_nvram_size;
@@ -19,4 +20,6 @@ struct MapperProperties
 	size_t prg_nvram_size;
 	size_t prg_ram_size;
 	size_t prg_rom_size;
+
+	System::VideoStandard video_standard;
 };

@@ -15,6 +15,7 @@
 #include "Bus.h"
 #include "Component.h"
 #include "CPU.h"
+#include "System.h"
 
 #include "mappers/BaseMapper.h"
 
@@ -28,7 +29,7 @@ public:
 	Observer* gui;
 
 	[[nodiscard]] bool CreateRenderer(const void* window_handle);
-	void PowerOn();
+	void PowerOn(const System::VideoStandard standard);
 	void Reset();
 	void Update();
 
@@ -36,10 +37,11 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	bool IsInVblank() { return current_scanline > post_render_scanline && current_scanline < pre_render_scanline; };
+	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
+	bool IsInVblank() { return scanline >= standard.nmi_scanline; }
 
 	unsigned GetWindowScale() { return scale; }
-	wxSize GetWindowSize() { return wxSize(resolution_x * scale, resolution_y * scale); }
+	wxSize GetWindowSize() { return wxSize(num_pixels_per_scanline * scale, standard.num_visible_scanlines * scale); }
 	void SetWindowScale(unsigned scale) { this->scale = scale; }
 	void SetWindowSize(wxSize size);
 
@@ -51,17 +53,33 @@ private:
 
 	static const size_t oam_size = 0x100;
 	static const size_t secondary_oam_size = 0x20;
-	static const size_t resolution_x = 256;
-	static const size_t resolution_y = 240;
-	static const size_t colour_channels = 3;
-	static const size_t framebuffer_size = resolution_x * resolution_y * colour_channels;
 
+	/* PPU operation details that are affected by the video standard (NTSC/PAL/Dendy): */
+	struct Standard
+	{
+		bool oam_can_be_written_to_during_forced_blanking;
+		bool pre_render_line_is_one_dot_shorter_on_every_other_frame;
+		float dots_per_cpu_cycle;
+		int nmi_scanline;
+		int num_scanlines;
+		int num_scanlines_per_vblank;
+		int num_visible_scanlines;
+	};
+
+	const Standard NTSC  = {  true,  true, 3.0f, 241, 262, 20, 240 };
+	const Standard PAL   = { false, false, 3.2f, 240, 312, 70, 239 };
+	const Standard Dendy = {  true, false, 3.0f, 290, 312, 20, 239 };
+	Standard standard = NTSC; /* The default */
+
+	/* Some PPU operation details that are not affected by the video standard */
+	const int pre_render_scanline = -1;
+	const int num_colour_channels = 3;
+	const int num_cycles_per_scanline = 341; // On NTSC: is actually 340 on scanline 261 if on an odd-numbered frame
+	const int num_pixels_per_scanline = 256; // Horizontal resolution
+	const int open_bus_decay_cycle_length = 30000; // roughly a frame
+
+	/* Settings-related */
 	const unsigned default_scale = 3;
-	const unsigned number_of_cycles_per_scanline_ntsc = 341; // Is actually 340 on scanline 261 if on an odd-numbered frame
-	const unsigned number_of_scanlines_ntsc = 262;
-	const unsigned open_bus_decay_cycle_length = 30000; // roughly a frame
-	const unsigned pre_render_scanline = 261;
-	const unsigned post_render_scanline = 240;
 
 	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
 	const SDL_Color palette[64] = { 
@@ -186,8 +204,8 @@ private:
 	u8 OAMADDR_at_cycle_65;
 	u8 pixel_x_pos = 0;
 
-	unsigned current_scanline = 0;
-	unsigned scanline_cycle_counter;
+	signed scanline = 0;
+	unsigned scanline_cycle;
 	unsigned cycles_until_open_bus_decay;
 
 	u16 bg_pattern_shift_reg[2]{};
@@ -205,8 +223,10 @@ private:
 	unsigned scale, scale_temp;
 	unsigned pixel_offset_x, pixel_offset_y, pixel_offset_x_temp, pixel_offset_y_temp;
 	bool reset_graphics_after_render;
-	u8 framebuffer[framebuffer_size]{};
+	std::vector<u8> framebuffer{};
 	unsigned frame_buffer_pos = 0;
+
+	const size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
 
 	void CheckNMI();
 	void UpdateSpriteEvaluation();

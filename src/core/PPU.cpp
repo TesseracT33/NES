@@ -101,22 +101,32 @@ PPU::~PPU()
 }
 
 
-void PPU::PowerOn()
+void PPU::PowerOn(const System::VideoStandard standard)
 {
 	Reset();
 
 	OAMADDR = reg.v = reg.t = 0;
 	//PPUSTATUS = 0b10100000;
 	PPUSTATUS = 0;
+
+	switch (standard)
+	{
+	case System::VideoStandard::NTSC : this->standard = NTSC ; break;
+	case System::VideoStandard::PAL  : this->standard = PAL  ; break;
+	case System::VideoStandard::Dendy: this->standard = Dendy; break;
+	}
+
+	const size_t framebuffer_size = GetFrameBufferSize();
+	this->framebuffer.resize(framebuffer_size);
 }
 
 
 void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
-	scanline_cycle_counter = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
+	scanline_cycle = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
 	odd_frame = false;
-	current_scanline = 0;
+	scanline = 0;
 }
 
 
@@ -148,18 +158,39 @@ void PPU::Update()
 	LogState();
 #endif
 
-	// PPU::Update() is called once each cpu cycle, but 1 cpu cycle = 3 ppu cycles
-	StepCycle();
-	StepCycle();
-	// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle. Here, we are polling 2/3 in.
-	cpu->PollInterruptInputs();
-	StepCycle();
+	/* PPU::Update() is called once each cpu cycle.
+	   On NTSC/Dendy: 1 cpu cycle = 3 ppu cycles.
+	   On PAL       : 1 cpu cycle = 3.2 ppu cycles. */
+	if (standard.dots_per_cpu_cycle == 3) /* NTSC/Dendy */
+	{
+		StepCycle();
+		StepCycle();
+		// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle. Here, we are polling 2/3 in.
+		cpu->PollInterruptInputs();
+		StepCycle();
+	}
+	else /* PAL */
+	{
+		static int cpu_cycle_counter = 0;
+
+		StepCycle();
+		StepCycle();
+		cpu->PollInterruptInputs();
+		StepCycle();
+
+		if (++cpu_cycle_counter == 5)
+		{
+			/* This makes for a total of 3 * 5 + 1 = 16 = 3.2 * 5 ppu cycles per every 5 cpu cycles. */
+			StepCycle();
+			cpu_cycle_counter = 0;
+		}
+	}
 }
 
 
 void PPU::StepCycle()
 {
-	if (set_sprite_0_hit_flag && scanline_cycle_counter >= 2) // todo: not sure if this should be at the end of this function instead
+	if (set_sprite_0_hit_flag && scanline_cycle >= 2) // todo: not sure if this should be at the end of this function instead
 	{
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 		set_sprite_0_hit_flag = false;
@@ -169,10 +200,10 @@ void PPU::StepCycle()
 		open_bus = 0;
 		open_bus_decayed = true;
 	}
-	if (scanline_cycle_counter == 0)
+	if (scanline_cycle == 0)
 	{
 		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
-		scanline_cycle_counter = 1;
+		scanline_cycle = 1;
 		if (cycle_340_was_skipped_on_last_scanline)
 		{
 			UpdateBGTileFetching();
@@ -181,24 +212,26 @@ void PPU::StepCycle()
 		return;
 	}
 
-	if (current_scanline < post_render_scanline || current_scanline == pre_render_scanline) // Scanlines 0-239, 261
+	/* NTSC     : scanlines -1 (pre-render), 0-239
+	*  PAL/Dendy: scanlines -1 (pre-render), 0-238 */
+	if (scanline < standard.num_visible_scanlines)
 	{
-		if (scanline_cycle_counter <= 256) // Cycles 1-256
+		if (scanline_cycle <= 256) // Cycles 1-256
 		{
 			// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
 			// On odd cycles >= 65, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both are done at once.
 			// On all cycles, push a pixel to the framebuffer.
-			switch (scanline_cycle_counter)
+			switch (scanline_cycle)
 			{
 			case 1:
 				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64. Does not occur on the pre-render scanline
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
-				if (current_scanline != pre_render_scanline)
+				if (scanline != pre_render_scanline)
 					memset(memory.secondary_oam, 0xFF, secondary_oam_size);
 
 				tile_fetcher.SetBGTileFetchingActive();
 
-				if (current_scanline == pre_render_scanline)
+				if (scanline == pre_render_scanline)
 				{
 					PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
 					CheckNMI();
@@ -210,18 +243,18 @@ void PPU::StepCycle()
 				OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
 				sprite_evaluation.Reset();
 				// Sprite evaluation happens either if bg or sprite rendering is enabled, but not on the pre render scanline
-				if (RenderingIsEnabled() && current_scanline != pre_render_scanline)
+				if (RenderingIsEnabled() && scanline != pre_render_scanline)
 					UpdateSpriteEvaluation();
 				ReloadBackgroundShiftRegisters();
 				break;
 
 			default:
-				if (scanline_cycle_counter & 1) // odd cycle
+				if (scanline_cycle & 1) // odd cycle
 				{
-					if (scanline_cycle_counter >= 65 && RenderingIsEnabled() && current_scanline != pre_render_scanline)
+					if (scanline_cycle >= 65 && RenderingIsEnabled() && scanline != pre_render_scanline)
 						UpdateSpriteEvaluation();
 					// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
-					if (scanline_cycle_counter % 8 == 1)
+					if (scanline_cycle % 8 == 1)
 						ReloadBackgroundShiftRegisters();
 				}
 				else // even cycle
@@ -230,27 +263,27 @@ void PPU::StepCycle()
 					if (RenderingIsEnabled())
 					{
 						// Increment the coarse X scroll at cycles 8, 16, ..., 256
-						if (scanline_cycle_counter % 8 == 0)
+						if (scanline_cycle % 8 == 0)
 							reg.increment_coarse_x();
 						// Increment the coarse Y scroll at cycle 256
-						if (scanline_cycle_counter == 256)
+						if (scanline_cycle == 256)
 							reg.increment_y();
 					}
 				}
 				break;
 			}
 
-			// Shift one pixel per cycle during cycles 1-256 on scanlines 0-239
-			if (current_scanline != pre_render_scanline)
+			// Shift one pixel per cycle during cycles 1-256 on visible scanlines
+			if (scanline != pre_render_scanline)
 				ShiftPixel();
 		}
-		else if (scanline_cycle_counter <= 320) // Cycles 257-320
+		else if (scanline_cycle <= 320) // Cycles 257-320
 		{
 			OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one
 
 			static unsigned sprite_index;
 
-			if (scanline_cycle_counter == 257)
+			if (scanline_cycle == 257)
 			{
 				tile_fetcher.SetSpriteTileFetchingActive();
 				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
@@ -258,7 +291,7 @@ void PPU::StepCycle()
 					reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
 				sprite_index = 0;
 			}
-			else if (scanline_cycle_counter == 260)
+			else if (scanline_cycle == 260)
 			{
 				/* When using 8x8 sprites, if the BG uses $0000, and the sprites use $1000, the MMC3 IRQ counter should decrement on PPU cycle 260. */
 				if (!PPUCTRL_sprite_height && !PPUCTRL_bg_tile_sel && PPUCTRL_sprite_tile_sel)
@@ -271,7 +304,7 @@ void PPU::StepCycle()
 			// On cycles 5 and 7, update the sprite tile fetching (each step takes 2 cycles).
 			//    Note: it is also supposed to update at cycles 1 and 3, but it then fetches garbage data. Todo: is there any point in emulating this? Reading is done from interval VRAM, not CHR
 			// On cycle 8 (i.e. the cycle after each period: 266, 274, ..., 321), update the sprite shift registers with pattern data.
-			switch ((scanline_cycle_counter - 257) % 8)
+			switch ((scanline_cycle - 257) % 8)
 			{
 			case 0:
 				tile_fetcher.sprite_y_pos            = memory.secondary_oam[4 * sprite_index    ];
@@ -283,7 +316,7 @@ void PPU::StepCycle()
 				break;
 
 			case 1:
-				if (scanline_cycle_counter >= 266)
+				if (scanline_cycle >= 266)
 					ReloadSpriteShiftRegisters(sprite_index - 2); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 2.
 				break;
 
@@ -294,7 +327,7 @@ void PPU::StepCycle()
 			default: break;
 			}
 
-			if (current_scanline == pre_render_scanline && scanline_cycle_counter >= 280 && scanline_cycle_counter <= 304 && RenderingIsEnabled())
+			if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304 && RenderingIsEnabled())
 			{
 				// Copy the vertical bits of t to v
 				reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
@@ -307,14 +340,14 @@ void PPU::StepCycle()
 			// The coarse X scroll is incremented at cycles 328 and 336.
 			// Between cycles 322 and 337, the background shift registers are shifted.
 			// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
-			if (scanline_cycle_counter >= 322 && scanline_cycle_counter <= 337)
+			if (scanline_cycle >= 322 && scanline_cycle <= 337)
 			{
 				bg_pattern_shift_reg[0] <<= 1;
 				bg_pattern_shift_reg[1] <<= 1;
 				bg_palette_attr_reg [0] <<= 1;
 				bg_palette_attr_reg [1] <<= 1;
 			}
-			switch (scanline_cycle_counter)
+			switch (scanline_cycle)
 			{
 			case 321:
 				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th and last sprite.
@@ -339,34 +372,48 @@ void PPU::StepCycle()
 				break;
 
 			default:
-				if ((scanline_cycle_counter & 1) == 0)
+				if ((scanline_cycle & 1) == 0)
 					UpdateBGTileFetching();
 				break;
 			}
 		}
 	}
-	else if (current_scanline == post_render_scanline + 1) // scanline 241
+	/* NTSC: scanline 241. PAL: scanline 240. Dendy: scanline 290 */
+	else if (scanline == standard.nmi_scanline)
 	{
-		if (scanline_cycle_counter == 1)
+		if (scanline_cycle == 1)
 		{
 			PPUSTATUS |= PPUSTATUS_vblank_mask;
 			CheckNMI();
-			scanline_cycle_counter = 2;
+			scanline_cycle = 2;
 			return;
 		}
 	}
 
-	// Increment the scanline cycle counter.
-	// With rendering disabled (background and sprites disabled in PPUMASK ($2001)), each scanline is 341 clocks long.
-	// With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
-	scanline_cycle_counter = (scanline_cycle_counter + 1) % number_of_cycles_per_scanline_ntsc;
-	if (current_scanline == pre_render_scanline && scanline_cycle_counter == 340 && odd_frame && RenderingIsEnabled())
+	// Increment the scanline cycle counter. Normally, each scanline is 341 clocks long.
+	// On NTSC specifically:
+	//   With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
+	if (scanline_cycle == 339)
 	{
-		scanline_cycle_counter = 0;
-		cycle_340_was_skipped_on_last_scanline = true;
+		if (standard.pre_render_line_is_one_dot_shorter_on_every_other_frame &&
+			scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
+		{
+			scanline_cycle = 0;
+			cycle_340_was_skipped_on_last_scanline = true;
+			PrepareForNewScanline();
+		}
+		else
+			scanline_cycle = 340;
 	}
-	if (scanline_cycle_counter == 0)
+	else if (scanline_cycle == 340)
+	{
+		scanline_cycle = 0;
 		PrepareForNewScanline();
+	}
+	else
+	{
+		scanline_cycle++;
+	}
 }
 
 
@@ -398,7 +445,7 @@ u8 PPU::ReadRegister(u16 addr)
 		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
 		// TODO: is this actually true? Mesen does not implement this, and blargg ppu_open_bus doesn't expect it.
 		u8 ret;
-		if (scanline_cycle_counter >= 1 && scanline_cycle_counter <= 64)
+		if (scanline_cycle >= 1 && scanline_cycle <= 64)
 			ret = 0xFF;
 		else
 		{
@@ -483,8 +530,10 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		break;
 
 	case Bus::Addr::OAMDATA: // $2004 (read/write)
-		// OAM can only be written to during vertical or forced blanking
-		if (IsInVblank() || !RenderingIsEnabled())
+		// On NTSC/Dendy: OAM can only be written to during vertical (up to 20 scanlines after NMI) or forced blanking.
+		// On PAL: OAM can only be written to during the first 20 scanlines after NMI
+		if (scanline < standard.nmi_scanline + 20 ||
+			standard.oam_can_be_written_to_during_forced_blanking && !RenderingIsEnabled())
 		{
 			memory.oam[OAMADDR++] = data;
 			WriteOpenBus(data);
@@ -665,7 +714,7 @@ void PPU::UpdateSpriteEvaluation()
 		if (sprite_evaluation.m == 0) // Means that the read oam entry is being interpreted as a y-position.
 		{
 			// If the y-position is in range, copy the three remaining bytes for that sprite. Else move on to the next sprite.
-			if (current_scanline >= oam_entry && current_scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
+			if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
 				sprite_evaluation.m = 1;
 			else
 				increment_n();
@@ -675,7 +724,7 @@ void PPU::UpdateSpriteEvaluation()
 	}
 	else
 	{
-		if (current_scanline >= oam_entry && current_scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
+		if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
 		{
 			// If a ninth in-range sprite is found, set the sprite overflow flag.
 			PPUSTATUS |= PPUSTATUS_sprite_overflow_mask;
@@ -730,13 +779,13 @@ void PPU::PushPixel(u8 nes_col)
 
 void PPU::RenderGraphics()
 {
-	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(framebuffer, resolution_x, resolution_y,
-		8 * colour_channels, resolution_x * colour_channels, 0x0000FF, 0x00FF00, 0xFF0000, 0);
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(&framebuffer[0], num_pixels_per_scanline, standard.num_visible_scanlines,
+		8 * num_colour_channels, num_pixels_per_scanline * num_colour_channels, 0x0000FF, 0x00FF00, 0xFF0000, 0);
 
 	SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
 
-	rect.w = resolution_x * scale;
-	rect.h = resolution_y * scale;
+	rect.w = num_pixels_per_scanline * scale;
+	rect.h = standard.num_visible_scanlines * scale;
 	rect.x = pixel_offset_x;
 	rect.y = pixel_offset_y;
 	SDL_RenderCopy(renderer, texture, NULL, &rect);
@@ -820,7 +869,7 @@ void PPU::ShiftPixel()
 	    pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
 	{
 		// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
-		if (scanline_cycle_counter >= 2)
+		if (scanline_cycle >= 2)
 			PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 		else
 			set_sprite_0_hit_flag = true;
@@ -890,11 +939,6 @@ void PPU::ReloadSpriteShiftRegisters(unsigned sprite_index)
 
 void PPU::UpdateBGTileFetching()
 {
-	if (scanline_cycle_counter == 2)
-	{
-		int a = 3;
-	}
-
 	switch (tile_fetcher.step)
 	{
 	case TileFetcher::Step::fetch_nametable_byte:
@@ -981,7 +1025,7 @@ void PPU::UpdateSpriteTileFetching()
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
 		// TODO: not sure if reg.v should be used instead of current_scanline
-		u8 scanline_sprite_y_delta = current_scanline - tile_fetcher.sprite_y_pos;
+		u8 scanline_sprite_y_delta = scanline - tile_fetcher.sprite_y_pos;
 		u8 sprite_row_num =  scanline_sprite_y_delta; // which row of the sprite the scanline falls on (0-7)
 		bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
 		if (flip_sprite_y)
@@ -1075,9 +1119,15 @@ void PPU::PrepareForNewFrame()
 
 void PPU::PrepareForNewScanline()
 {
-	current_scanline = (current_scanline + 1) % number_of_scanlines_ntsc;
-	if (current_scanline == 0)
+	if (scanline == standard.num_scanlines - 2) // E.g. on NTSC, num_scanlines == 262, and we jump straight from 260 to -1 (pre-render).
+	{
+		scanline = -1;
 		PrepareForNewFrame();
+	}
+	else
+	{
+		scanline++;
+	}
 	pixel_x_pos = 0;
 }
 
@@ -1088,9 +1138,9 @@ void PPU::SetWindowSize(wxSize size)
 
 	if (width > 0 && height > 0)
 	{
-		scale_temp = std::min(width / resolution_x, height / resolution_y);
-		pixel_offset_x_temp = 0.5 * (width - scale_temp * resolution_x);
-		pixel_offset_y_temp = 0.5 * (height - scale_temp * resolution_y);
+		scale_temp = std::min(width / num_pixels_per_scanline, height / standard.num_visible_scanlines);
+		pixel_offset_x_temp = 0.5 * (width - scale_temp * num_pixels_per_scanline);
+		pixel_offset_y_temp = 0.5 * (height - scale_temp * standard.num_visible_scanlines);
 		reset_graphics_after_render = true;
 	}
 }
@@ -1110,5 +1160,5 @@ void PPU::SetDefaultConfig()
 
 void PPU::LogState()
 {
-	Logging::ReportPpuState(current_scanline, scanline_cycle_counter);
+	Logging::ReportPpuState(scanline, scanline_cycle);
 }
