@@ -26,7 +26,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			chr_bank = data; // The CHR capacity is 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
+			chr_bank = data % GetNumCHRBanks(); // The CHR capacity is at most 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
 		}
 	};
 
