@@ -2,18 +2,19 @@
 
 #include "BaseMapper.h"
 
-class AxROM final : public BaseMapper
+class AxROM : public BaseMapper
 {
 public:
-	AxROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
+	AxROM(MapperProperties properties) : BaseMapper(properties),
+		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
 		if (addr <= 0x7FFF)
 		{
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to AxROM::ReadPRG(u16).", addr));
+			return 0xFF;
 		}
-		// $8000-$BFFF: 32 KiB switchable PRG ROM bank
+		// CPU $8000-$BFFF: 32 KiB switchable PRG ROM bank
 		return prg_rom[addr - 0x8000 + prg_bank * 0x8000];
 	};
 
@@ -21,7 +22,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 7) % GetNumPRGROMBanks();
+			prg_bank = (data & 0x07) % num_prg_rom_banks; /* Select 32 KiB PRG ROM bank */
 			vram_page = data & 0x10;
 		}
 	};
@@ -37,7 +38,7 @@ public:
 		chr[addr] = data;
 	};
 
-	u16 GetNametableAddr(u16 addr) override
+	u16 TransformNametableAddr(u16 addr) override
 	{
 		// TODO: not sure about this
 		if (vram_page == 0)
@@ -45,7 +46,10 @@ public:
 		return NametableAddrSingleUpper(addr);
 	};
 
-private:
+protected:
+	static const size_t prg_rom_bank_size = 0x8000;
+	const size_t num_prg_rom_banks;
+
 	bool vram_page = 0;
 	unsigned prg_bank : 3 = 0;
 };

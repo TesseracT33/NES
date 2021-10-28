@@ -15,7 +15,7 @@ class BaseMapper
 public:
 	CPU* cpu;
 
-	BaseMapper(MapperProperties _mapper_properties) : properties(_mapper_properties)
+	BaseMapper(MapperProperties properties) : properties(properties)
 	{
 		/* If CHR is RAM, then its size won't be given by the rom header. Instead, the mapper construct should take care of this. */
 		if (properties.has_chr_ram)
@@ -47,24 +47,16 @@ public:
 	virtual void WritePRG(u16 addr, u8 data) {};
 	virtual void WriteCHR(u16 addr, u8 data) {};
 
-	virtual u16 GetNametableAddr(u16 addr) = 0;
+	virtual u16 TransformNametableAddr(u16 addr) = 0;
 
 	virtual void ClockIRQ() {};
 
 protected:
-	static constexpr size_t chr_bank_size     = 0x2000; /* These are the defaults; most supported mappers use them. */
-	static constexpr size_t prg_ram_bank_size = 0x2000;
-	static constexpr size_t prg_rom_bank_size = 0x4000;
-
 	const MapperProperties properties;
 
 	std::vector<u8> chr; /* Either RAM or ROM (a cart cannot have both). */
 	std::vector<u8> prg_ram;
 	std::vector<u8> prg_rom;
-
-	virtual constexpr size_t GetNumCHRBanks   () const { return properties.chr_size     / chr_bank_size    ; };
-	virtual constexpr size_t GetNumPRGRAMBanks() const { return properties.prg_ram_size / prg_ram_bank_size; };
-	virtual constexpr size_t GetNumPRGROMBanks() const { return properties.prg_rom_size / prg_rom_bank_size; };
 
 	// Horizontal mirroring; addresses in $2400-$27FF and $2C00-$2FFF are transformed into $2000-$23FF and $2800-$2BFF, respectively.
 	u16 NametableAddrHorizontal(u16 addr) const { return addr & ~0x400; }

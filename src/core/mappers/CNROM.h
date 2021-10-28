@@ -2,16 +2,17 @@
 
 #include "BaseMapper.h"
 
-class CNROM final : public BaseMapper
+class CNROM : public BaseMapper
 {
 public:
-	CNROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
+	CNROM(MapperProperties properties) : BaseMapper(properties),
+		num_chr_banks(properties.chr_size / chr_bank_size) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
 		if (addr <= 0x7FFF)
 		{
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to CNROM::ReadPRG(u16).", addr));
+			return 0xFF;
 		}
 		// CPU $8000-$BFFF: First 16 KiB of ROM.
 		if (addr <= 0xBFFF)
@@ -26,7 +27,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			chr_bank = data % GetNumCHRBanks(); // The CHR capacity is at most 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
+			chr_bank = data % num_chr_banks; // The CHR capacity is at most 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
 		}
 	};
 
@@ -36,14 +37,17 @@ public:
 		return chr[addr + 0x2000 * chr_bank];
 	}
 
-	u16 GetNametableAddr(u16 addr) override
+	u16 TransformNametableAddr(u16 addr) override
 	{
 		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
 		return NametableAddrVertical(addr);
 	};
 
-private:
+protected:
+	static const size_t chr_bank_size = 0x2000;
+	const size_t num_chr_banks;
+
 	unsigned chr_bank : 2 = 0;
 };
 

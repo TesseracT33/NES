@@ -2,10 +2,11 @@
 
 #include "BaseMapper.h"
 
-class MMC1 final : public BaseMapper
+class MMC1 : public BaseMapper
 {
 public:
-	MMC1(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
+	MMC1(MapperProperties _properties) : BaseMapper(_properties),
+		num_prg_rom_banks(_properties.prg_rom_size / prg_rom_bank_size) {}
 
 	// TODO: how to distinguish between the different SxROM boards with CHR ram?
 
@@ -13,7 +14,7 @@ public:
 	{
 		if (addr <= 0x5FFF)
 		{
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC1::ReadPRG(u16).", addr));
+			return 0xFF;
 		}
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		if (addr <= 0x7FFF)
@@ -39,9 +40,7 @@ public:
 		case 3: // 16 KiB mode 2; Switch 16 KiB bank at $8000-$BFFF and fix the last bank at $C000-$FFFF.
 			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
-			return prg_rom[addr - 0xC000 + (GetNumPRGROMBanks() - 1) * 0x4000];
-
-		default: return 0xFF; // impossible
+			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
 		}
 	};
 
@@ -49,7 +48,7 @@ public:
 	{
 		if (addr <= 0x5FFF)
 		{
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC1::WritePRG(u16, u8).", addr));
+			return;
 		}
 		else if (addr <= 0x7FFF)
 		{
@@ -100,7 +99,7 @@ public:
 						break;
 
 					case 0xE: case 0xF:
-						prg_bank = shift_reg % GetNumPRGROMBanks();
+						prg_bank = shift_reg % num_prg_rom_banks;
 						break;
 
 					default: break; // impossible
@@ -141,7 +140,7 @@ public:
 			chr[addr + 0x2000 * (chr_bank_0 & 0x1E)] = data;
 	};
 
-	u16 GetNametableAddr(u16 addr) override
+	u16 TransformNametableAddr(u16 addr) override
 	{
 		switch (control_reg & 3)
 		{
@@ -152,7 +151,10 @@ public:
 		}
 	};
 
-private:
+protected:
+	static const size_t prg_rom_bank_size = 0x4000;
+	const size_t num_prg_rom_banks;
+
 	// TODO: what are the default values of these?
 	unsigned chr_bank_0   : 5 = 0;
 	unsigned chr_bank_1   : 5 = 0;

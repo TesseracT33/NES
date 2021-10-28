@@ -127,6 +127,7 @@ void PPU::Reset()
 	scanline_cycle = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
 	odd_frame = false;
 	scanline = 0;
+	pixel_x_pos = 0;
 }
 
 
@@ -1074,7 +1075,7 @@ u8 PPU::ReadMemory(u16 addr)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = mapper->GetNametableAddr(addr);
+		addr = mapper->TransformNametableAddr(addr);
 		return memory.vram[addr & 0xFFF];
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
@@ -1097,7 +1098,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = mapper->GetNametableAddr(addr);
+		addr = mapper->TransformNametableAddr(addr);
 		memory.vram[addr & 0xFFF] = data;
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F

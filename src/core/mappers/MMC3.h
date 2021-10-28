@@ -4,10 +4,11 @@
 
 #include "BaseMapper.h"
 
-class MMC3 final : public BaseMapper
+class MMC3 : public BaseMapper
 {
 public:
-	MMC3(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
+	MMC3(MapperProperties properties) : BaseMapper(properties),
+		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -24,7 +25,7 @@ public:
 		case 0x8: case 0x9:
 			if (prg_rom_bank_mode == 0)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0x8000];
-			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 2) - 0x8000];
+			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0x8000];
 
 		// CPU $A000-$BFFF: 8 KiB switchable PRG ROM bank
 		case 0xA: case 0xB:
@@ -34,14 +35,14 @@ public:
 		case 0xC: case 0xD:
 			if (prg_rom_bank_mode == 1)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0xC000];
-			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 2) - 0xC000];
+			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0xC000];
 
 		// CPU $E000-$FFFF: 8 KiB PRG ROM bank, fixed to the last bank
 		case 0xE: case 0xF:
-			return prg_rom[addr + 0x2000 * (GetNumPRGROMBanks() - 1) - 0xE000];
+			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 1) - 0xE000];
 
 		default:
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::ReadPRG(u16).", addr));
+			return 0xFF;
 		}
 	};
 
@@ -104,7 +105,7 @@ public:
 			break;
 
 		default:
-			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::WritePRG(u16, u8).", addr));
+			break;
 		}
 	};
 
@@ -242,7 +243,7 @@ public:
 		}
 	}
 
-	u16 GetNametableAddr(u16 addr) override
+	u16 TransformNametableAddr(u16 addr) override
 	{
 		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
@@ -264,12 +265,9 @@ public:
 			IRQ_counter--;
 	}
 
-private:
-	static constexpr size_t chr_bank_size     = 0x1000;
-	static constexpr size_t prg_rom_bank_size = 0x2000;
-
-	constexpr size_t GetNumCHRBanks   () const override { return properties.chr_size     / chr_bank_size    ; };
-	constexpr size_t GetNumPRGROMBanks() const override { return properties.prg_rom_size / prg_rom_bank_size; };
+protected:
+	static const size_t prg_rom_bank_size = 0x2000;
+	const size_t num_prg_rom_banks;
 
 	bool nametable_mirroring;
 

@@ -2,7 +2,7 @@
 
 #include "BaseMapper.h"
 
-class NROM final : public BaseMapper
+class NROM : public BaseMapper
 {
 public:
 	NROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
@@ -49,7 +49,7 @@ public:
 			chr[addr] = data;
 	}
 
-	u16 GetNametableAddr(u16 addr) override
+	u16 TransformNametableAddr(u16 addr) override
 	{
 		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
