@@ -51,12 +51,14 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
 {
 	switch (mapper_properties.mapper_num)
 	{
-	case 0x00: MapperFactory<NROM>(); break;
-	case 0x01: MapperFactory<MMC1>(); break;
-	case 0x02: MapperFactory<UxROM>(); break;
-	case 0x03: MapperFactory<CNROM>(); break;
-	case 0x04: MapperFactory<MMC3>(); break;
-	case 0x07: MapperFactory<AxROM>(); break;
+	case   0: MapperFactory<NROM>     (); break;
+	case   1: MapperFactory<MMC1>     (); break;
+	case   2: MapperFactory<UxROM>    (); break;
+	case   3: MapperFactory<CNROM>    (); break;
+	case   4: MapperFactory<MMC3>     (); break;
+	case   7: MapperFactory<AxROM>    (); break;
+	case  94: MapperFactory<Mapper094>(); break;
+	case 180: MapperFactory<Mapper180>(); break;
 	default:
 		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_properties.mapper_num));
 		return std::nullopt;
