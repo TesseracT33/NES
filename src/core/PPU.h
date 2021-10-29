@@ -24,7 +24,7 @@ class PPU final : public Component
 public:
 	~PPU();
 
-	BaseMapper* mapper;
+	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, the other components are not. */
 	CPU* cpu;
 	Observer* gui;
 

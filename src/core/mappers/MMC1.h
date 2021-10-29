@@ -5,14 +5,8 @@
 class MMC1 : public BaseMapper
 {
 public:
-	MMC1(MapperProperties properties) : BaseMapper(properties),
-		/* If CHR is RAM, then 'chr_size' will be given as 0. However, all carts should then have 128 KiB of CHR RAM. */
-		num_chr_banks((properties.chr_size > 0 ? properties.chr_size : chr_ram_size) / chr_bank_size),
-		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size)
-	{
-		if (properties.chr_size == 0)
-			properties.chr_size = chr_ram_size;
-	}
+	MMC1(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, MutateProperties(properties)) {}
 
 	// TODO: how to distinguish between the different SxROM boards with CHR ram?
 	// TODO: implement PRG RAM banking
@@ -44,7 +38,7 @@ public:
 				// Effectively, $8000-$BFFF is mapped to 'prg_bank & ~0x01', and $C000-$FFFF to '(prg_bank & ~0x01) + 1'
 				// If 'prg_bank & ~0x01' is the last 16 KiB bank, transform addresses $C000-$FFFF into $8000-$BFFF.
 				u8 aligned_bank = prg_bank & ~0x01;
-				if (aligned_bank == num_prg_rom_banks - 1)
+				if (aligned_bank == properties.num_prg_rom_banks - 1)
 					addr &= ~0x4000;
 				return prg_rom[addr - 0x8000 + aligned_bank * 0x4000];
 			}
@@ -57,7 +51,7 @@ public:
 		case 3: // 16 KiB mode 2; Switch 16 KiB bank at $8000-$BFFF and fix the last bank at $C000-$FFFF.
 			if (addr <= 0xBFFF)
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
-			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
 		}
 	};
 
@@ -100,15 +94,15 @@ public:
 						break;
 
 					case 0xA: case 0xB: /* CHR bank 0 (internal, $A000-$BFFF) */
-						chr_bank_0 = shift_reg % num_chr_banks;
+						chr_bank_0 = shift_reg % properties.num_chr_banks;
 						break;
 
 					case 0xC: case 0xD: /* CHR bank 1 (internal, $C000-$DFFF) */
-						chr_bank_1 = shift_reg % num_chr_banks;
+						chr_bank_1 = shift_reg % properties.num_chr_banks;
 						break;
 
 					case 0xE: case 0xF: /* PRG bank (internal, $E000-$FFFF) */
-						prg_bank = (shift_reg & 0xF) % num_prg_rom_banks;
+						prg_bank = (shift_reg & 0xF) % properties.num_prg_rom_banks;
 						prg_ram_enabled = shift_reg & 0x10;
 						break;
 
@@ -129,7 +123,7 @@ public:
 		if (chr_bank_mode == 0)
 		{
 			u8 aligned_bank = chr_bank_0 & ~0x01;
-			if (aligned_bank == num_chr_banks - 1)
+			if (aligned_bank == properties.num_chr_banks - 1)
 				addr &= 0xFFF;
 			return chr[addr + 0x1000 * aligned_bank];
 		}
@@ -167,12 +161,6 @@ public:
 	};
 
 protected:
-	static const size_t chr_bank_size     = 0x1000;
-	static const size_t chr_ram_size      = 0x32000;
-	static const size_t prg_rom_bank_size = 0x4000;
-	const size_t num_chr_banks;
-	const size_t num_prg_rom_banks;
-
 	// TODO: what are the default values of these?
 	unsigned chr_bank_0        : 5 = 0;
 	unsigned chr_bank_1        : 5 = 0;
@@ -183,4 +171,13 @@ protected:
 	unsigned prg_ram_enabled   : 1 = 0;
 	unsigned prg_rom_bank_mode : 2 = 3; /* nesdev seem to suggest that many carts start in PRG ROM bank mode 3. */
 	unsigned shift_reg         : 5 = 0x10;
+
+private:
+	static MapperProperties MutateProperties(MapperProperties properties)
+	{
+		SetCHRBankSize(properties, 0x1000);
+		SetCHRRAMSize(properties, 0x32000); /* Carts with CHR RAM have 128 KiB capacity */
+		SetPRGRAMSize(properties, 0x2000);
+		return properties;
+	};
 };

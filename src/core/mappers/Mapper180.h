@@ -5,7 +5,8 @@
 class Mapper180 : public UxROM
 {
 public:
-	Mapper180(MapperProperties mapper_properties) : UxROM(mapper_properties) {}
+	Mapper180(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		UxROM(chr_prg_rom, properties) {}
 
 	u8 ReadPRG(u16 addr) override
 	{

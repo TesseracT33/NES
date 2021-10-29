@@ -15,10 +15,11 @@ class BusImpl final : public Bus, public Component
 {
 public:
 	APU* apu;
-	BaseMapper* mapper;
 	CPU* cpu;
 	Joypad* joypad;
 	PPU* ppu;
+
+	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, the other components are not. */
 
 	void Initialize();
 	void Reset();

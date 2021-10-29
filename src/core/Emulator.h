@@ -37,7 +37,7 @@ public:
 
 	Observer* gui;
 
-	[[nodiscard]] bool PrepareLaunchOfGame(std::string rom_path);
+	[[nodiscard]] bool PrepareLaunchOfGame(const std::string& rom_path);
 
 	void LaunchGame();
 	void MainLoop();

@@ -5,7 +5,8 @@
 class NROM : public BaseMapper
 {
 public:
-	NROM(MapperProperties mapper_properties) : BaseMapper(mapper_properties) {}
+	NROM(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, MutateProperties(properties)) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -54,6 +55,13 @@ public:
 		if (properties.mirroring == 0)
 			return NametableAddrHorizontal(addr);
 		return NametableAddrVertical(addr);
+	};
+
+private:
+	static MapperProperties MutateProperties(MapperProperties properties)
+	{
+		SetPRGRAMSize(properties, 0x2000);
+		return properties;
 	};
 };
 

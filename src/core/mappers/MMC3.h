@@ -7,8 +7,8 @@
 class MMC3 : public BaseMapper
 {
 public:
-	MMC3(MapperProperties properties) : BaseMapper(properties),
-		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size) {}
+	MMC3(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, MutateProperties(properties)) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -25,7 +25,7 @@ public:
 		case 0x8: case 0x9:
 			if (prg_rom_bank_mode == 0)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0x8000];
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0x8000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0x8000];
 
 		// CPU $A000-$BFFF: 8 KiB switchable PRG ROM bank
 		case 0xA: case 0xB:
@@ -35,11 +35,11 @@ public:
 		case 0xC: case 0xD:
 			if (prg_rom_bank_mode == 1)
 				return prg_rom[addr + 0x2000 * rom_bank[6] - 0xC000];
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 2) - 0xC000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 2) - 0xC000];
 
 		// CPU $E000-$FFFF: 8 KiB PRG ROM bank, fixed to the last bank
 		case 0xE: case 0xF:
-			return prg_rom[addr + 0x2000 * (num_prg_rom_banks - 1) - 0xE000];
+			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 1) - 0xE000];
 
 		default:
 			return 0xFF;
@@ -266,9 +266,6 @@ public:
 	}
 
 protected:
-	static const size_t prg_rom_bank_size = 0x2000;
-	const size_t num_prg_rom_banks;
-
 	bool nametable_mirroring;
 
 	/* 0: two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF;
@@ -300,5 +297,13 @@ protected:
 	u8 IRQ_counter_reload = 0;
 	u8 value_last_read_from_prg_ram = 0;
 	u8 rom_bank[8]{}; // 0..5 : CHR.    6, 7 : PRG
+
+private:
+	static MapperProperties MutateProperties(MapperProperties properties)
+	{
+		SetPRGRAMSize(properties, 0x2000);
+		SetPRGROMBankSize(properties, 0x2000);
+		return properties;
+	}
 };
 

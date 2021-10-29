@@ -2,72 +2,78 @@
 #include "Cartridge.h"
 
 
-MapperProperties Cartridge::mapper_properties{};
-std::shared_ptr<BaseMapper> Cartridge::mapper{};
-
-
 std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(const std::string& rom_path)
 {
-	FILE* rom_file = fopen(rom_path.c_str(), "rb");
-	if (rom_file == NULL)
+	/* Attempt to open the rom file */
+	std::ifstream rom_ifs{rom_path, std::ifstream::in | std::ifstream::binary};
+	if (!rom_ifs)
 	{
 		wxMessageBox("Failed to open rom file.");
 		return std::nullopt;
 	}
 
-	fseek(rom_file, 0, SEEK_END);
-	const size_t rom_size = ftell(rom_file);
-	rewind(rom_file);
+	/* Compute the rom file size */
+	rom_ifs.seekg(0, rom_ifs.end);
+	const size_t rom_size = rom_ifs.tellg();
+	rom_ifs.seekg(0, rom_ifs.beg);
 
-	// Read and parse the rom header
-	const size_t header_size = 0x10;
-	u8 header[header_size];
-	fread(header, 1, header_size, rom_file);
-	bool success = ParseHeader(header);
+	/* Read and parse the rom header (16 bytes), containing properties of the cartridge/mapper. */
+	std::array<u8, header_size> header{};
+	MapperProperties mapper_properties{};
+	rom_ifs.read((char*)&header[0], header_size);
+	bool success = ParseHeader(header, mapper_properties);
 	if (!success)
 		return std::nullopt;
 
-	// Match and construct a mapper. If it fails (e.g. due to unsupported mapper detected), return.
-	std::optional<std::shared_ptr<BaseMapper>> mapper = ConstructMapper();
+	/* Setup the various vectors (e.g.prg_rom, chr_rom) inside of the mapper, by reading the full rom file.
+	   The rom layout is the following:    header | trainer (optional) | PRG ROM | CHR ROM    */
+	const size_t trainer_size = 0x200;
+	const size_t prg_rom_start = header_size + (mapper_properties.has_trainer ? trainer_size : 0);
+	const size_t chr_prg_rom_size = rom_size - prg_rom_start;
+	const size_t specified_chr_prg_rom_size = mapper_properties.chr_size + mapper_properties.prg_rom_size;
+
+	// TODO: compare specified_chr_prg_rom_size with chr_prg_rom_size
+
+	std::vector<u8> rom_vec{};
+	rom_vec.resize(chr_prg_rom_size);
+	rom_ifs.seekg(prg_rom_start);
+	rom_ifs.read((char*)&rom_vec[0], chr_prg_rom_size);
+
+	/* Match, construct and return a mapper. If the construction fails (e.g. due to unsupported mapper detected), return. */
+	std::optional<std::shared_ptr<BaseMapper>> mapper = ConstructMapperFromMapperNumber(rom_vec, mapper_properties);
 	if (!mapper.has_value())
 		return std::nullopt;
-
-	// Setup the various vectors (e.g. prg_rom, chr_rom) inside of the mapper, by reading the full rom file
-	const size_t trainer_size = 0x200;
-	const size_t read_start = header_size + (mapper_properties.has_trainer ? trainer_size : 0);
-	const size_t chr_prg_rom_size = rom_size - read_start;
-	u8* rom_arr = new u8[chr_prg_rom_size];
-	fseek(rom_file, read_start, SEEK_SET);
-	fread(rom_arr, 1, chr_prg_rom_size, rom_file);
-	mapper->get()->LayoutMemory(rom_arr);
-	delete[] rom_arr;
-	fclose(rom_file);
-
 	return mapper;
 }
 
 
-std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapper()
+std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperNumber(const std::vector<u8> rom_vec, MapperProperties& mapper_properties)
 {
-	switch (mapper_properties.mapper_num)
+	auto Instantiate = [&] <typename Mapper> () -> std::optional<std::shared_ptr<BaseMapper>>
 	{
-	case   0: MapperFactory<NROM>     (); break;
-	case   1: MapperFactory<MMC1>     (); break;
-	case   2: MapperFactory<UxROM>    (); break;
-	case   3: MapperFactory<CNROM>    (); break;
-	case   4: MapperFactory<MMC3>     (); break;
-	case   7: MapperFactory<AxROM>    (); break;
-	case  94: MapperFactory<Mapper094>(); break;
-	case 180: MapperFactory<Mapper180>(); break;
+		std::shared_ptr<BaseMapper> mapper = std::make_shared<Mapper>(rom_vec, mapper_properties);
+		return std::make_optional<std::shared_ptr<BaseMapper>>(mapper);
+	};
+
+	switch (mapper_properties.mapper_num)
+	{ /* The syntax is a bit strange, but this is just calling the lambda with a particular type. */
+	case   0: return Instantiate.template operator() < NROM      > ();
+	case   1: return Instantiate.template operator() < MMC1      > ();
+	case   2: return Instantiate.template operator() < UxROM     > ();
+	case   3: return Instantiate.template operator() < CNROM     > ();
+	case   4: return Instantiate.template operator() < MMC3      > ();
+	case   7: return Instantiate.template operator() < AxROM     > ();
+	case  94: return Instantiate.template operator() < Mapper094 > ();
+	case 180: return Instantiate.template operator() < Mapper180 > ();
 	default:
 		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_properties.mapper_num));
 		return std::nullopt;
 	}
-	return std::make_optional<std::shared_ptr<BaseMapper>>(mapper);
 }
 
 
-bool Cartridge::ParseHeader(u8 header[])
+/* Returns true on success */
+bool Cartridge::ParseHeader(const std::array<u8, header_size>& header, MapperProperties& mapper_properties)
 {
 	// https://wiki.nesdev.com/w/index.php/NES_2.0#Identification
 	/* Check if the header is a valid iNES header */
@@ -78,19 +84,19 @@ bool Cartridge::ParseHeader(u8 header[])
 	}
 
 	/* The first eight bytes of both the iNES and NES 2.0 headers have the same meaning. */
-	ParseFirstEightBytesOfHeader(header);
+	ParseFirstEightBytesOfHeader(header, mapper_properties);
 
 	/* Check if the header is a valid NES 2.0 header. Then, parse bytes 8-15. */
 	if ((header[7] & 0x0C) == 0x08)
-		ParseNES20Header(header);
+		ParseNES20Header(header, mapper_properties);
 	else
-		ParseiNESHeader(header);
+		ParseiNESHeader(header, mapper_properties);
 
 	return true;
 }
 
 
-void Cartridge::ParseFirstEightBytesOfHeader(u8 header[])
+void Cartridge::ParseFirstEightBytesOfHeader(const std::array<u8, header_size>& header, MapperProperties& mapper_properties)
 {
 	/* Parse bytes 0-7 of the header. These have the same meaning on both iNES and NES 2.0 headers. */
 	mapper_properties.prg_rom_size = header[4] * prg_rom_bank_size;
@@ -115,7 +121,7 @@ void Cartridge::ParseFirstEightBytesOfHeader(u8 header[])
 }
 
 
-void Cartridge::ParseiNESHeader(u8 header[])
+void Cartridge::ParseiNESHeader(const std::array<u8, header_size>& header, MapperProperties& mapper_properties)
 {
 	/* Parse bytes 8-15 of an iNES header. */
 	mapper_properties.prg_ram_size = header[8];
@@ -129,7 +135,7 @@ void Cartridge::ParseiNESHeader(u8 header[])
 }
 
 
-void Cartridge::ParseNES20Header(u8 header[])
+void Cartridge::ParseNES20Header(const std::array<u8, header_size>& header, MapperProperties& mapper_properties)
 {
 	/* Parse bytes 8-15 of a NES 2.0 header. */
 	mapper_properties.mapper_num |= (header[8] & 0xF) << 8;

@@ -5,8 +5,8 @@
 class UxROM : public BaseMapper
 {
 public:
-	UxROM(MapperProperties properties) : BaseMapper(properties),
-		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size) {}
+	UxROM(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, MutateProperties(properties)) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -22,7 +22,7 @@ public:
 		// CPU $C000-$FFFF: 16 KiB PRG ROM bank, fixed to the last bank
 		else
 		{
-			return prg_rom[addr - 0xC000 + (num_prg_rom_banks - 1) * 0x4000];
+			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
 		}
 	};
 
@@ -30,7 +30,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = data % num_prg_rom_banks;
+			prg_bank = data % properties.num_prg_rom_banks;
 		}
 	};
 
@@ -54,8 +54,12 @@ public:
 	};
 
 protected:
-	static const size_t prg_rom_bank_size = 0x4000;
-	const size_t num_prg_rom_banks;
-
 	u8 prg_bank = 0;
+
+private:
+	static MapperProperties MutateProperties(MapperProperties properties)
+	{
+		SetCHRRAMSize(properties, 0x2000);
+		return properties;
+	};
 };

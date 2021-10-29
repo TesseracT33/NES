@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <format>
 #include <vector>
 
@@ -15,28 +16,29 @@ class BaseMapper
 public:
 	CPU* cpu;
 
-	BaseMapper(MapperProperties properties) : properties(properties)
+	BaseMapper(const std::vector<u8> chr_prg_rom, MapperProperties properties) : properties(properties)
 	{
-		/* If CHR is RAM, then its size won't be given by the rom header. Instead, the mapper construct should take care of this. */
-		if (properties.has_chr_ram)
-			chr.resize(0x2000); /* Default behaviour for now: 8 KiB CHR RAM. */
-		else
-			chr.resize(properties.chr_size);
+		/* These must be calculated here, and cannot be part of the properties passed to the submapper constructor,
+		   as bank sizes are not known before the submapper constructors have been called. */
+		this->properties.num_chr_banks = properties.chr_size / properties.chr_bank_size;
+		this->properties.num_prg_ram_banks = properties.prg_ram_size / properties.prg_ram_bank_size;
+		this->properties.num_prg_rom_banks = properties.prg_rom_size / properties.prg_rom_bank_size;
 
-		/* If the cart has PRG RAM, then its size may not be given by the rom header. Instead, the mapper construct should take care of this. */
-		if (properties.has_prg_ram)
-			prg_ram.resize(0x2000); /* Default behaviour for now: 8 KiB PRG RAM. */
-		else
-			prg_ram.resize(properties.prg_ram_size);
-
+		/* Resize all vectors */
+		chr.resize(properties.chr_size);
+		prg_ram.resize(properties.prg_ram_size);
 		prg_rom.resize(properties.prg_rom_size);
-	}
 
-	void LayoutMemory(u8* rom_arr)
-	{
-		/* Copy ROM data into PRG and CHR ROM. */
-		memcpy(&prg_rom[0], rom_arr, properties.prg_rom_size);
-		memcpy(&chr[0], rom_arr + properties.prg_rom_size, properties.chr_size);
+		/* Fill vectors with either rom data or $FF */
+		std::copy(chr_prg_rom.begin(), chr_prg_rom.begin() + properties.prg_rom_size, prg_rom.begin());
+
+		if (!properties.has_chr_ram)
+			std::copy(chr_prg_rom.begin() + properties.prg_rom_size, chr_prg_rom.end(), chr.begin());
+		else
+			std::fill(chr.begin(), chr.end(), 0xFF);
+
+		if (!prg_ram.empty())
+			std::fill(prg_ram.begin(), prg_ram.end(), 0xFF);
 	}
 
 	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
@@ -52,7 +54,7 @@ public:
 	virtual void ClockIRQ() {};
 
 protected:
-	const MapperProperties properties;
+	MapperProperties properties;
 
 	std::vector<u8> chr; /* Either RAM or ROM (a cart cannot have both). */
 	std::vector<u8> prg_ram;
@@ -72,5 +74,37 @@ protected:
 
 	// 4-Screen: address are not transformed
 	u16 NametableAddrFourScreen(u16 addr) const { return addr; }
+
+	/* The following static functions may be called from submapper constructors.
+	   The submapper classes must apply these properties themselves; they cannot be deduced from the rom header. */
+	static void SetCHRBankSize(MapperProperties& properties, size_t size)
+	{
+		properties.chr_bank_size = size;
+	}
+
+	static void SetPRGRAMBankSize(MapperProperties& properties, size_t size)
+	{
+		properties.prg_ram_bank_size = size;
+	}
+
+	static void SetPRGROMBankSize(MapperProperties& properties, size_t size)
+	{
+		properties.prg_rom_bank_size = size;
+	}
+
+	/* A submapper constructor must call this function if it has CHR RAM, because if it has RAM instead of ROM,
+	   the CHR size specified in the rom header will always (?) be 0. */
+	static void SetCHRRAMSize(MapperProperties& properties, size_t size)
+	{
+		if (properties.has_chr_ram && properties.chr_size == 0)
+			properties.chr_size = size;
+	}
+
+	/* The PRG RAM size may or may not be specified in the rom header. */
+	static void SetPRGRAMSize(MapperProperties& properties, size_t size)
+	{
+		if (properties.has_prg_ram && properties.prg_ram_size == 0)
+			properties.prg_ram_size = size;
+	}
 };
 

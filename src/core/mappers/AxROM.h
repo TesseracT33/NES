@@ -5,8 +5,8 @@
 class AxROM : public BaseMapper
 {
 public:
-	AxROM(MapperProperties properties) : BaseMapper(properties),
-		num_prg_rom_banks(properties.prg_rom_size / prg_rom_bank_size) {}
+	AxROM(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, MutateProperties(properties)) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -22,7 +22,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			prg_bank = (data & 0x07) % num_prg_rom_banks; /* Select 32 KiB PRG ROM bank */
+			prg_bank = (data & 0x07) % properties.num_prg_rom_banks; /* Select 32 KiB PRG ROM bank */
 			vram_page = data & 0x10;
 		}
 	};
@@ -47,9 +47,14 @@ public:
 	};
 
 protected:
-	static const size_t prg_rom_bank_size = 0x8000;
-	const size_t num_prg_rom_banks;
-
 	bool vram_page = 0;
 	unsigned prg_bank : 3 = 0;
+
+private:
+	static MapperProperties MutateProperties(MapperProperties properties)
+	{
+		SetCHRRAMSize(properties, 0x2000);
+		SetPRGROMBankSize(properties, 0x8000);
+		return properties;
+	};
 };

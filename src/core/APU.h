@@ -15,7 +15,7 @@
 class APU final : public Component
 {
 public:
-	BaseMapper* mapper;
+	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, cpu is not. */
 	CPU* cpu;
 
 	void Initialize();

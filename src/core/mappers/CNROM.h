@@ -5,8 +5,8 @@
 class CNROM : public BaseMapper
 {
 public:
-	CNROM(MapperProperties properties) : BaseMapper(properties),
-		num_chr_banks(properties.chr_size / chr_bank_size) {}
+	CNROM(const std::vector<u8> chr_prg_rom, MapperProperties properties) :
+		BaseMapper(chr_prg_rom, properties) {}
 
 	u8 ReadPRG(u16 addr) override
 	{
@@ -27,7 +27,7 @@ public:
 	{
 		if (addr >= 0x8000)
 		{
-			chr_bank = data % num_chr_banks; // The CHR capacity is at most 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
+			chr_bank = data % properties.num_chr_banks; // The CHR capacity is at most 32 KiB (four 8 KiB banks). chr_bank is 2 bits.
 		}
 	};
 
@@ -45,9 +45,6 @@ public:
 	};
 
 protected:
-	static const size_t chr_bank_size = 0x2000;
-	const size_t num_chr_banks;
-
 	unsigned chr_bank : 2 = 0;
 };
 
