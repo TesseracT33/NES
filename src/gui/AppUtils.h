@@ -14,9 +14,9 @@ namespace AppUtils
 		return path.ToStdString();
 	}
 
-	inline bool FileExists(const char* path)
+	inline bool FileExists(const wxString& path)
 	{
-		return FileExists(wxString(path));
+		return wxFileExists(path);
 	}
 
 	inline bool FileExists(const std::string& path)
@@ -24,8 +24,8 @@ namespace AppUtils
 		return FileExists(wxString(path));
 	}
 
-	inline bool FileExists(const wxString& path)
+	inline bool FileExists(const char* path)
 	{
-		return wxFileExists(path);
+		return FileExists(wxString(path));
 	}
 }
