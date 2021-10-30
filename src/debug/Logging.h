@@ -5,9 +5,9 @@
 #include <stdexcept>
 #include <string>
 
-#include <wx/msgdlg.h>
-
 #include "../Types.h"
+
+#include "../gui/UserMessage.h"
 
 #include "DebugOptions.h"
 

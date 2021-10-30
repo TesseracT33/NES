@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\IRQSources.h" />
+    <ClInclude Include="src\core\mappers\Mapper094.h" />
+    <ClInclude Include="src\core\mappers\Mapper180.h" />
     <ClInclude Include="src\core\mappers\MapperProperties.h" />
     <ClInclude Include="src\core\mappers\AxROM.h" />
     <ClInclude Include="src\core\mappers\CNROM.h" />
@@ -28,6 +30,8 @@
     <ClInclude Include="src\core\mappers\MapperIncludes.h" />
     <ClInclude Include="src\core\mappers\UxROM.h" />
     <ClInclude Include="src\debug\DebugOptions.h" />
+    <ClInclude Include="src\gui\AppUtils.h" />
+    <ClInclude Include="src\gui\UserMessage.h" />
     <ClInclude Include="src\Snapshottable.h" />
     <ClInclude Include="src\gui\InputBindingsWindow.h" />
     <ClInclude Include="src\Observer.h" />
@@ -51,7 +55,7 @@
     <ClInclude Include="src\Configurable.h" />
     <ClInclude Include="src\Serializable.h" />
     <ClInclude Include="src\Types.h" />
-    <ClInclude Include="src\Utils.h" />
+    <ClInclude Include="src\BitUtils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\debug\Logging.cpp" />
@@ -144,6 +148,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalOptions>/constexpr:steps1500000 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -162,6 +167,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalOptions>/constexpr:steps1500000 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -180,6 +186,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalOptions>/constexpr:steps1500000 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -198,6 +205,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalOptions>/constexpr:steps1500000 %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

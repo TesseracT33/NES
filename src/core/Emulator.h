@@ -5,12 +5,12 @@
 #include <vector>
 
 #include "SDL.h"
-#include <wx/filename.h>
-#include <wx/msgdlg.h>
-#include <wx/stdpaths.h>
 
 #include "../Observer.h"
 #include "../Snapshottable.h"
+
+#include "../gui/AppUtils.h"
+#include "../gui/UserMessage.h"
 
 #include "APU.h"
 #include "BusImpl.h"
@@ -57,10 +57,11 @@ public:
 
 	void SetEmulationSpeed(unsigned speed);
 	void SetWindowScale(unsigned scale) { ppu.SetWindowScale(scale); }
-	void SetWindowSize(wxSize size) { ppu.SetWindowSize(size); }
+	void SetWindowSize(unsigned width, unsigned height) { ppu.SetWindowSize(width, height); }
 
-	unsigned GetWindowScale() { return ppu.GetWindowScale(); }
-	wxSize GetWindowSize() { return ppu.GetWindowSize(); }
+	unsigned GetWindowScale() const { return ppu.GetWindowScale(); }
+	unsigned GetWindowHeight() const { return ppu.GetWindowHeight(); }
+	unsigned GetWindowWidth() const { return ppu.GetWindowWidth(); }
 
 private:
 	const unsigned cycles_per_sec_NTSC = 1789773;
@@ -80,8 +81,7 @@ private:
 	std::vector<Component*> components;
 
 	std::string current_rom_path;
-	std::string save_state_path = wxFileName(wxStandardPaths::Get().GetExecutablePath())
-		.GetPath(wxPATH_GET_VOLUME | wxPATH_GET_SEPARATOR) + "state.bin";
+	std::string save_state_path = AppUtils::GetExecutablePath() + "state.bin";
 
 	std::vector<Snapshottable*> snapshottable_components{};
 

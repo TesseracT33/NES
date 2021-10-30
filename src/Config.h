@@ -1,12 +1,12 @@
 #pragma once
 
-#include <wx/filename.h>
-#include <wx/stdpaths.h>
-#include <wx/string.h>
-#include "wx/wx.h"
+#include <fstream>
 
 #include "Configurable.h"
 #include "Serialization.h"
+
+#include "gui/AppUtils.h"
+#include "gui/UserMessage.h"
 
 class Config
 {
@@ -21,5 +21,5 @@ public:
 	void SetDefaults(bool save = true);
 
 private:
-	const wxString config_file_path = wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath(wxPATH_GET_VOLUME | wxPATH_GET_SEPARATOR) + "config.bin";
+	const wxString config_file_path = AppUtils::GetExecutablePath() + "config.bin";
 };

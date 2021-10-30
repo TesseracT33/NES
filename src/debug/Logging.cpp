@@ -75,15 +75,15 @@ bool Logging::TestString(const std::string& log_line, unsigned line_num,
 	// Compare the Mesen value against our emu value
 	if (val != emu_value)
 	{
-		wxString msg;
+		std::string msg;
 		switch (num_format)
 		{
-		case NumberFormat::uint8_hex : msg = "Incorrect %s at line %u; expected $%02X, got $%02X"; break;
-		case NumberFormat::uint16_hex: msg = "Incorrect %s at line %u; expected $%04X, got $%04X"; break;
-		case NumberFormat::uint32_dec: msg = "Incorrect %s at line %u; expected %u, got %u"; break;
-		case NumberFormat::uint64_dec: msg = "Incorrect %s at line %u; expected %llu, got %llu"; break;
+		case NumberFormat::uint8_hex : msg = "Incorrect {} at line {}; expected ${:02X}, got ${:02X}"; break;
+		case NumberFormat::uint16_hex: msg = "Incorrect {} at line {}; expected ${:04X}, got ${:04X}"; break;
+		case NumberFormat::uint32_dec:
+		case NumberFormat::uint64_dec: msg = "Incorrect {} at line {}; expected {}, got {}"; break;
 		}
-		wxMessageBox(wxString::Format(msg, substr, line_num, val, emu_value));
+		UserMessage::Show(std::format(msg, substr, line_num, val, emu_value), UserMessage::Type::Warning);
 		return false;
 	}
 	return true;
@@ -128,7 +128,7 @@ void Logging::CompareMesenLogLine()
 	// Get the next line in the mesen trace log
 	if (ifs.eof())
 	{
-		wxMessageBox("Mesen trace log comparison passed.");
+		UserMessage::Show("Mesen trace log comparison passed.", UserMessage::Type::Success);
 		return;
 	}
 	std::getline(ifs, current_line);
@@ -140,13 +140,13 @@ void Logging::CompareMesenLogLine()
 	{
 #ifdef DEBUG_COMPARE_MESEN_NMI
 		if (!cpu_state.NMI)
-			wxMessageBox(wxString::Format("Expected an NMI at line %u.", line_counter));
+			UserMessage::Show(std::format("Expected an NMI at line {}.", line_counter), UserMessage::Type::Warning);
 #endif
 		return;
 	}
 #ifdef DEBUG_COMPARE_MESEN_NMI
 	else if (cpu_state.NMI)
-		wxMessageBox(wxString::Format("Did not expect an NMI at line %u.", line_counter));
+		UserMessage::Show(std::format("Did not expect an NMI at line {}.", line_counter), UserMessage::Type::Warning);
 #endif
 
 	// Test PC
@@ -154,7 +154,8 @@ void Logging::CompareMesenLogLine()
 	u16 mesen_pc = std::stoi(mesen_pc_str, nullptr, 16);
 	if (cpu_state.PC != mesen_pc)
 	{
-		wxMessageBox(wxString::Format("Incorrect PC at line %u; expected $%04X, got $%04X", line_counter, (int)mesen_pc, (int)cpu_state.PC));
+		UserMessage::Show(
+			std::format("Incorrect PC at line {}; expected ${:04X}, got ${:04X}", line_counter, mesen_pc, cpu_state.PC), UserMessage::Type::Warning);
 		return;
 	}
 

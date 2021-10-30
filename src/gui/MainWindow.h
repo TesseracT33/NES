@@ -1,15 +1,12 @@
 #pragma once
 
-#include "wx/wx.h"
 #include <wx/colordlg.h>
 #include <wx/dir.h>
-#include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/joystick.h>
 #include <wx/menu.h>
-#include <wx/msgdlg.h>
 #include <wx/panel.h>
-#include <wx/stdpaths.h>
+#include "wx/wx.h"
 #include "SDL.h"
 
 #include <thread>
@@ -19,7 +16,9 @@
 #include "../Observer.h"
 #include "../Serialization.h"
 
+#include "AppUtils.h"
 #include "InputBindingsWindow.h"
+#include "UserMessage.h"
 
 class MainWindow : public wxFrame, public Configurable, public Observer
 {
@@ -106,7 +105,7 @@ private:
 
 	// configuration-related variables
 	const bool default_display_only_nes_files = true;
-	const wxString default_rom_folder_path = wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath(wxPATH_GET_VOLUME | wxPATH_GET_SEPARATOR);
+	const wxString default_rom_folder_path = AppUtils::GetExecutablePath();
 	bool display_only_nes_files = default_display_only_nes_files;
 
 	// as per the wxwidgets documentation, all menus should be created on the heap

@@ -1,5 +1,4 @@
 #include "Config.h"
-#include <fstream>
 
 
 void Config::AddConfigurable(Configurable* configurable)
@@ -11,7 +10,7 @@ void Config::AddConfigurable(Configurable* configurable)
 
 bool Config::ConfigFileExists()
 {
-	return wxFileExists(config_file_path);
+	return AppUtils::FileExists(config_file_path);
 }
 
 
@@ -20,7 +19,7 @@ void Config::Save()
 	std::ofstream ofs(config_file_path.mb_str(), std::ofstream::out | std::ofstream::binary);
 	if (!ofs) // if the file could not be created
 	{
-		wxMessageBox("Config file could not be created or saved.");
+		UserMessage::Show("Config file could not be created or saved.", UserMessage::Type::Warning);
 		SetDefaults(false);
 		return;
 	}
@@ -39,7 +38,7 @@ void Config::Load()
 	std::ifstream ifs(config_file_path.mb_str(), std::ifstream::in | std::ifstream::binary);
 	if (!ifs) // if the file could not be opened
 	{
-		wxMessageBox("Config file could not be opened. Reverting to defaults.");
+		UserMessage::Show("Config file could not be opened. Reverting to defaults.", UserMessage::Type::Warning);
 		SetDefaults(false);
 		return;
 	}

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <wx/msgdlg.h>
-
 #include <array>
 #include <functional>
 

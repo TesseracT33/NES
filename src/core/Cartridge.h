@@ -1,9 +1,12 @@
 #pragma once
 
 #include <array>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <vector>
+
+#include "../gui/UserMessage.h"
 
 #include "mappers/BaseMapper.h"
 #include "mappers/MapperIncludes.h"

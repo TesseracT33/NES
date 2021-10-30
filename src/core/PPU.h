@@ -1,6 +1,5 @@
 #pragma once
 
-#include "wx/wx.h"
 #include "SDL.h"
 
 #include <format>
@@ -10,10 +9,11 @@
 #include "../Observer.h"
 #include "../Types.h"
 
+#include "../gui/UserMessage.h"
+
 #include "../debug/Logging.h"
 
 #include "Bus.h"
-#include "Component.h"
 #include "CPU.h"
 #include "System.h"
 
@@ -28,6 +28,12 @@ public:
 	CPU* cpu;
 	Observer* gui;
 
+	unsigned GetWindowScale() const { return scale; }
+	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * scale; }
+	unsigned GetWindowWidth() const { return num_pixels_per_scanline * scale; }
+	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
+	bool IsInVblank() const { return scanline >= standard.nmi_scanline; }
+
 	[[nodiscard]] bool CreateRenderer(const void* window_handle);
 	void PowerOn(const System::VideoStandard standard);
 	void Reset();
@@ -37,13 +43,8 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
-	bool IsInVblank() { return scanline >= standard.nmi_scanline; }
-
-	unsigned GetWindowScale() { return scale; }
-	wxSize GetWindowSize() { return wxSize(num_pixels_per_scanline * scale, standard.num_visible_scanlines * scale); }
 	void SetWindowScale(unsigned scale) { this->scale = scale; }
-	void SetWindowSize(wxSize size);
+	void SetWindowSize(unsigned width, unsigned height);
 
 	void Configure(Serialization::BaseFunctor& functor) override;
 	void SetDefaultConfig() override;

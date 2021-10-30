@@ -1,4 +1,3 @@
-#include <wx/msgdlg.h>
 #include "Cartridge.h"
 
 
@@ -8,7 +7,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 	std::ifstream rom_ifs{rom_path, std::ifstream::in | std::ifstream::binary};
 	if (!rom_ifs)
 	{
-		wxMessageBox("Failed to open rom file.");
+		UserMessage::Show("Failed to open rom file.", UserMessage::Type::Error);
 		return std::nullopt;
 	}
 
@@ -66,7 +65,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperN
 	case  94: return Instantiate.template operator() < Mapper094 > ();
 	case 180: return Instantiate.template operator() < Mapper180 > ();
 	default:
-		wxMessageBox(wxString::Format("Unsupported mapper no. %u detected.", mapper_properties.mapper_num));
+		UserMessage::Show(std::format("Unsupported mapper number. {} detected.", mapper_properties.mapper_num), UserMessage::Type::Error);
 		return std::nullopt;
 	}
 }
@@ -79,7 +78,7 @@ bool Cartridge::ParseHeader(const std::array<u8, header_size>& header, MapperPro
 	/* Check if the header is a valid iNES header */
 	if (!(header[0] == 'N' && header[1] == 'E' && header[2] == 'S' && header[3] == 0x1A))
 	{
-		wxMessageBox("Error: Could not parse rom file header; rom is not a valid iNES or NES 2.0 image file.");
+		UserMessage::Show("Could not parse rom file header; rom is not a valid iNES or NES 2.0 image file.", UserMessage::Type::Error);
 		return false;
 	}
 

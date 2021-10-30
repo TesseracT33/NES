@@ -101,7 +101,7 @@ void MainWindow::SwitchToGameView()
 	game_list_box->Hide();
 	SDL_window_panel->Show();
 	SDL_window_panel->SetFocus();
-	wxSize SDL_window_size = emulator.GetWindowSize();
+	wxSize SDL_window_size = wxSize(emulator.GetWindowWidth(), emulator.GetWindowHeight());
 	SDL_window_panel->SetSize(SDL_window_size);
 	SetClientSize(SDL_window_size);
 	UpdateWindowLabel(true);
@@ -125,9 +125,9 @@ void MainWindow::SetupConfig()
 
 void MainWindow::LaunchGame()
 {
-	if (!wxFileExists(active_rom_path))
+	if (!AppUtils::FileExists(active_rom_path))
 	{
-		wxMessageBox(wxString::Format("Error opening game; file \"%s\" does not exist.", active_rom_path));
+		UserMessage::Show(wxString::Format("Error opening game; file \"%s\" does not exist.", active_rom_path), UserMessage::Type::Error);
 		return;
 	}
 
@@ -159,7 +159,8 @@ bool MainWindow::SetupSDL()
 {
 	if (SDL_Init(SDL_INIT_EVERYTHING) == -1)
 	{
-		wxMessageBox("Could not initialise SDL!");
+		const char* error_msg = SDL_GetError();
+		UserMessage::Show(std::format("Could not initialize SDL; {}", error_msg), UserMessage::Type::Error);
 		return false;
 	}
 
@@ -302,11 +303,12 @@ void MainWindow::Quit()
 
 void MainWindow::UpdateWindowLabel(bool gameIsRunning)
 {
-	wxSize window_size = GetClientSize();
+	unsigned window_width = emulator.GetWindowWidth();
+	unsigned window_height = emulator.GetWindowHeight();
 
 	if (gameIsRunning)
 		this->SetLabel(wxString::Format("%s | %s | %ix%i | FPS: %i",
-			emulator_name, wxFileName(active_rom_path).GetName(), window_size.GetWidth(), window_size.GetHeight(), frames_since_update));
+			emulator_name, wxFileName(active_rom_path).GetName(), window_width, window_height, frames_since_update));
 	else
 		this->SetLabel(emulator_name);
 }
@@ -364,7 +366,7 @@ void MainWindow::OnMenuSaveState(wxCommandEvent& event)
 	if (emulator.emu_is_running)
 		emulator.SaveState();
 	else
-		wxMessageBox("No game is loaded. Cannot save state.");
+		UserMessage::Show("No game is loaded. Cannot save state.", UserMessage::Type::Error);
 }
 
 
@@ -373,7 +375,7 @@ void MainWindow::OnMenuLoadState(wxCommandEvent& event)
 	if (emulator.emu_is_running)
 		emulator.LoadState();
 	else
-		wxMessageBox("No game is loaded. Cannot load a state.");
+		UserMessage::Show("No game is loaded. Cannot load state.", UserMessage::Type::Error);
 }
 
 
@@ -446,7 +448,7 @@ void MainWindow::OnMenuSize(wxCommandEvent& event)
 		scale = wxAtoi(input); // string -> int
 		if (scale <= 0) // input converted to int
 		{
-			wxMessageBox("Please enter a valid scale value (> 0).");
+			UserMessage::Show("Please enter a valid scale value (> 0).", UserMessage::Type::Error);
 			ApplyGUISettings();
 			return;
 		}
@@ -470,7 +472,7 @@ void MainWindow::OnMenuSize(wxCommandEvent& event)
 	config.Save();
 
 	if (emulator.emu_is_running)
-		SetClientSize(emulator.GetWindowSize());
+		SetClientSize(emulator.GetWindowWidth(), emulator.GetWindowHeight());
 }
 
 
@@ -514,7 +516,7 @@ void MainWindow::OnMenuSpeed(wxCommandEvent& event)
 		speed = wxAtoi(input);
 		if (speed <= 0)
 		{
-			wxMessageBox("Please enter a valid speed value (> 0).");
+			UserMessage::Show("Please enter a valid speed value (> 0 %).", UserMessage::Type::Error);
 			ApplyGUISettings();
 			return;
 		}
@@ -548,7 +550,7 @@ void MainWindow::OnMenuResetSettings(wxCommandEvent& event)
 	config.SetDefaults();
 	ApplyGUISettings();
 	if (emulator.emu_is_running)
-		SetClientSize(emulator.GetWindowSize());
+		SetClientSize(emulator.GetWindowWidth(), emulator.GetWindowHeight());
 }
 
 
@@ -583,7 +585,7 @@ void MainWindow::LocateAndOpenRomFromListBoxSelection(wxString selection)
 		}
 	}
 
-	wxMessageBox(wxString::Format("Error opening game; could not locate file \"%s\".", selection));
+	UserMessage::Show(wxString::Format("Error opening game; could not locate file \"%s\".", selection), UserMessage::Type::Error);
 }
 
 
@@ -682,8 +684,8 @@ void MainWindow::UpdateViewSizing()
 
 	if (game_view_active)
 	{
-		SDL_window_panel->SetSize(size);
-		emulator.SetWindowSize(size);
+		SDL_window_panel->SetSize(width, height);
+		emulator.SetWindowSize(width, height);
 	}
 	else
 	{

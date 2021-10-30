@@ -43,7 +43,7 @@ void Emulator::LoadState()
 	std::ifstream ifs(save_state_path, std::ifstream::in | std::ifstream::binary);
 	if (!ifs)
 	{
-		wxMessageBox("Save state does not exist or could not be opened.");
+		UserMessage::Show("Save state does not exist or could not be opened.", UserMessage::Type::Error);
 		load_state_on_next_cycle = false;
 		return;
 	}
@@ -68,7 +68,7 @@ void Emulator::SaveState()
 	std::ofstream ofs(save_state_path, std::ofstream::out | std::ofstream::binary);
 	if (!ofs)
 	{
-		wxMessageBox("Save state could not be created.");
+		UserMessage::Show("Save state could not be created.", UserMessage::Type::Error);
 		save_state_on_next_cycle = false;
 		return;
 	}
@@ -165,7 +165,7 @@ void Emulator::MainLoop()
 		}
 		catch (const std::runtime_error& e)
 		{
-			wxMessageBox(wxString("Error: ") + e.what());
+			UserMessage::Show(e.what(), UserMessage::Type::Error);
 		}
 
 		joypad.PollInput();

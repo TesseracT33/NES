@@ -136,14 +136,16 @@ bool PPU::CreateRenderer(const void* window_handle)
 	this->window = SDL_CreateWindowFrom(window_handle);
 	if (window == NULL)
 	{
-		wxMessageBox("Could not create the SDL window!");
+		const char* error_msg = SDL_GetError();
+		UserMessage::Show(std::format("Could not create the SDL window; {}", error_msg), UserMessage::Type::Error);
 		return false;
 	}
 
 	this->renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 	if (renderer == NULL)
 	{
-		wxMessageBox("Renderer could not be created!");
+		const char* error_msg = SDL_GetError();
+		UserMessage::Show(std::format("Could not create the SDL renderer; {}", error_msg), UserMessage::Type::Error);
 		SDL_DestroyWindow(window);
 		window = nullptr;
 		return false;
@@ -1133,10 +1135,8 @@ void PPU::PrepareForNewScanline()
 }
 
 
-void PPU::SetWindowSize(wxSize size)
+void PPU::SetWindowSize(unsigned width, unsigned height)
 {
-	const unsigned width = size.GetWidth(), height = size.GetHeight();
-
 	if (width > 0 && height > 0)
 	{
 		scale_temp = std::min(width / num_pixels_per_scanline, height / standard.num_visible_scanlines);

@@ -24,7 +24,7 @@
     <ClInclude Include="src\Types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Utils.h">
+    <ClInclude Include="src\BitUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\Bus.h">
@@ -112,6 +112,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\core\mappers\MapperProperties.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\mappers\Mapper180.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\mappers\Mapper094.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\gui\UserMessage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\gui\AppUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
