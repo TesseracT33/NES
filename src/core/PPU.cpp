@@ -193,15 +193,12 @@ void PPU::Update()
 
 void PPU::StepCycle()
 {
+	open_bus_io.UpdateDecay();
+
 	if (set_sprite_0_hit_flag && scanline_cycle >= 2) // todo: not sure if this should be at the end of this function instead
 	{
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
 		set_sprite_0_hit_flag = false;
-	}
-	if (!open_bus_decayed && --cycles_until_open_bus_decay == 0)
-	{
-		open_bus = 0;
-		open_bus_decayed = true;
 	}
 	if (scanline_cycle == 0)
 	{
@@ -230,7 +227,7 @@ void PPU::StepCycle()
 				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64. Does not occur on the pre-render scanline
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
 				if (scanline != pre_render_scanline)
-					memset(memory.secondary_oam, 0xFF, secondary_oam_size);
+					std::fill(secondary_oam.begin(), secondary_oam.end(), 0xFF);
 
 				tile_fetcher.SetBGTileFetchingActive();
 
@@ -310,11 +307,11 @@ void PPU::StepCycle()
 			switch ((scanline_cycle - 257) % 8)
 			{
 			case 0:
-				tile_fetcher.sprite_y_pos            = memory.secondary_oam[4 * sprite_index    ];
-				tile_fetcher.tile_num                = memory.secondary_oam[4 * sprite_index + 1];
-				tile_fetcher.sprite_attr             = memory.secondary_oam[4 * sprite_index + 2];
-				sprite_attribute_latch[sprite_index] = memory.secondary_oam[4 * sprite_index + 2];
-				sprite_x_pos_counter  [sprite_index] = memory.secondary_oam[4 * sprite_index + 3];
+				tile_fetcher.sprite_y_pos            = secondary_oam[4 * sprite_index    ];
+				tile_fetcher.tile_num                = secondary_oam[4 * sprite_index + 1];
+				tile_fetcher.sprite_attr             = secondary_oam[4 * sprite_index + 2];
+				sprite_attribute_latch[sprite_index] = secondary_oam[4 * sprite_index + 2];
+				sprite_x_pos_counter  [sprite_index] = secondary_oam[4 * sprite_index + 3];
 				sprite_index++;
 				break;
 
@@ -426,6 +423,25 @@ void PPU::StepCycle()
 
 u8 PPU::ReadRegister(u16 addr)
 {
+	/* The following shows the effect of a read from each register:
+	Addr    Open-bus bits
+			7654 3210
+	-----------------
+	$2000   DDDD DDDD
+	$2001   DDDD DDDD
+	$2002   ---D DDDD
+	$2003   DDDD DDDD
+	$2004   ---- ----
+	$2005   DDDD DDDD
+	$2006   DDDD DDDD
+	$2007   ---- ----   non-palette
+			DD-- ----   palette
+
+	A D means that this bit reads back as whatever is in the decay register
+	at that bit, and doesn't refresh the decay register at that bit. A -
+	means that this bit reads back as defined by the PPU, and refreshes the
+	decay register at the corresponding bit. */
+
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL  : // $2000 (write-only)
@@ -434,7 +450,7 @@ u8 PPU::ReadRegister(u16 addr)
 	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
 	case Bus::Addr::PPUADDR  : // $2006 (write-only)
 	case Bus::Addr::OAMDMA   : // $4014 (write-only)
-		return ReadOpenBus();
+		return open_bus_io.Read();
 
 	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
 	{
@@ -456,11 +472,9 @@ u8 PPU::ReadRegister(u16 addr)
 			}
 		}
 
-		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
-		u8 ret = PPUSTATUS & 0xE0 | ReadOpenBus() & 0x1F;
-		WriteOpenBus(ret);
-		// reading this register clears the vblank flag
-		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
+		u8 ret = PPUSTATUS & 0xE0 | open_bus_io.Read(0x1F); /* Bits 4-0 are unused and then return bits 4-0 of open bus */
+		open_bus_io.UpdateValue(PPUSTATUS, 0xE0); /* Update bits 7-5 of open bus with the read value */
+		PPUSTATUS &= ~PPUSTATUS_vblank_mask; /* Reading this register clears the vblank flag */
 		CheckNMI();
 		scroll.w = 0;
 		return ret;
@@ -474,12 +488,12 @@ u8 PPU::ReadRegister(u16 addr)
 			ret = 0xFF;
 		else
 		{
-			ret = memory.oam[OAMADDR];
+			ret = oam[OAMADDR];
 			// Bits 2-4 of sprite attributes should always be clear when read (these are unimplemented).
 			if ((OAMADDR & 3) == 2)
 				ret &= 0xE3;
 		}
-		WriteOpenBus(ret);
+		open_bus_io.UpdateValue(ret, 0xFF); /* Update all bits of open bus with the read value */
 		return ret;
 
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
@@ -492,11 +506,11 @@ u8 PPU::ReadRegister(u16 addr)
 			u16 v_read = scroll.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
 			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
-			if (v_read <= 0x3EFF)
+			if (v_read < 0x3F00)
 			{
 				ret = PPUDATA;
 				PPUDATA = ReadMemory(v_read);
-				scroll.v += PPUCTRL_incr_mode ? 32 : 1;
+				open_bus_io.UpdateValue(ret, 0xFF); /* Update all bits of open bus with the read value */
 			}
 			// When reading palette data $3F00-$3FFF, the palette data is placed immediately on the data bus.
 			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of the mirrored nametable data ($3000-$3EFF) (?).
@@ -504,18 +518,18 @@ u8 PPU::ReadRegister(u16 addr)
 			else
 			{
 				// High 2 bits from palette should be from open bus. Reading palette shouldn't refresh high 2 bits of open bus.
-				ret = ReadMemory(v_read) & 0x3F | ReadOpenBus() & 0xC0;
+				ret = ReadMemory(v_read) & 0x3F | open_bus_io.Read(0xC0);
+				open_bus_io.UpdateValue(ret, 0x3F); /* Update bits 5-0 of open bus with the read value */
 				PPUDATA = ReadMemory(v_read - 0xF00); // ???
-				scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			}
-			WriteOpenBus(ret);
+			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			return ret;
 		}
 		else
 		{
 			scroll.increment_coarse_x();
 			scroll.increment_y();
-			return ReadOpenBus();
+			return open_bus_io.Read();
 		}
 	}
 
@@ -529,13 +543,15 @@ void PPU::WriteRegister(u16 addr, u8 data)
 {
 	// Writes to the following registers are ignored if earlier than ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR. This also means that the PPUSCROLL/PPUADDR latch will not toggle
 	// The other registers work immediately: PPUSTATUS, OAMADDR, OAMDATA ($2004), PPUDATA, and OAMDMA ($4014).
-	
+
+	/* Writes to any PPU port, including the nominally read-only status port at $2002, load a value onto the entire PPU's I/O bus */
+	open_bus_io.Write(data);
+
 	switch (addr)
 	{
 	case Bus::Addr::PPUCTRL: // $2000 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
 		PPUCTRL = data;
-		WriteOpenBus(data);
 		CheckNMI();
 		scroll.t = scroll.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		break;
@@ -543,11 +559,9 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUMASK: // $2001 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
 		PPUMASK = data;
-		WriteOpenBus(data);
 		break;
 
 	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
-		WriteOpenBus(data); // bits 4-0 will be bits 4-0 of the last thing written to any ppu register (handled in read register function)
 		break;
 
 	case Bus::Addr::OAMADDR: // $2003 (write-only)
@@ -560,8 +574,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		if (scanline < standard.nmi_scanline + 20 ||
 			standard.oam_can_be_written_to_during_forced_blanking && !RenderingIsEnabled())
 		{
-			memory.oam[OAMADDR++] = data;
-			WriteOpenBus(data);
+			oam[OAMADDR++] = data;
 		}
 		else
 		{
@@ -572,7 +585,6 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		WriteOpenBus(data);
 		if (scroll.w == 0) // Update x-scroll registers
 		{
 			scroll.t = scroll.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
@@ -588,7 +600,6 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUADDR: // $2006 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
-		WriteOpenBus(data);
 		if (scroll.w == 0)
 		{
 			scroll.t = scroll.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
@@ -609,7 +620,6 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		{
 			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
-			WriteOpenBus(data);
 		}
 		else
 		{
@@ -624,30 +634,72 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// It is done by the cpu, so the cpu will be suspended during this time.
 		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
-		cpu->StartOAMDMATransfer(data, memory.oam, OAMADDR);
+		cpu->StartOAMDMATransfer(data, &oam[0], OAMADDR);
 		break;
 	}
 
 	default:
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteRegister(u16).", addr));
-
 	}
 }
 
 
-u8 PPU::ReadOpenBus()
+u8 PPU::OpenBusIO::Read(u8 mask)
 {
-	cycles_until_open_bus_decay = open_bus_decay_cycle_length;
-	open_bus_decayed = false;
-	return open_bus;
+	/* Reading the bits of open bus with the bits determined by 'mask' does not refresh those bits. */
+	return value & mask;
 }
 
 
-void PPU::WriteOpenBus(u8 data)
+void PPU::OpenBusIO::Write(u8 data)
 {
-	cycles_until_open_bus_decay = open_bus_decay_cycle_length;
-	open_bus_decayed = false;
-	open_bus = data;
+	/* Writing to any PPU register sets the entire decay register to the value written, and refreshes all bits. */
+	UpdateDecayOnIOAccess(0xFF);
+	value = data;
+}
+
+
+void PPU::OpenBusIO::UpdateValue(u8 data, u8 mask)
+{
+	/* Here, the bits of open bus determined by the mask are updated with the supplied data. Also, these bits are refreshed, but not the other ones. */
+	UpdateDecayOnIOAccess(mask);
+	value = data & mask | value & ~mask;
+}
+
+
+void PPU::OpenBusIO::UpdateDecayOnIOAccess(u8 mask)
+{
+	/* Optimization; a lot of the time, the mask will be $FF. */
+	if (mask == 0xFF)
+	{
+		std::fill(cycles_until_decay.begin(), cycles_until_decay.end(), decay_cycle_length);
+		std::fill(decayed.begin(), decayed.end(), false);
+	}
+	else
+	{
+		for (int n = 0; n < 8; n++)
+		{
+			if (mask & 1 << n)
+			{
+				cycles_until_decay[n] = decay_cycle_length;
+				decayed[n] = false;
+			}
+		}
+	}
+}
+
+
+void PPU::OpenBusIO::UpdateDecay()
+{
+	/* Each bit of the open bus byte can decay at different points, depending on when a particular bit was read/written to last time. */
+	for (int n = 0; n < 8; n++)
+	{
+		if (!decayed[n] && --cycles_until_decay[n] == 0)
+		{
+			value &= ~(1 << n);
+			decayed[n] = true;
+		}
+	}
 }
 
 
@@ -659,8 +711,8 @@ u8 PPU::ReadPaletteRAM(u16 addr)
 	if ((addr & 0x13) == 0x10)
 		addr -= 0x10;
 	if (PPUMASK_greyscale)
-		return memory.palette_ram[addr & 0x30]; // TODO: ???
-	return memory.palette_ram[addr];
+		return palette_ram[addr & 0x30]; // TODO: ???
+	return palette_ram[addr];
 }
 
 
@@ -671,8 +723,8 @@ void PPU::WritePaletteRAM(u16 addr, u8 data)
 	if ((addr & 0x13) == 0x10)
 		addr -= 0x10;
 	if (PPUMASK_greyscale)
-		memory.palette_ram[addr & 0x30] = data; // TODO: ???
-	memory.palette_ram[addr] = data;
+		palette_ram[addr & 0x30] = data; // TODO: ???
+	palette_ram[addr] = data;
 }
 
 
@@ -730,17 +782,17 @@ void PPU::UpdateSpriteEvaluation()
 	// If OAMADDR is unaligned and does not point to the y-position (first byte) of an OAM entry, then whatever it points to will be reinterpreted as a y position, and the following bytes will be similarly reinterpreted.
 	// When the end of OAM is reached, no more sprites will be found (it will not wrap around to the start of OAM).
 	unsigned addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.n + sprite_evaluation.m;
-	if (addr >= oam_size)
+	if (addr >= oam.size())
 	{
 		sprite_evaluation.idle = true;
 		return;
 	}
-	u8 oam_entry = memory.oam[addr];
+	u8 oam_entry = oam[addr];
 
 	if (sprite_evaluation.num_sprites_copied < 8)
 	{
 		// Copy the read oam entry into secondary oam. Note that this occurs even if this is the first byte of a sprite, and we later decide not to copy the rest of it due to it not being in range!
-		memory.secondary_oam[4 * sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = oam_entry;
+		secondary_oam[4 * sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = oam_entry;
 
 		if (sprite_evaluation.m == 0) // Means that the read oam entry is being interpreted as a y-position.
 		{
@@ -799,10 +851,10 @@ void PPU::PushPixel(u8 nes_col)
 	// From the nes colour (0-63), get an RGB24 colour from the predefined palette
 	// The palette from https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02 was used for this
 	const SDL_Color& sdl_col = palette[nes_col];
-	framebuffer[frame_buffer_pos    ] = sdl_col.r;
-	framebuffer[frame_buffer_pos + 1] = sdl_col.g;
-	framebuffer[frame_buffer_pos + 2] = sdl_col.b;
-	frame_buffer_pos += 3;
+	framebuffer[framebuffer_pos    ] = sdl_col.r;
+	framebuffer[framebuffer_pos + 1] = sdl_col.g;
+	framebuffer[framebuffer_pos + 2] = sdl_col.b;
+	framebuffer_pos += 3;
 
 	pixel_x_pos++;
 }
@@ -810,15 +862,21 @@ void PPU::PushPixel(u8 nes_col)
 
 void PPU::RenderGraphics()
 {
-	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(&framebuffer[0], num_pixels_per_scanline, standard.num_visible_scanlines,
-		8 * num_colour_channels, num_pixels_per_scanline * num_colour_channels, 0x0000FF, 0x00FF00, 0xFF0000, 0);
+	void* pixels = &framebuffer[0];
+	int width = num_pixels_per_scanline;
+	int height = standard.num_visible_scanlines;
+	int depth = 8 * num_colour_channels;
+	int pitch = num_pixels_per_scanline * num_colour_channels;
+	unsigned Rmask = 0x0000FF, Gmask = 0x00FF00, Bmask = 0xFF0000, Amask = 0x000000;
+	SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(pixels, width, height, depth, pitch, Rmask, Gmask, Bmask, Amask);
 
 	SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
 
-	rect.w = num_pixels_per_scanline * scale;
-	rect.h = standard.num_visible_scanlines * scale;
-	rect.x = pixel_offset_x;
-	rect.y = pixel_offset_y;
+	SDL_Rect rect;
+	rect.w = GetWindowWidth();
+	rect.h = GetWindowHeight();
+	rect.x = window_pixel_offset_x;
+	rect.y = window_pixel_offset_y;
 	SDL_RenderCopy(renderer, texture, NULL, &rect);
 
 	SDL_RenderPresent(renderer);
@@ -841,9 +899,9 @@ bool PPU::RenderingIsEnabled()
 
 void PPU::ResetGraphics()
 {
-	scale = scale_temp;
-	pixel_offset_x = pixel_offset_x_temp;
-	pixel_offset_y = pixel_offset_y_temp;
+	window_scale = window_scale_temp;
+	window_pixel_offset_x = window_pixel_offset_x_temp;
+	window_pixel_offset_y = window_pixel_offset_y_temp;
 
 	SDL_RenderClear(renderer);
 	reset_graphics_after_render = false;
@@ -1106,7 +1164,7 @@ u8 PPU::ReadMemory(u16 addr)
 	else if (addr <= 0x3EFF)
 	{
 		addr = mapper->TransformNametableAddr(addr);
-		return memory.vram[addr & 0xFFF];
+		return nametable_ram[addr & 0xFFF];
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
@@ -1129,7 +1187,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	else if (addr <= 0x3EFF)
 	{
 		addr = mapper->TransformNametableAddr(addr);
-		memory.vram[addr & 0xFFF] = data;
+		nametable_ram[addr & 0xFFF] = data;
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
@@ -1144,7 +1202,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 void PPU::PrepareForNewFrame()
 {
 	odd_frame = !odd_frame;
-	frame_buffer_pos = 0;
+	framebuffer_pos = 0;
 }
 
 
@@ -1167,9 +1225,9 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 {
 	if (width > 0 && height > 0)
 	{
-		scale_temp = std::min(width / num_pixels_per_scanline, height / standard.num_visible_scanlines);
-		pixel_offset_x_temp = 0.5 * (width - scale_temp * num_pixels_per_scanline);
-		pixel_offset_y_temp = 0.5 * (height - scale_temp * standard.num_visible_scanlines);
+		window_scale_temp = std::min(width / num_pixels_per_scanline, height / standard.num_visible_scanlines);
+		window_pixel_offset_x_temp = 0.5 * (width - window_scale_temp * num_pixels_per_scanline);
+		window_pixel_offset_y_temp = 0.5 * (height - window_scale_temp * standard.num_visible_scanlines);
 		reset_graphics_after_render = true;
 	}
 }
@@ -1177,13 +1235,13 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 
 void PPU::Configure(Serialization::BaseFunctor& functor)
 {
-	functor.fun(&scale, sizeof(unsigned));
+	functor.fun(&window_scale, sizeof(unsigned));
 }
 
 
 void PPU::SetDefaultConfig()
 {
-	scale = default_scale;
+	window_scale = default_window_scale;
 }
 
 

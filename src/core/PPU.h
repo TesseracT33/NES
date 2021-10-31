@@ -2,9 +2,11 @@
 
 #include "SDL.h"
 
+#include <array>
 #include <format>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 #include "../Observer.h"
 #include "../Types.h"
@@ -28,9 +30,9 @@ public:
 	CPU* cpu;
 	Observer* gui;
 
-	unsigned GetWindowScale() const { return scale; }
-	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * scale; }
-	unsigned GetWindowWidth() const { return num_pixels_per_scanline * scale; }
+	unsigned GetWindowScale() const { return window_scale; }
+	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * window_scale; }
+	unsigned GetWindowWidth() const { return num_pixels_per_scanline * window_scale; }
 	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
 	bool IsInVblank() const { return scanline >= standard.nmi_scanline; }
 
@@ -43,7 +45,7 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	void SetWindowScale(unsigned scale) { this->scale = scale; }
+	void SetWindowScale(unsigned scale) { this->window_scale = scale; }
 	void SetWindowSize(unsigned width, unsigned height);
 
 	void Configure(Serialization::BaseFunctor& functor) override;
@@ -52,8 +54,7 @@ public:
 private:
 	friend class Logging;
 
-	static const size_t oam_size = 0x100;
-	static const size_t secondary_oam_size = 0x20;
+	enum class TileType { BG, OBJ };
 
 	/* PPU operation details that are affected by the video standard (NTSC/PAL/Dendy): */
 	struct Standard
@@ -65,22 +66,18 @@ private:
 		int num_scanlines;
 		int num_scanlines_per_vblank;
 		int num_visible_scanlines;
-	};
+	} standard = NTSC;
 
 	const Standard NTSC  = {  true,  true, 3.0f, 241, 262, 20, 240 };
 	const Standard PAL   = { false, false, 3.2f, 240, 312, 70, 239 };
 	const Standard Dendy = {  true, false, 3.0f, 290, 312, 20, 239 };
-	Standard standard = NTSC; /* The default */
 
-	/* Some PPU operation details that are not affected by the video standard */
 	const int pre_render_scanline = -1;
 	const int num_colour_channels = 3;
-	const int num_cycles_per_scanline = 341; // On NTSC: is actually 340 on scanline 261 if on an odd-numbered frame
+	const int num_cycles_per_scanline = 341; // On NTSC: is actually 340 on the pre-render scanline if on an odd-numbered frame
 	const int num_pixels_per_scanline = 256; // Horizontal resolution
-	const int open_bus_decay_cycle_length = 30000; // roughly a frame
 
-	/* Settings-related */
-	const unsigned default_scale = 3;
+	const unsigned default_window_scale = 3;
 
 	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
 	const SDL_Color palette[64] = { 
@@ -94,15 +91,23 @@ private:
 		{204, 210, 120}, {180, 222, 120}, {168, 226, 144}, {152, 226, 180}, {160, 214, 228}, {160, 162, 160}, {  0,   0,   0}, {  0,   0,   0}
 	};
 
-	enum class TileType { BG, OBJ };
-
-	struct Memory
+	// PPU IO open bus related. See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
+	// and the 'NES PPU Open-Bus Test' test rom readme
+	struct OpenBusIO
 	{
-		u8 vram[0x1000]{}; // $2000-$2FFF; mapped to $2000-$3EFFF; nametables
-		u8 palette_ram[0x20]{}; // $3F00-$3F1F; mapped to $3F00-$3FFF
-		u8 oam[oam_size]{}; // not mapped
-		u8 secondary_oam[secondary_oam_size]{}; // not mapped
-	} memory;
+		OpenBusIO() { std::fill(decayed.begin(), decayed.end(), true); }
+
+		const int decay_cycle_length = 29781 * 60 * 0.6; // roughly 600 ms = 36 frames; how long it takes for a bit to decay to 0.
+		u8 value = 0; // the value read back when reading from open bus.
+		std::array<bool, 8> decayed; // each bit can decay separately
+		std::array<unsigned, 8> cycles_until_decay;
+		
+		u8 Read(u8 mask = 0xFF);
+		void Write(u8 data);
+		void UpdateValue(u8 data, u8 mask); /* Write to the bits of open bus given by the mask. Different from the write function, as there, all bits are refreshed. */
+		void UpdateDecay();
+		void UpdateDecayOnIOAccess(u8 mask);
+	} open_bus_io;
 
 	struct ScrollRegisters
 	{
@@ -187,74 +192,75 @@ private:
 	} tile_fetcher;
 
 	bool cycle_340_was_skipped_on_last_scanline = false; // On NTSC, cycle 340 of the pre render scanline may be skipped every other frame.
-	bool do_not_set_vblank_flag_on_next_vblank; // The VBL flag may not be set if PPUSTATUS is read to close to when the flag is supposed to be set.
+	bool do_not_set_vblank_flag_on_next_vblank = false; // The VBL flag may not be set if PPUSTATUS is read to close to when the flag is supposed to be set.
 	bool NMI_line = 1;
 	bool odd_frame = false;
-	bool open_bus_decayed = true;
+	bool reset_graphics_after_render = false;
 	bool set_sprite_0_hit_flag = false;
-	bool suppress_nmi_on_next_vblank; // An NMI may not trigger on VBL if PPUSTATUS is read to close to when the VBL flag is set.
+	bool suppress_nmi_on_next_vblank = false; // An NMI may not trigger on VBL if PPUSTATUS is read to close to when the VBL flag is set.
 
-	// PPU registers accessible by the CPU
+	u8 pixel_x_pos = 0;
 	u8 PPUCTRL;
 	u8 PPUMASK;
 	u8 PPUSTATUS;
 	u8 PPUSCROLL;
 	u8 PPUDATA;
 	u8 OAMADDR;
+	u8 OAMADDR_at_cycle_65;
 	u8 OAMDMA;
 
-	u8 open_bus = 0; // See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
-	u8 OAMADDR_at_cycle_65;
-	u8 pixel_x_pos = 0;
-
-	signed scanline = 0;
-	unsigned scanline_cycle;
-	unsigned cycles_until_open_bus_decay;
-
-	u16 bg_pattern_shift_reg[2]{};
-	// These are actually 8 bits on real HW, but it's easier this way.
-	// Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
-	u16 bg_palette_attr_reg[2]{};
+	u8 sprite_attribute_latch     [8]{};
 	u8 sprite_pattern_shift_reg[2][8]{};
-	u8 sprite_attribute_latch[8]{};
-	signed sprite_x_pos_counter[8]{};
 
-	// SDL renderering specific
+	u16 bg_palette_attr_reg [2]{}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
+	u16 bg_pattern_shift_reg[2]{};
+
+	int scanline = 0;
+
+	int sprite_x_pos_counter[8]{};
+
+	unsigned framebuffer_pos = 0;
+	unsigned scanline_cycle;
+	unsigned window_scale;
+	unsigned window_scale_temp;
+	unsigned window_pixel_offset_x;
+	unsigned window_pixel_offset_x_temp;
+	unsigned window_pixel_offset_y;
+	unsigned window_pixel_offset_y_temp;
+
+	std::array<u8, 0x100 > oam          {}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
+	std::array<u8, 0x20  > palette_ram  {}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
+	std::array<u8, 0x20  > secondary_oam{}; /* Holds sprite data for sprites to be rendered on the next scanline. */
+	std::array<u8, 0x1000> nametable_ram{}; /* Mapped to PPU $2000-$2FFF (mirrored at $3000-$3EFF). */
+
+	std::vector<u8> framebuffer{};
+
 	SDL_Renderer* renderer;
 	SDL_Window* window;
-	SDL_Rect rect;
-	unsigned scale, scale_temp;
-	unsigned pixel_offset_x, pixel_offset_y, pixel_offset_x_temp, pixel_offset_y_temp;
-	bool reset_graphics_after_render;
-	std::vector<u8> framebuffer{};
-	unsigned frame_buffer_pos = 0;
-
-	const size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
 
 	void CheckNMI();
-	void UpdateSpriteEvaluation();
+	void LogState();
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
 	void PushPixel(u8 nes_col);
 	void ReloadBackgroundShiftRegisters();
 	void ReloadSpriteShiftRegisters(unsigned sprite_index);
 	void RenderGraphics();
-	bool RenderingIsEnabled();
 	void ResetGraphics();
 	void ShiftPixel();
 	void StepCycle();
 	void UpdateBGTileFetching();
+	void UpdateSpriteEvaluation();
 	void UpdateSpriteTileFetching();
 	void WriteMemory(u16 addr, u8 data);
-	void WriteOpenBus(u8 data);
 	void WritePaletteRAM(u16 addr, u8 data);
+
+	bool RenderingIsEnabled();
 
 	[[nodiscard]] u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
 	[[nodiscard]] u8 ReadMemory(u16 addr);
-	[[nodiscard]] u8 ReadOpenBus();
 	[[nodiscard]] u8 ReadPaletteRAM(u16 addr);
 
-	/// Debugging-related
-	void LogState();
+	size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
 };
 
