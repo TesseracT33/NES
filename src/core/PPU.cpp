@@ -105,7 +105,7 @@ void PPU::PowerOn(const System::VideoStandard standard)
 {
 	Reset();
 
-	OAMADDR = reg.v = reg.t = 0;
+	OAMADDR = scroll.v = scroll.t = 0;
 	//PPUSTATUS = 0b10100000;
 	PPUSTATUS = 0;
 
@@ -123,7 +123,7 @@ void PPU::PowerOn(const System::VideoStandard standard)
 
 void PPU::Reset()
 {
-	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = reg.w = 0;
+	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = scroll.w = 0;
 	scanline_cycle = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
 	odd_frame = false;
 	scanline = 0;
@@ -267,10 +267,10 @@ void PPU::StepCycle()
 					{
 						// Increment the coarse X scroll at cycles 8, 16, ..., 256
 						if (scanline_cycle % 8 == 0)
-							reg.increment_coarse_x();
+							scroll.increment_coarse_x();
 						// Increment the coarse Y scroll at cycle 256
 						if (scanline_cycle == 256)
-							reg.increment_y();
+							scroll.increment_y();
 					}
 				}
 				break;
@@ -291,7 +291,7 @@ void PPU::StepCycle()
 				tile_fetcher.SetSpriteTileFetchingActive();
 				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
 				if (RenderingIsEnabled())
-					reg.v = reg.v & ~0x41F | reg.t & 0x41F; // copy all bits related to horizontal position from t to v:
+					scroll.v = scroll.v & ~0x41F | scroll.t & 0x41F; // copy all bits related to horizontal position from t to v:
 				sprite_index = 0;
 			}
 			else if (scanline_cycle == 260)
@@ -333,7 +333,7 @@ void PPU::StepCycle()
 			if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304 && RenderingIsEnabled())
 			{
 				// Copy the vertical bits of t to v
-				reg.v = reg.v & ~0x7BE0 | reg.t & 0x7BE0;
+				scroll.v = scroll.v & ~0x7BE0 | scroll.t & 0x7BE0;
 			}
 		}
 		else // Cycles 321-340
@@ -367,7 +367,7 @@ void PPU::StepCycle()
 			case 328: case 336:
 				UpdateBGTileFetching();
 				if (RenderingIsEnabled())
-					reg.increment_coarse_x();
+					scroll.increment_coarse_x();
 				break;
 
 			case 329: case 337:
@@ -382,15 +382,19 @@ void PPU::StepCycle()
 		}
 	}
 	/* NTSC: scanline 241. PAL: scanline 240. Dendy: scanline 290 */
-	else if (scanline == standard.nmi_scanline)
+	else if (scanline == standard.nmi_scanline && scanline_cycle == 1)
 	{
-		if (scanline_cycle == 1)
+		if (do_not_set_vblank_flag_on_next_vblank)
+		{
+			do_not_set_vblank_flag_on_next_vblank = false;
+		}
+		else
 		{
 			PPUSTATUS |= PPUSTATUS_vblank_mask;
 			CheckNMI();
-			scanline_cycle = 2;
-			return;
 		}
+		scanline_cycle = 2;
+		return;
 	}
 
 	// Increment the scanline cycle counter. Normally, each scanline is 341 clocks long.
@@ -434,13 +438,31 @@ u8 PPU::ReadRegister(u16 addr)
 
 	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
 	{
+		/* From https://wiki.nesdev.org/w/index.php?title=PPU_frame_timing:
+		   Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior.
+		   Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame.
+		   Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame.
+		   Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, and doesn't affect NMI operation). */
+		if (scanline == standard.nmi_scanline)
+		{
+			/* Note: The PPU is always stepped after the CPU.
+			   If e.g. scanline_cycle == 1 during the call to ReadRegister, then the PPU has not yet updated for that cycle, so it hasn't trigger an NMI yet. */
+			switch (scanline_cycle)
+			{
+			case 0: do_not_set_vblank_flag_on_next_vblank = true; break;
+			case 1: suppress_nmi_on_next_vblank = true;           break;
+			case 2: cpu->SetNMIHigh(); NMI_line = 1;              break;
+			default:                                              break;
+			}
+		}
+
 		// bits 4-0 are unused and then return bits 4-0 of the last value that was written to any ppu register
 		u8 ret = PPUSTATUS & 0xE0 | ReadOpenBus() & 0x1F;
 		WriteOpenBus(ret);
 		// reading this register clears the vblank flag
 		PPUSTATUS &= ~PPUSTATUS_vblank_mask;
 		CheckNMI();
-		reg.w = 0;
+		scroll.w = 0;
 		return ret;
 	}
 
@@ -467,14 +489,14 @@ u8 PPU::ReadRegister(u16 addr)
 		if (IsInVblank() || !RenderingIsEnabled())
 		{
 			u8 ret;
-			u16 v_read = reg.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
+			u16 v_read = scroll.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
 			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
 			if (v_read <= 0x3EFF)
 			{
 				ret = PPUDATA;
 				PPUDATA = ReadMemory(v_read);
-				reg.v += PPUCTRL_incr_mode ? 32 : 1;
+				scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			}
 			// When reading palette data $3F00-$3FFF, the palette data is placed immediately on the data bus.
 			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of the mirrored nametable data ($3000-$3EFF) (?).
@@ -484,15 +506,15 @@ u8 PPU::ReadRegister(u16 addr)
 				// High 2 bits from palette should be from open bus. Reading palette shouldn't refresh high 2 bits of open bus.
 				ret = ReadMemory(v_read) & 0x3F | ReadOpenBus() & 0xC0;
 				PPUDATA = ReadMemory(v_read - 0xF00); // ???
-				reg.v += PPUCTRL_incr_mode ? 32 : 1;
+				scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			}
 			WriteOpenBus(ret);
 			return ret;
 		}
 		else
 		{
-			reg.increment_coarse_x();
-			reg.increment_y();
+			scroll.increment_coarse_x();
+			scroll.increment_y();
 			return ReadOpenBus();
 		}
 	}
@@ -515,7 +537,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		PPUCTRL = data;
 		WriteOpenBus(data);
 		CheckNMI();
-		reg.t = reg.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
+		scroll.t = scroll.t & ~0xC00 | (data & 3) << 10; // Set bits 11-10 of 't' to bits 1-0 of 'data'
 		break;
 
 	case Bus::Addr::PPUMASK: // $2001 (write-only)
@@ -551,33 +573,33 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUSCROLL: // $2005 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
 		WriteOpenBus(data);
-		if (reg.w == 0) // Update x-scroll registers
+		if (scroll.w == 0) // Update x-scroll registers
 		{
-			reg.t = reg.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
-			reg.x = data; // Set 'x' (fine x-scroll) to bits 2-0 of 'data'
+			scroll.t = scroll.t & ~0x1F | data >> 3; // Set bits 4-0 of 't' (coarse x-scroll) to bits 7-3 of 'data'
+			scroll.x = data; // Set 'x' (fine x-scroll) to bits 2-0 of 'data'
 		}
 		else // Update y-scroll registers
 		{
 			// Set bits 14-12 of 't' (fine y-scroll) to bits 2-0 of 'data', and bits 9-5 of 't' (coarse y-scroll) to bits 7-3 of 'data'
-			reg.t = reg.t & ~0x73E0 | (data & 7) << 12 | (data & 0xF8) << 2;
+			scroll.t = scroll.t & ~0x73E0 | (data & 7) << 12 | (data & 0xF8) << 2;
 		}
-		reg.w = !reg.w;
+		scroll.w = !scroll.w;
 		break;
 
 	case Bus::Addr::PPUADDR: // $2006 (write-only)
 		//if (!cpu->all_ppu_regs_writable) return;
 		WriteOpenBus(data);
-		if (reg.w == 0)
+		if (scroll.w == 0)
 		{
-			reg.t = reg.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
-			reg.t &= 0x3FFF; // Clear bit 14 of 't'
+			scroll.t = scroll.t & ~0x3F00 | (data & 0x3F) << 8; // Set bits 13-8 of 't' to bits 5-0 of 'data'
+			scroll.t &= 0x3FFF; // Clear bit 14 of 't'
 		}
 		else
 		{
-			reg.t = reg.t & 0xFF00 | data; // Set the lower byte of 't' to 'data'
-			reg.v = reg.t;
+			scroll.t = scroll.t & 0xFF00 | data; // Set the lower byte of 't' to 'data'
+			scroll.v = scroll.t;
 		}
-		reg.w = !reg.w;
+		scroll.w = !scroll.w;
 		break;
 
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
@@ -585,14 +607,14 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
 		if (IsInVblank() || !RenderingIsEnabled())
 		{
-			WriteMemory(reg.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
-			reg.v += PPUCTRL_incr_mode ? 32 : 1;
+			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
+			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			WriteOpenBus(data);
 		}
 		else
 		{
-			reg.increment_coarse_x();
-			reg.increment_y();
+			scroll.increment_coarse_x();
+			scroll.increment_y();
 		}
 		break;
 
@@ -656,8 +678,14 @@ void PPU::WritePaletteRAM(u16 addr, u8 data)
 
 void PPU::CheckNMI()
 {
-	// The PPU pulls /NMI low if and only if both PPUCTRL.7 and PPUSTATUS.7 are set.
-	// Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal.
+	/* If PPUSTATUS was read on the same ppu cycle as the vblank flag is set, do not trigger an NMI. */
+	if (suppress_nmi_on_next_vblank && scanline_cycle == 1)
+	{
+		suppress_nmi_on_next_vblank = true;
+		return;
+	}
+	/* The PPU pulls /NMI low only if both PPUCTRL.7 and PPUSTATUS.7 are set.
+	   Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal. */
 	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank && NMI_line == 1)
 	{
 		cpu->SetNMILow();
@@ -673,7 +701,7 @@ void PPU::CheckNMI()
 
 void PPU::UpdateSpriteEvaluation()
 {
-	auto increment_n = [&]()
+	auto increment_n = [&]() -> void
 	{
 		if (++sprite_evaluation.n == 0)
 		{
@@ -681,7 +709,7 @@ void PPU::UpdateSpriteEvaluation()
 		}
 	};
 
-	auto increment_m = [&]()
+	auto increment_m = [&]() -> void
 	{
 		// Check whether we have copied all four bytes of a sprite yet.
 		if (++sprite_evaluation.m == 0)
@@ -753,8 +781,8 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 	if (col_id == 0)
 	{
 		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
-		if (reg.v >= 0x3F00 && reg.v <= 0x3FFF && !RenderingIsEnabled())
-			return ReadPaletteRAM(reg.v);
+		if (scroll.v >= 0x3F00 && scroll.v <= 0x3FFF && !RenderingIsEnabled())
+			return ReadPaletteRAM(scroll.v);
 		return ReadPaletteRAM(0x3F00);
 	}
 	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
@@ -828,7 +856,7 @@ void PPU::ShiftPixel()
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
 	u8 bg_col_id;
 	if (PPUMASK_bg_enable && (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable))
-		bg_col_id = ((bg_pattern_shift_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << reg.x) & 0x8000) >> 14;
+		bg_col_id = ((bg_pattern_shift_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << scroll.x) & 0x8000) >> 14;
 	else
 		bg_col_id = 0;
 	bg_pattern_shift_reg[0] <<= 1;
@@ -895,7 +923,7 @@ void PPU::ShiftPixel()
 	else
 	{
 		// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
-		u8 bg_palette_id = ((bg_palette_attr_reg[0] << reg.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << reg.x) & 0x8000) >> 14;
+		u8 bg_palette_id = ((bg_palette_attr_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << scroll.x) & 0x8000) >> 14;
 		col = GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
 	}
 	bg_palette_attr_reg[0] <<= 1;
@@ -953,7 +981,7 @@ void PPU::UpdateBGTileFetching()
 		  || ++-------------- Nametable select
 		  ++----------------- Nametable base address ($2000)
 		*/
-		u16 addr = 0x2000 | (reg.v & 0x0FFF);
+		u16 addr = 0x2000 | (scroll.v & 0x0FFF);
 		tile_fetcher.tile_num = ReadMemory(addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_attribute_table_byte;
 		break;
@@ -969,13 +997,13 @@ void PPU::UpdateBGTileFetching()
 		  || ++--------------- Nametable select
 		  ++------------------ Nametable base address ($2000)
 		*/
-		u16 addr = 0x23C0 | (reg.v & 0x0C00) | ((reg.v >> 4) & 0x38) | ((reg.v >> 2) & 7);
+		u16 addr = 0x23C0 | (scroll.v & 0x0C00) | ((scroll.v >> 4) & 0x38) | ((scroll.v >> 2) & 7);
 		tile_fetcher.attribute_table_byte = ReadMemory(addr);
 
 		// Determine in which quadrant (0-3) of the 32x32 pixel metatile that the current tile is in
 		// topleft == 0, topright == 1, bottomleft == 2, bottomright = 3
 		// scroll-x % 4 and scroll-y % 4 give the "tile-coordinates" of the current tile in the metatile
-		tile_fetcher.attribute_table_quadrant = 2 * ((reg.v & 0x60) > 0x20) + ((reg.v & 3) > 1);
+		tile_fetcher.attribute_table_quadrant = 2 * ((scroll.v & 0x60) > 0x20) + ((scroll.v & 3) > 1);
 
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_low;
 		break;
@@ -993,7 +1021,7 @@ void PPU::UpdateBGTileFetching()
 		  For BG tiles    : RRRR CCCC == the nametable byte fetched in step 1
 		  For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		tile_fetcher.pattern_table_data_addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | reg.v >> 12;
+		tile_fetcher.pattern_table_data_addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | scroll.v >> 12;
 		tile_fetcher.pattern_table_tile_low = ReadMemory(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;

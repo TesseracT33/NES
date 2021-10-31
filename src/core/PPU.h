@@ -104,7 +104,7 @@ private:
 		u8 secondary_oam[secondary_oam_size]{}; // not mapped
 	} memory;
 
-	struct ScrollRegs
+	struct ScrollRegisters
 	{
 		/* Composition of 'v' (and 't'):
 		  yyy NN YYYYY XXXXX
@@ -149,7 +149,7 @@ private:
 			}
 			else v += 0x1000;
 		}
-	} reg;
+	} scroll;
 
 	struct SpriteEvaluation
 	{
@@ -186,11 +186,13 @@ private:
 		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
 	} tile_fetcher;
 
-	bool cycle_340_was_skipped_on_last_scanline = false;
+	bool cycle_340_was_skipped_on_last_scanline = false; // On NTSC, cycle 340 of the pre render scanline may be skipped every other frame.
+	bool do_not_set_vblank_flag_on_next_vblank; // The VBL flag may not be set if PPUSTATUS is read to close to when the flag is supposed to be set.
 	bool NMI_line = 1;
-	bool odd_frame = false; // during odd-numbered frames, the pre-render scanline lasts for 339 ppu cycles instead of 340 as normally
+	bool odd_frame = false;
 	bool open_bus_decayed = true;
 	bool set_sprite_0_hit_flag = false;
+	bool suppress_nmi_on_next_vblank; // An NMI may not trigger on VBL if PPUSTATUS is read to close to when the VBL flag is set.
 
 	// PPU registers accessible by the CPU
 	u8 PPUCTRL;
