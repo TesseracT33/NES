@@ -78,11 +78,11 @@ public:
 			{
 				shift_reg = 0x10;
 				times_written = 0;
+				prg_rom_bank_mode = 3; /* Mesen source code (MMC1.h): the control register should be reset as well. */
 			}
 			else
 			{
-				shift_reg >>= 1;
-				shift_reg |= (data & 1) << 4;
+				shift_reg = shift_reg >> 1 | data << 4;
 				if (++times_written == 5)
 				{
 					switch (addr >> 12)
@@ -90,7 +90,7 @@ public:
 					case 0x8: case 0x9: /* Control (internal, $8000-$9FFF) */
 						chr_mirroring = shift_reg;
 						prg_rom_bank_mode = shift_reg >> 2;
-						chr_bank_mode = shift_reg >> 4;
+						chr_bank_mode = shift_reg & 0x10;
 						break;
 
 					case 0xA: case 0xB: /* CHR bank 0 (internal, $A000-$BFFF) */
@@ -103,7 +103,7 @@ public:
 
 					case 0xE: case 0xF: /* PRG bank (internal, $E000-$FFFF) */
 						prg_bank = (shift_reg & 0xF) % properties.num_prg_rom_banks;
-						prg_ram_enabled = shift_reg & 0x10;
+						prg_ram_enabled = !(shift_reg & 0x10);
 						break;
 
 					default: break; // impossible
@@ -117,7 +117,7 @@ public:
 
 	u8 ReadCHR(u16 addr) override
 	{
-		// 8 KB mode; $0000-$1FFF is mapped to a single 8 KiB bank (bit 0 of the bank number is ignored).
+		// 8 KiB mode; $0000-$1FFF is mapped to a single 8 KiB bank (bit 0 of the bank number is ignored).
 		// Effectively, this is mapping $0000-$0FFF to 'chr_bank_0 & ~0x01', and $1000-$1FFF to '(chr_bank_0 & ~0x01) + 1'
 		// If 'chr_bank_0 & ~0x01' is the last 4 KiB bank, transform addresses in $1000-$1FFF into $0000-$0FFF
 		if (chr_bank_mode == 0)
@@ -139,7 +139,12 @@ public:
 			return;
 
 		if (chr_bank_mode == 0)
-			chr[addr + 0x2000 * (chr_bank_0 & ~0x01)] = data;
+		{
+			u8 aligned_bank = chr_bank_0 & ~0x01;
+			if (aligned_bank == properties.num_chr_banks - 1)
+				addr &= 0xFFF;
+			chr[addr + 0x1000 * aligned_bank] = data;
+		}
 		else
 		{
 			if (addr <= 0x0FFF)
@@ -162,21 +167,21 @@ public:
 
 protected:
 	// TODO: what are the default values of these?
-	unsigned chr_bank_0        : 5 = 0;
-	unsigned chr_bank_1        : 5 = 0;
-	unsigned chr_mirroring     : 2 = 0;
-	unsigned chr_bank_mode     : 1 = 0;
-	unsigned prg_bank          : 4 = 0;
-	unsigned prg_ram_bank      : 2 = 0;
-	unsigned prg_ram_enabled   : 1 = 0;
+	bool prg_ram_enabled = false;
+	bool chr_bank_mode = 0;
+	unsigned chr_bank_0 : 5 = 0;
+	unsigned chr_bank_1 : 5 = 0;
+	unsigned chr_mirroring : 2 = 0;
+	unsigned prg_bank : 4 = 0;
+	unsigned prg_ram_bank : 2 = 0;
 	unsigned prg_rom_bank_mode : 2 = 3; /* nesdev seem to suggest that many carts start in PRG ROM bank mode 3. */
-	unsigned shift_reg         : 5 = 0x10;
+	unsigned shift_reg : 5 = 0x10;
 
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
 	{
 		SetCHRBankSize(properties, 0x1000);
-		SetCHRRAMSize(properties, 0x32000); /* Carts with CHR RAM have 128 KiB capacity */
+		SetCHRRAMSize(properties, 0x2000); /*  Known carts with CHR RAM have 8 KiB capacity. */
 		SetPRGRAMSize(properties, 0x2000);
 		return properties;
 	};
