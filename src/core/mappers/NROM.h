@@ -60,6 +60,7 @@ public:
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
 	{
+		SetCHRRAMSize(properties, 0x2000); /* Some homebrew programs may use 8 KiB of CHR RAM */
 		SetPRGRAMSize(properties, 0x2000);
 		return properties;
 	};
