@@ -16,7 +16,7 @@
  |+-------- PPU master/slave select
  |          (0: read backdrop from EXT pins; 1: output color on EXT pins)
  +--------- Generate an NMI at the start of the
-            vertical blanking interval (0: off; 1: on)
+			vertical blanking interval (0: off; 1: on)
 */
 #define PPUCTRL_NMI_enable_mask       0x80
 #define PPUCTRL_PPU_master_mask       0x40
@@ -82,9 +82,9 @@
  |          a nonzero background pixel; cleared at dot 1 of the pre-render
  |          line.  Used for raster timing.
  +--------- Vertical blank has started (0: not in vblank; 1: in vblank).
-            Set at dot 1 of line 241 (the line *after* the post-render
-            line); cleared after reading $2002 and at dot 1 of the
-            pre-render line.
+			Set at dot 1 of line 241 (the line *after* the post-render
+			line); cleared after reading $2002 and at dot 1 of the
+			pre-render line.
 */
 #define PPUSTATUS_vblank_mask           0x80
 #define PPUSTATUS_sprite_0_hit_mask     0x40
@@ -111,8 +111,8 @@ void PPU::PowerOn(const System::VideoStandard standard)
 
 	switch (standard)
 	{
-	case System::VideoStandard::NTSC : this->standard = NTSC ; break;
-	case System::VideoStandard::PAL  : this->standard = PAL  ; break;
+	case System::VideoStandard::NTSC: this->standard = NTSC; break;
+	case System::VideoStandard::PAL: this->standard = PAL; break;
 	case System::VideoStandard::Dendy: this->standard = Dendy; break;
 	}
 
@@ -125,7 +125,7 @@ void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = scroll.w = 0;
 	scanline_cycle = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
-	odd_frame = false;
+	odd_frame = true;
 	scanline = 0;
 	pixel_x_pos = 0;
 }
@@ -134,7 +134,7 @@ void PPU::Reset()
 bool PPU::CreateRenderer(const void* window_handle)
 {
 	this->window = SDL_CreateWindowFrom(window_handle);
-	if (window == NULL)
+	if (window == nullptr)
 	{
 		const char* error_msg = SDL_GetError();
 		UserMessage::Show(std::format("Could not create the SDL window; {}", error_msg), UserMessage::Type::Error);
@@ -142,7 +142,7 @@ bool PPU::CreateRenderer(const void* window_handle)
 	}
 
 	this->renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-	if (renderer == NULL)
+	if (renderer == nullptr)
 	{
 		const char* error_msg = SDL_GetError();
 		UserMessage::Show(std::format("Could not create the SDL renderer; {}", error_msg), UserMessage::Type::Error);
@@ -203,12 +203,12 @@ void PPU::StepCycle()
 	if (scanline_cycle == 0)
 	{
 		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
-		scanline_cycle = 1;
 		if (cycle_340_was_skipped_on_last_scanline)
 		{
 			UpdateBGTileFetching();
 			cycle_340_was_skipped_on_last_scanline = false;
 		}
+		scanline_cycle = 1;
 		return;
 	}
 
@@ -344,8 +344,8 @@ void PPU::StepCycle()
 			{
 				bg_pattern_shift_reg[0] <<= 1;
 				bg_pattern_shift_reg[1] <<= 1;
-				bg_palette_attr_reg [0] <<= 1;
-				bg_palette_attr_reg [1] <<= 1;
+				bg_palette_attr_reg[0] <<= 1;
+				bg_palette_attr_reg[1] <<= 1;
 			}
 			switch (scanline_cycle)
 			{
@@ -397,6 +397,7 @@ void PPU::StepCycle()
 	// Increment the scanline cycle counter. Normally, each scanline is 341 clocks long.
 	// On NTSC specifically:
 	//   With rendering enabled, each odd PPU frame is one PPU cycle shorter than normal; specifically, the pre-render scanline is only 340 clocks long.
+	//   The last nametable fetch, normally taking place on cycle 340, then takes place on cycle 0 the following scanline.
 	if (scanline_cycle == 339)
 	{
 		if (standard.pre_render_line_is_one_dot_shorter_on_every_other_frame &&
@@ -877,7 +878,7 @@ void PPU::RenderGraphics()
 	rect.h = GetWindowHeight();
 	rect.x = window_pixel_offset_x;
 	rect.y = window_pixel_offset_y;
-	SDL_RenderCopy(renderer, texture, NULL, &rect);
+	SDL_RenderCopy(renderer, texture, nullptr, &rect);
 
 	SDL_RenderPresent(renderer);
 
@@ -951,11 +952,11 @@ void PPU::ShiftPixel()
 
 	// Set the sprite zero hit flag if all conditions below are met
 	if (!PPUSTATUS_sprite_0_hit                                                              && // The flag has not already been set this frame
-	    sprite_evaluation.sprite_0_included && sprite_index == 0                             && // The current sprite is the 0th sprite in OAM
-	    bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
-	    PPUMASK_bg_enable && PPUMASK_sprite_enable                                           && // Both bg and sprite rendering must be enabled
-	    (pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
-	    pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
+		sprite_evaluation.sprite_0_included && sprite_index == 0                             && // The current sprite is the 0th sprite in OAM
+		bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
+		PPUMASK_bg_enable && PPUMASK_sprite_enable                                           && // Both bg and sprite rendering must be enabled
+		(pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
+		pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
 	{
 		// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
 		if (scanline_cycle >= 2)
@@ -968,7 +969,7 @@ void PPU::ShiftPixel()
 	// Decision table for mixing:
 	/* BG pixel | Sprite pixel | Priority | Output
 	  ---------------------------------------------
-	      0     |       0      |    Any   |   BG
+		  0     |       0      |    Any   |   BG
 		  0     |      1-3     |    Any   | Sprite
 		 1-3    |       0      |    Any   |   BG
 		 1-3    |      1-3     |     0    | Sprite
@@ -1115,7 +1116,7 @@ void PPU::UpdateSpriteTileFetching()
 		*/
 		// TODO: not sure if reg.v should be used instead of current_scanline
 		u8 scanline_sprite_y_delta = scanline - tile_fetcher.sprite_y_pos;
-		u8 sprite_row_num =  scanline_sprite_y_delta; // which row of the sprite the scanline falls on (0-7)
+		u8 sprite_row_num = scanline_sprite_y_delta; // which row of the sprite the scanline falls on (0-7)
 		bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
 		if (flip_sprite_y)
 			sprite_row_num = 7 - sprite_row_num;
