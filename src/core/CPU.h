@@ -218,15 +218,15 @@ private:
 	bool stopped; // set to true by the STP instruction
 
 	// Interrupt-related
-	bool NMI_line = 1; // The NMI signal coming from the ppu.
-	bool polled_NMI_line = 1, prev_polled_NMI_line = 1; // The polled NMI line signal during the 2nd half of the last and second to last CPU cycle, respectively.
-	bool need_NMI = false; // Whether we need to service an NMI interrupt. Is set right after a negative edge is detected (prev_polled_NMI_line == 1 && polled_NMI_line == 0)
-	bool polled_need_NMI = false; // Same as above, but this only gets updated to 'need_NMI' only cycle after need_NMI is updated. If this is set after we have executed an instruction, we service the NMI.
-	bool need_IRQ = false;
-	bool polled_need_IRQ = false;
-	bool write_to_interrupt_disable_flag_on_next_cycle = false;
+	bool NMI_line; // The NMI signal coming from the ppu.
+	bool polled_NMI_line, prev_polled_NMI_line; // The polled NMI line signal during the 2nd half of the last and second to last CPU cycle, respectively.
+	bool need_NMI; // Whether we need to service an NMI interrupt. Is set right after a negative edge is detected (prev_polled_NMI_line == 1 && polled_NMI_line == 0)
+	bool polled_need_NMI; // Same as above, but this only gets updated to 'need_NMI' only cycle after need_NMI is updated. If this is set after we have executed an instruction, we service the NMI.
+	bool need_IRQ;
+	bool polled_need_IRQ;
+	bool write_to_interrupt_disable_flag_before_next_instr;
 	bool bit_to_write_to_interrupt_disable_flag;
-	u8 IRQ_line = 0xFF; // One bit for each IRQ source (there are eight according to https://wiki.nesdev.org/w/index.php?title=IRQ)
+	u8 IRQ_line; // One bit for each IRQ source (there are eight according to https://wiki.nesdev.org/w/index.php?title=IRQ)
 
 	// OAMDMA-related
 	bool oam_dma_transfer_pending;
@@ -440,7 +440,7 @@ private:
 	__forceinline u8 GetReadInstrOperand()
 	{
 		if (curr_instr.addr_mode == AddrMode::Immediate)
-			return ReadCycle(PC++);
+			return curr_instr.read_addr;
 		if (curr_instr.page_crossing_possible && !curr_instr.page_crossed) // Possible only if Absolute Indexed or Indirect Indexed addressing is used
 			return curr_instr.read_addr;
 		return ReadCycle(curr_instr.addr);

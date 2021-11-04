@@ -1,7 +1,6 @@
 #include "CPU.h"
 
 
-
 void CPU::PowerOn()
 {
 	// https://wiki.nesdev.com/w/index.php?title=CPU_power_up_state
@@ -16,29 +15,30 @@ void CPU::PowerOn()
 
 void CPU::Reset()
 {
-	cpu_cycle_counter = total_cpu_cycle_counter = 0;
-	cpu_cycles_since_reset = 0;
-	all_ppu_regs_writable = false;
-	polled_NMI_line = prev_polled_NMI_line = 1;
-	need_NMI = false;
-	need_IRQ = false;
-	write_to_interrupt_disable_flag_on_next_cycle = false;
-	stalled = stopped = false;
-	oam_dma_transfer_pending = false;
 	odd_cpu_cycle = false;
+	stalled = stopped = false;
+
+	NMI_line = polled_NMI_line = prev_polled_NMI_line = 1;
+	need_NMI = polled_need_NMI = false;
+	IRQ_line = 0xFF;
+	need_IRQ = polled_need_IRQ = false;
+	write_to_interrupt_disable_flag_before_next_instr = false;
+
+	oam_dma_transfer_pending = false;
 }
 
 
 void CPU::RunStartUpCycles()
 {
-	/* Call this function after reset/initialization, where eight cycles pass before the CPU starts executing instructions. */
-	/* Two of them pass above from when the initial program counter is fetched. */
-	/* TODO: Not sure what the CPU is actually doing during the rest of the cycles. */
-	
-	PC = ReadWord(Bus::Addr::RESET_VEC);
+	/* Call this function after reset/initialization, where eight cycles pass before the CPU starts executing instructions.
+	   Two of them pass above from when the initial program counter is fetched.
+	   During the other ones, the stack pointer is decremented three times to $FD, dummy reads are made, etc.
+	   These things have already been taken care of in the CPU::PowerOn function, or don't need to be emulated. */
 
 	for (int i = 0; i < 6; i++)
 		WaitCycle();
+
+	PC = ReadWord(Bus::Addr::RESET_VEC);
 }
 
 
@@ -66,10 +66,10 @@ void CPU::Run()
 		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
 		//	all_ppu_regs_writable = true;
 
-		if (write_to_interrupt_disable_flag_on_next_cycle)
+		if (write_to_interrupt_disable_flag_before_next_instr)
 		{
 			flags.I = bit_to_write_to_interrupt_disable_flag;
-			write_to_interrupt_disable_flag_on_next_cycle = false;
+			write_to_interrupt_disable_flag_before_next_instr = false;
 		}
 		if (oam_dma_transfer_pending)
 		{
@@ -77,6 +77,11 @@ void CPU::Run()
 		}
 		else
 		{
+			if (total_cpu_cycle_counter == 457645)
+			{
+				int a = 3;
+			}
+
 			ExecuteInstruction();
 
 			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
@@ -162,6 +167,7 @@ void CPU::ExecAccumulator()
 
 void CPU::ExecImmediate()
 {
+	curr_instr.read_addr = ReadCycle(PC++);
 	std::invoke(curr_instr.instr, this);
 }
 
@@ -482,7 +488,7 @@ void CPU::CLD()
 void CPU::CLI()
 {
 	// CLI clears the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
-	write_to_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_before_next_instr = true;
 	bit_to_write_to_interrupt_disable_flag = 0;
 }
 
@@ -508,7 +514,7 @@ void CPU::CMP()
 // Compare the contents of the X register with the contents of a memory location (essentially performing the subtraction X-M without storing the result).
 void CPU::CPX()
 {
-	u8 M = curr_instr.addr_mode == AddrMode::Immediate ? ReadCycle(PC++) : ReadCycle(curr_instr.addr);
+	u8 M = GetReadInstrOperand();
 	flags.C = X >= M;
 	flags.Z = X == M;
 	u8 result = X - M;
@@ -519,7 +525,7 @@ void CPU::CPX()
 // Compare the contents of the Y register with the contents of memory location (essentially performing the subtraction Y-M without storing the result)
 void CPU::CPY()
 {
-	u8 M = curr_instr.addr_mode == AddrMode::Immediate ? ReadCycle(PC++) : ReadCycle(curr_instr.addr);
+	u8 M = GetReadInstrOperand();
 	flags.C = Y >= M;
 	flags.Z = Y == M;
 	u8 result = Y - M;
@@ -669,7 +675,11 @@ void CPU::LSR()
 // No operation
 void CPU::NOP()
 {
-
+	// NOPs with implied or immediate addressing are two cycles long; others are three cycles long.
+	if (curr_instr.addr_mode == AddrMode::Implied   ||
+		curr_instr.addr_mode == AddrMode::Immediate)
+		return;
+	ReadCycle(curr_instr.addr);
 }
 
 
@@ -713,7 +723,7 @@ void CPU::PLP()
 	// PLP changes the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
 	bool I_tmp = flags.I;
 	SetStatusReg(PullByteFromStack());
-	write_to_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_before_next_instr = true;
 	bit_to_write_to_interrupt_disable_flag = flags.I;
 	flags.I = I_tmp;
 
@@ -823,7 +833,7 @@ void CPU::SED()
 void CPU::SEI()
 {
 	// SEI sets the I flag after polling for interrupts (effectively when CPU::Update() is called next time)
-	write_to_interrupt_disable_flag_on_next_cycle = true;
+	write_to_interrupt_disable_flag_before_next_instr = true;
 	bit_to_write_to_interrupt_disable_flag = 1;
 }
 
@@ -913,7 +923,7 @@ void CPU::AHX() // SHA / AXA
 void CPU::ALR() // ASR
 {
 	// AND
-	u8 M = ReadCycle(PC++);
+	u8 M = curr_instr.read_addr;
 	A &= M;
 	// LSR
 	flags.C = A & 1;
@@ -926,7 +936,7 @@ void CPU::ALR() // ASR
 // Unofficial instruction; AND with immediate addressing, where the carry flag is set to bit 7 of the result (equal to the negative flag after the AND).
 void CPU::ANC()
 {
-	u8 M = ReadCycle(PC++);
+	u8 M = curr_instr.read_addr;
 	A &= M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -934,23 +944,27 @@ void CPU::ANC()
 }
 
 
-// Unofficial instruction; combined AND and ROR with immediate addressing, but where the overflow and carry flags are set in particular ways.
+// Unofficial instruction; combined AND with immediate addressing and ROR of the accumulator, but where the overflow and carry flags are set in particular ways.
 void CPU::ARR()
 {
-	// AND
-	u8 M = ReadCycle(PC++);
-	A &= M;
-	// ROR
-	A = A >> 1 | flags.C << 7;
-	flags.C = A & 0x40;
-	flags.V = flags.C ^ (A >> 5 & 1); 
+	u8 M = curr_instr.read_addr;
+	A = (A & M) >> 1 | flags.C << 7;
+	flags.Z = A == 0;
+	flags.N = A & 0x80;
+	flags.C = A & 0x40; /* Source: Mesen source code; CPU.h */
+	flags.V = flags.C ^ (A >> 5 & 0x01); /* Source: Mesen source code; CPU.h */
 }
 
 
-// Unofficial instruction; store A AND X at addr.
+// Unofficial instruction; combined CMP and DEX with immediate addressing
 void CPU::AXS() // SAX, AAX
 {
-	WriteCycle(curr_instr.addr, A & X);
+	u8 M = curr_instr.read_addr;
+	flags.C = (A & X) >= M;
+	flags.Z = (A & X) == M;
+	u8 result = (A & X) - M;
+	flags.N = result & 0x80;
+	X = result; /* Source: Mesen source code; CPU.h */
 }
 
 
@@ -993,7 +1007,7 @@ void CPU::ISC() // ISB, INS
 // Unofficial instruction; fused LDA and TSX instruction, where M AND S are put into A, X, S.
 void CPU::LAS() // LAR
 {
-	u8 M = curr_instr.page_crossed ? ReadCycle(curr_instr.addr) : curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	A = X = SP = M & SP;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -1004,7 +1018,7 @@ void CPU::LAS() // LAR
 void CPU::LAX()
 {
 	// LDA
-	u8 M = curr_instr.page_crossed ? ReadCycle(curr_instr.addr) : curr_instr.read_addr;
+	u8 M = GetReadInstrOperand();
 	A = M;
 	// LDX
 	X = M;
@@ -1037,10 +1051,12 @@ void CPU::RRA()
 	// ROR
 	u8 M = ReadCycle(curr_instr.addr);
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
+	bool new_carry = M & 1;
 	u8 new_M = M >> 1 | flags.C << 7;
 	WriteCycle(curr_instr.addr, new_M);
+	flags.C = new_carry;
 	// ADC
-	u8 op = new_M + flags.C;
+	u16 op = new_M + flags.C;
 	flags.V = ((A & 0x7F) + (new_M & 0x7F) + flags.C > 0x7F)
 	        ^ ((A       ) + (new_M       ) + flags.C > 0xFF);
 	flags.C = A + op > 0xFF;
@@ -1050,11 +1066,10 @@ void CPU::RRA()
 }
 
 
-// Unofficial instruction; same thing as AXS but with different addressing modes allowed.
+// Unofficial instruction; store A AND X at addr.
 void CPU::SAX()
 {
-	// TODO remove this
-	AXS();
+	WriteCycle(curr_instr.addr, A & X);
 }
 
 
@@ -1126,7 +1141,7 @@ void CPU::TAS() // XAS, SHS
 void CPU::XAA()
 {
 	// Use CONST = 0
-	u8 M = ReadCycle(PC++);
+	u8 M = curr_instr.read_addr;
 	A &= X & M;
 	flags.Z = A == 0;
 	flags.N = A & 0x80;
@@ -1154,7 +1169,7 @@ void CPU::State(Serialization::BaseFunctor& functor)
 	functor.fun(&polled_need_NMI, sizeof(bool));
 	functor.fun(&need_IRQ, sizeof(bool));
 	functor.fun(&polled_need_IRQ, sizeof(bool));
-	functor.fun(&write_to_interrupt_disable_flag_on_next_cycle, sizeof(bool));
+	functor.fun(&write_to_interrupt_disable_flag_before_next_instr, sizeof(bool));
 	functor.fun(&bit_to_write_to_interrupt_disable_flag, sizeof(bool));
 	functor.fun(&IRQ_line, sizeof(u8));
 
