@@ -9,7 +9,8 @@ void BusImpl::Initialize()
 
 void BusImpl::Reset()
 {
-
+	ram.fill(0);
+	apu_io_test.fill(0);
 }
 
 
@@ -18,7 +19,7 @@ u8 BusImpl::Read(u16 addr)
 	// Internal RAM ($0000 - $1FFF)
 	if (addr <= 0x1FFF)
 	{
-		return memory.ram[addr & 0x7FF]; // wrap address to between 0-0x7FF
+		return ram[addr & 0x7FF]; // wrap address to between 0-0x7FF
 	}
 
 	// PPU Registers ($2000 - $3FFF)
@@ -47,6 +48,7 @@ u8 BusImpl::Read(u16 addr)
 	else if (addr <= 0x401F) [[unlikely]]
 	{
 		//unused
+		return 0xFF;
 	}
 
 	// Cartridge Space ($4020 - $FFFF)
@@ -62,7 +64,7 @@ void BusImpl::Write(u16 addr, u8 data)
 	// Internal RAM ($0000 - $1FFF)
 	if (addr <= 0x1FFF)
 	{
-		memory.ram[addr & 0x7FF] = data; // wrap address to between 0-0x7FF
+		ram[addr & 0x7FF] = data; // wrap address to between 0-0x7FF
 	}
 
 	// PPU Registers ($2000 - $3FFF)

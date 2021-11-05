@@ -50,6 +50,7 @@ public:
 		IRQ_BRK_VEC = 0xFFFE
 	};
 
+	/* CPU r/w functions. */
 	virtual u8 Read(u16 addr) = 0;
 	virtual void Write(u16 addr, u8 data) = 0;
 
