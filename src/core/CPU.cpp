@@ -77,11 +77,6 @@ void CPU::Run()
 		}
 		else
 		{
-			if (total_cpu_cycle_counter == 457645)
-			{
-				int a = 3;
-			}
-
 			ExecuteInstruction();
 
 			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
@@ -145,7 +140,7 @@ void CPU::ExecuteInstruction()
 	curr_instr.addr_mode = addr_mode_table[curr_instr.opcode];
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
-	curr_instr.page_crossing_possible = curr_instr.page_crossed = false;
+	curr_instr.page_crossed = false;
 
 	std::invoke(curr_instr.addr_mode_fun, this);
 }
@@ -201,8 +196,6 @@ void CPU::ExecAbsolute()
 
 void CPU::ExecAbsoluteIndexed(u8& index_reg)
 {
-	curr_instr.page_crossing_possible = true;
-
 	u8 addr_lo = ReadCycle(PC++);
 	u8 addr_hi = ReadCycle(PC++);
 	curr_instr.page_crossed = addr_lo + index_reg > 0xFF;
@@ -210,7 +203,7 @@ void CPU::ExecAbsoluteIndexed(u8& index_reg)
 	curr_instr.addr = addr_hi << 8 | addr_lo;
 	curr_instr.read_addr = ReadCycle(curr_instr.addr);
 	if (curr_instr.page_crossed)
-		curr_instr.addr = ((addr_hi + 1) & 0xFF) << 8 | addr_lo;
+		curr_instr.addr += 0x100; /* Add 1 to the upper address byte */
 
 	std::invoke(curr_instr.instr, this);
 }
@@ -243,12 +236,13 @@ void CPU::ExecIndirect()
 
 void CPU::ExecIndexedIndirect()
 {
-	curr_instr.addr = ReadCycle(PC++);
-	ReadCycle(curr_instr.addr); /* Dummy read */
-	curr_instr.addr = (curr_instr.addr + X) & 0xFF;
-	curr_instr.read_addr = ReadCycle(curr_instr.addr);
-	curr_instr.addr = (curr_instr.addr + 1) & 0xFF;
-	curr_instr.addr = ReadCycle(curr_instr.addr) << 8 | curr_instr.read_addr;
+	u8 addr_lo = ReadCycle(PC++);
+	ReadCycle(addr_lo); /* Dummy read */
+	addr_lo += X;
+	curr_instr.read_addr = ReadCycle(addr_lo);
+	addr_lo++;
+	u8 addr_hi = ReadCycle(addr_lo);
+	curr_instr.addr = addr_hi << 8 | curr_instr.read_addr;
 
 	std::invoke(curr_instr.instr, this);
 }
@@ -256,8 +250,6 @@ void CPU::ExecIndexedIndirect()
 
 void CPU::ExecIndirectIndexed()
 {
-	curr_instr.page_crossing_possible = true;
-
 	u8 addr_lo = ReadCycle(PC++);
 	curr_instr.read_addr = ReadCycle(addr_lo);
 	addr_lo++;
@@ -267,7 +259,7 @@ void CPU::ExecIndirectIndexed()
 	curr_instr.addr = addr_hi << 8 | addr_lo;
 	curr_instr.read_addr = ReadCycle(curr_instr.addr);
 	if (curr_instr.page_crossed)
-		curr_instr.addr = ((addr_hi + 1) & 0xFF) << 8 | addr_lo;
+		curr_instr.addr += 0x100; /* Add 1 to the upper address byte */
 
 	std::invoke(curr_instr.instr, this);
 }
@@ -386,7 +378,7 @@ void CPU::ASL()
 	}
 	else
 	{
-		u8 M = ReadCycle(curr_instr.addr);
+		u8 M = GetReadModWriteInstrOperand();
 		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		u8 new_M = M << 1;
 		WriteCycle(curr_instr.addr, new_M);
@@ -421,7 +413,7 @@ void CPU::BEQ()
 // Check the bitwise AND between the accumulator and the contents of a memory location, and set the status flags accordingly.
 void CPU::BIT()
 {
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadInstrOperand();
 	flags.Z = (A & M) == 0;
 	flags.V = M & 0x40;
 	flags.N = M & 0x80;
@@ -536,7 +528,7 @@ void CPU::CPY()
 // Subtract one from the value held at a specified memory location.
 void CPU::DEC()
 {
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M - 1;
 	WriteCycle(curr_instr.addr, new_M);
@@ -576,7 +568,7 @@ void CPU::EOR()
 // Add one to the value held at a specified memory location.
 void CPU::INC()
 {
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M + 1;
 	WriteCycle(curr_instr.addr, new_M);
@@ -610,7 +602,7 @@ void CPU::JMP()
 }
 
 
-// Push the program counter (minus one) on to stack the and set the program counter to the target memory address.
+// Jump to subroutine; push the program counter (minus one) on to the stack and set the program counter to the target memory address.
 void CPU::JSR()
 {
 	PushWordToStack(PC - 1);
@@ -661,7 +653,7 @@ void CPU::LSR()
 	}
 	else
 	{
-		u8 M = ReadCycle(curr_instr.addr);
+		u8 M = GetReadModWriteInstrOperand();
 		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		u8 new_M = M >> 1;
 		WriteCycle(curr_instr.addr, new_M);
@@ -675,11 +667,10 @@ void CPU::LSR()
 // No operation
 void CPU::NOP()
 {
-	// NOPs with implied or immediate addressing are two cycles long; others are three cycles long.
-	if (curr_instr.addr_mode == AddrMode::Implied   ||
-		curr_instr.addr_mode == AddrMode::Immediate)
-		return;
-	ReadCycle(curr_instr.addr);
+	/* This functions like a call to 'GetReadInstrOperand()';
+	   NOP, with its different addressing modes, behaves like a read instruction.
+	   Of course, it doesn't do anything with the operand. */
+	GetReadInstrOperand();
 }
 
 
@@ -744,7 +735,7 @@ void CPU::ROL()
 	}
 	else
 	{
-		u8 M = ReadCycle(curr_instr.addr);
+		u8 M = GetReadModWriteInstrOperand();
 		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		bool new_carry = M & 0x80;
 		u8 new_M = M << 1 | flags.C;
@@ -769,7 +760,7 @@ void CPU::ROR()
 	}
 	else
 	{
-		u8 M = ReadCycle(curr_instr.addr);
+		u8 M = GetReadModWriteInstrOperand();
 		WriteCycle(curr_instr.addr, M); /* Dummy write */
 		bool new_carry = M & 1;
 		u8 new_M = M >> 1 | flags.C << 7;
@@ -972,7 +963,7 @@ void CPU::AXS() // SAX, AAX
 void CPU::DCP() // DCM
 {
 	// DEC
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M - 1;
 	WriteCycle(curr_instr.addr, new_M);
@@ -989,7 +980,7 @@ void CPU::ISC() // ISB, INS
 {
 	// TODO: https://www.masswerk.at/6502/6502_instruction_set.html#ANC gives four cycles for (indirect),Y
 	// INC
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M + 1;
 	WriteCycle(curr_instr.addr, new_M);
@@ -1032,7 +1023,7 @@ void CPU::RLA()
 {
 	// TODO: Mesen states that this is a combined LSR and EOR
 	// ROL
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	bool new_carry = M & 0x80;
 	u8 new_M = M << 1 | flags.C;
@@ -1049,7 +1040,7 @@ void CPU::RLA()
 void CPU::RRA()
 {
 	// ROR
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	bool new_carry = M & 1;
 	u8 new_M = M >> 1 | flags.C << 7;
@@ -1073,19 +1064,23 @@ void CPU::SAX()
 }
 
 
-// Unofficial instruction; store X AND (high byte of addr + 1) at addr.
+// Unofficial instruction; if H := [high byte of addr] + 1 and L := [low byte of addr], store X AND H at address [X AND H] << 8 | L.
 void CPU::SHX()
 {
-	u8 op = (curr_instr.addr >> 8) + 1;
-	WriteCycle(curr_instr.addr, X & op);
+	u8 AND = ((curr_instr.addr >> 8) + 1) & X;
+	u8 addr_lo = curr_instr.addr;
+	u8 addr_hi = AND;
+	WriteCycle(addr_lo | addr_hi << 8, AND);
 }
 
 
-// Unofficial instruction; store Y AND (high byte of addr + 1) at addr.
+// Unofficial instruction; if H := [high byte of addr] + 1 and L := [low byte of addr], store Y AND H at address [Y AND H] << 8 | L.
 void CPU::SHY()
 {
-	u8 op = (curr_instr.addr >> 8) + 1;
-	WriteCycle(curr_instr.addr, Y & op);
+	u8 AND = ((curr_instr.addr >> 8) + 1) & Y;
+	u8 addr_lo = curr_instr.addr;
+	u8 addr_hi = AND;
+	WriteCycle(addr_lo | addr_hi << 8, AND);
 }
 
 
@@ -1093,7 +1088,7 @@ void CPU::SHY()
 void CPU::SLO()
 {
 	// ASL
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M << 1;
 	WriteCycle(curr_instr.addr, new_M);
@@ -1109,7 +1104,7 @@ void CPU::SLO()
 void CPU::SRE() // LSE
 {
 	// LSR
-	u8 M = ReadCycle(curr_instr.addr);
+	u8 M = GetReadModWriteInstrOperand();
 	WriteCycle(curr_instr.addr, M); /* Dummy write */
 	u8 new_M = M >> 1;
 	WriteCycle(curr_instr.addr, new_M);

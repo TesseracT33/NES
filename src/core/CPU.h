@@ -87,7 +87,6 @@ private:
 		AddrMode addr_mode;
 		addr_mode_fun_t addr_mode_fun;
 
-		bool page_crossing_possible;
 		bool page_crossed;
 
 		u8 read_addr;
@@ -439,10 +438,34 @@ private:
 
 	__forceinline u8 GetReadInstrOperand()
 	{
-		if (curr_instr.addr_mode == AddrMode::Immediate)
+		switch (curr_instr.addr_mode)
+		{
+		case AddrMode::Zero_page:
+		case AddrMode::Zero_page_X:
+		case AddrMode::Zero_page_Y:
+		case AddrMode::Absolute:
+		case AddrMode::Indexed_indirect:
+			return ReadCycle(curr_instr.addr);
+
+		/* If overflow did not occur when fetching the address, the operand has already been fetched from this address.
+		   If not, we need to perform the memory read. */
+		case AddrMode::Absolute_X:
+		case AddrMode::Absolute_Y:
+		case AddrMode::Indirect_indexed:
+			if (curr_instr.page_crossed)
+				return ReadCycle(curr_instr.addr);
 			return curr_instr.read_addr;
-		if (curr_instr.page_crossing_possible && !curr_instr.page_crossed) // Possible only if Absolute Indexed or Indirect Indexed addressing is used
+
+		/* For e.g. immediate adressing, the operand has already been read. */
+		default:
 			return curr_instr.read_addr;
+		}
+	}
+
+	__forceinline u8 GetReadModWriteInstrOperand()
+	{
+		/* For these instructions, no matter if a page was crossed when fetching the address, the operand is yet to be read.
+		Note: these instructions do not use immediate addressing. */
 		return ReadCycle(curr_instr.addr);
 	}
 
