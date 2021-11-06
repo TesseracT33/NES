@@ -26,6 +26,7 @@
     <ClInclude Include="src\core\mappers\AxROM.h" />
     <ClInclude Include="src\core\mappers\CNROM.h" />
     <ClInclude Include="src\core\mappers\MMC3.h" />
+    <ClInclude Include="src\core\NES.h" />
     <ClInclude Include="src\debug\Logging.h" />
     <ClInclude Include="src\core\mappers\MapperIncludes.h" />
     <ClInclude Include="src\core\mappers\UxROM.h" />

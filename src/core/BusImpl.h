@@ -12,17 +12,12 @@
 
 #include "mappers/BaseMapper.h"
 
-class BusImpl final : public Bus
+class BusImpl final : public Bus, public Component
 {
 public:
-	APU* apu;
-	CPU* cpu;
-	Joypad* joypad;
-	PPU* ppu;
+	using Component::Component;
 
-	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, the other components are not. */
-
-	void Reset();
+	void Reset() override;
 
 	/* CPU reads/writes/waits, that also advances the state machine by one cycle */
 	u8   ReadCycle(u16 addr)           override;

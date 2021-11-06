@@ -112,9 +112,9 @@ void MainWindow::SwitchToGameView()
 void MainWindow::SetupConfig()
 {
 	config.AddConfigurable(this);
-	config.AddConfigurable(&emulator);
-	config.AddConfigurable(&emulator.joypad);
-	config.AddConfigurable(&emulator.ppu);
+	std::vector<Configurable*> configurables = emulator.GetConfigurableComponents();
+	for (Configurable* configurable : configurables)
+		config.AddConfigurable(configurable);
 
 	if (config.ConfigFileExists())
 		config.Load();
@@ -531,9 +531,9 @@ void MainWindow::OnMenuSpeed(wxCommandEvent& event)
 
 void MainWindow::OnMenuInput(wxCommandEvent& event)
 {
-	if (!input_window_active)
-		input_bindings_window = new InputBindingsWindow(this, &config, &emulator.joypad, &input_window_active);
-	input_bindings_window->Show();
+	//if (!input_window_active)
+	//	input_bindings_window = new InputBindingsWindow(this, &config, &emulator.joypad, &input_window_active);
+	//input_bindings_window->Show();
 }
 
 

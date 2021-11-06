@@ -16,6 +16,7 @@
 #include "../debug/Logging.h"
 
 #include "Bus.h"
+#include "Component.h"
 #include "CPU.h"
 #include "System.h"
 
@@ -24,10 +25,9 @@
 class PPU final : public Component
 {
 public:
+	using Component::Component;
 	~PPU();
 
-	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, the other components are not. */
-	CPU* cpu;
 	Observer* gui;
 
 	unsigned GetWindowScale() const { return window_scale; }
@@ -52,8 +52,6 @@ public:
 	void SetDefaultConfig() override;
 
 private:
-	friend class Logging;
-
 	enum class TileType { BG, OBJ };
 
 	/* PPU operation details that are affected by the video standard (NTSC/PAL/Dendy): */
@@ -68,9 +66,9 @@ private:
 		int num_visible_scanlines;
 	} standard = NTSC;
 
-	const Standard NTSC  = {  true,  true, 3.0f, 241, 262, 20, 240 };
-	const Standard PAL   = { false, false, 3.2f, 240, 312, 70, 239 };
-	const Standard Dendy = {  true, false, 3.0f, 290, 312, 20, 239 };
+	const Standard NTSC = { true,  true, 3.0f, 241, 262, 20, 240 };
+	const Standard PAL = { false, false, 3.2f, 240, 312, 70, 239 };
+	const Standard Dendy = { true, false, 3.0f, 290, 312, 20, 239 };
 
 	const int pre_render_scanline = -1;
 	const int num_colour_channels = 3;
@@ -80,7 +78,7 @@ private:
 	const unsigned default_window_scale = 3;
 
 	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
-	const SDL_Color palette[64] = { 
+	const SDL_Color palette[64] = {
 		{ 84,  84,  84}, {  0,  30, 116}, {  8,  16, 144}, { 48,   0, 136}, { 68,   0, 100}, { 92,   0,  48}, { 84,   4,   0}, { 60,  24,   0},
 		{ 32,  42,   0}, {  8,  58,   0}, {  0,  64,   0}, {  0,  60,   0}, {  0,  50,  60}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0},
 		{152, 150, 152}, {  8,  76, 196}, { 48,  50, 236}, { 92,  30, 228}, {136,  20, 176}, {160,  20, 100}, {152,  34,  32}, {120,  60,   0},
@@ -95,13 +93,13 @@ private:
 	// and the 'NES PPU Open-Bus Test' test rom readme
 	struct OpenBusIO
 	{
-		OpenBusIO() { std::fill(decayed.begin(), decayed.end(), true); }
+		OpenBusIO() { decayed.fill(true); }
 
 		const int decay_cycle_length = 29781 * 60 * 0.6; // roughly 600 ms = 36 frames; how long it takes for a bit to decay to 0.
 		u8 value = 0; // the value read back when reading from open bus.
 		std::array<bool, 8> decayed; // each bit can decay separately
 		std::array<unsigned, 8> cycles_until_decay;
-		
+
 		u8 Read(u8 mask = 0xFF);
 		void Write(u8 data);
 		void UpdateValue(u8 data, u8 mask); /* Write to the bits of open bus given by the mask. Different from the write function, as there, all bits are refreshed. */
@@ -175,7 +173,7 @@ private:
 		u8 pattern_table_tile_low, pattern_table_tile_high; // actual colour data describing the tile. If bit n of tile_high is 'x' and bit n of tile_low is 'y', the colour id for pixel n of the tile is 'xy'
 
 		// used only for background tiles
-		u8 attribute_table_quadrant; 
+		u8 attribute_table_quadrant;
 
 		// used only for sprites
 		u8 sprite_y_pos;
@@ -187,7 +185,7 @@ private:
 			fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high
 		} step;
 
-		void SetBGTileFetchingActive()     { step = Step::fetch_nametable_byte; }
+		void SetBGTileFetchingActive() { step = Step::fetch_nametable_byte; }
 		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
 	} tile_fetcher;
 
@@ -209,10 +207,10 @@ private:
 	u8 OAMADDR_at_cycle_65;
 	u8 OAMDMA;
 
-	u8 sprite_attribute_latch     [8]{};
+	u8 sprite_attribute_latch[8]{};
 	u8 sprite_pattern_shift_reg[2][8]{};
 
-	u16 bg_palette_attr_reg [2]{}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
+	u16 bg_palette_attr_reg[2]{}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
 	u16 bg_pattern_shift_reg[2]{};
 
 	int scanline = 0;
@@ -228,8 +226,8 @@ private:
 	unsigned window_pixel_offset_y;
 	unsigned window_pixel_offset_y_temp;
 
-	std::array<u8, 0x100 > oam          {}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
-	std::array<u8, 0x20  > palette_ram  {}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
+	std::array<u8, 0x100 > oam{}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
+	std::array<u8, 0x20  > palette_ram{}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
 	std::array<u8, 0x20  > secondary_oam{}; /* Holds sprite data for sprites to be rendered on the next scanline. */
 	std::array<u8, 0x1000> nametable_ram{}; /* Mapped to PPU $2000-$2FFF (mirrored at $3000-$3EFF). */
 
@@ -263,4 +261,3 @@ private:
 
 	size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
 };
-

@@ -88,8 +88,8 @@ u8 APU::ReadRegister(u16 addr)
                | (dmc.bytes_remaining > 0             ) << 4
                | (frame_counter.interrupt             ) << 6
                | (dmc.IRQ_enable                      ) << 7;
-        frame_counter.interrupt = false;
-        cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
+        frame_counter.interrupt = 0;
+        nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
         return ret;
     }
@@ -231,7 +231,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
         if (!dmc.IRQ_enable)
-			cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+			nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::DMC_RAW: // $4011
@@ -278,7 +278,8 @@ void APU::WriteRegister(u16 addr, u8 data)
         else
             dmc.bytes_remaining = 0;
 
-		cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+		dmc.interrupt = 0;
+		nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
         break;
 
     case Bus::Addr::FRAME_CNT: // $4017
@@ -337,7 +338,7 @@ void APU::FrameCounter::Step()
     case 29830: // APU cycle 14914
         if (mode == 0 && interrupt_inhibit == 0)
         {
-            apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+            apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
             interrupt = true;
         }
         break;
@@ -351,7 +352,7 @@ void APU::FrameCounter::Step()
             apu->ClockSweepUnits();
             if (interrupt_inhibit == 0)
             {
-                apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+                apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
                 interrupt = true;
             }
         }
@@ -362,7 +363,7 @@ void APU::FrameCounter::Step()
         {
             if (interrupt_inhibit == 0)
             {
-                apu->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+                apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
                 interrupt = true;
             }
             cpu_cycle_count = 1;
@@ -665,17 +666,17 @@ void APU::DMC::Step()
 
 void APU::DMC::ReadSample()
 {
-    apu->cpu->Stall();
-    sample_buffer = apu->mapper->ReadPRG(current_sample_addr);
+    apu->nes->cpu->Stall(); // TODO: make less ugly
+    sample_buffer = apu->nes->mapper->ReadPRG(current_sample_addr); // TODO: make less ugly
     sample_buffer_is_empty = false;
     current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
 
     if (--bytes_remaining == 0)
     {
-        if (loop)
-            RestartSample();
-        else if (IRQ_enable)
-            apu->cpu->SetIRQLow(IRQ_APU_DMC_mask);
+		if (loop)
+			RestartSample();
+		else if (IRQ_enable)
+			apu->nes->cpu->SetIRQLow(IRQ_APU_DMC_mask); // TODO: make less ugly
     }
 }
 
@@ -697,7 +698,7 @@ void APU::MixAndSample()
     if (sample_buffer_index == sample_buffer_size)
     {
         while (SDL_GetQueuedAudioSize(1) > sample_buffer_size * sizeof(f32));
-        SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
+		SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
         sample_buffer_index = 0;
     }
 }

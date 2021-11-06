@@ -20,7 +20,7 @@ u8 BusImpl::Read(u16 addr)
 	else if (addr <= 0x3FFF)
 	{
 		// Wrap address to between 0x2000-0x2007 
-		return ppu->ReadRegister(addr & 0x2007);
+		return nes->ppu->ReadRegister(addr & 0x2007);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -29,12 +29,12 @@ u8 BusImpl::Read(u16 addr)
 		switch (addr)
 		{
 		case Bus::Addr::OAMADDR: // $4014
-			return ppu->ReadRegister(addr);
+			return nes->ppu->ReadRegister(addr);
 		case Bus::Addr::JOY1: // $4016
 		case Bus::Addr::JOY2: // $4017
-			return joypad->ReadRegister(addr);
+			return nes->joypad->ReadRegister(addr);
 		default:
-			return apu->ReadRegister(addr);
+			return nes->apu->ReadRegister(addr);
 		}
 	}
 
@@ -48,7 +48,7 @@ u8 BusImpl::Read(u16 addr)
 	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
-		return mapper->ReadPRG(addr);
+		return nes->mapper->ReadPRG(addr);
 	}
 }
 
@@ -65,7 +65,7 @@ void BusImpl::Write(u16 addr, u8 data)
 	else if (addr <= 0x3FFF)
 	{
 		// wrap address to between 0x2000-0x2007 
-		ppu->WriteRegister(addr & 0x2007, data);
+		nes->ppu->WriteRegister(addr & 0x2007, data);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
@@ -74,13 +74,13 @@ void BusImpl::Write(u16 addr, u8 data)
 		switch (addr)
 		{
 		case Bus::Addr::OAMDMA: // $4014
-			ppu->WriteRegister(addr, data);
+			nes->ppu->WriteRegister(addr, data);
 			break;
 		case Bus::Addr::JOY1: // $4016
-			joypad->WriteRegister(addr, data);
+			nes->joypad->WriteRegister(addr, data);
 			break;
 		default:
-			apu->WriteRegister(addr, data); /* Note: $4017 is treated as an apu register here, unlike in the read function. */
+			nes->apu->WriteRegister(addr, data); /* Note: $4017 is treated as an apu register here, unlike in the read function. */
 			break;
 		}
 	}
@@ -94,15 +94,15 @@ void BusImpl::Write(u16 addr, u8 data)
 	// Cartridge Space ($4020 - $FFFF)
 	else
 	{
-		mapper->WritePRG(addr, data);
+		nes->mapper->WritePRG(addr, data);
 	}
 }
 
 
 u8 BusImpl::ReadCycle(u16 addr)
 {
-	apu->Update();
-	ppu->Update();
+	nes->apu->Update();
+	nes->ppu->Update();
 	UpdateLogging();
 	return Read(addr);
 }
@@ -110,8 +110,8 @@ u8 BusImpl::ReadCycle(u16 addr)
 
 void BusImpl::WriteCycle(u16 addr, u8 data)
 {
-	apu->Update();
-	ppu->Update();
+	nes->apu->Update();
+	nes->ppu->Update();
 	UpdateLogging();
 	Write(addr, data);
 }
@@ -119,8 +119,8 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 
 void BusImpl::WaitCycle()
 {
-	apu->Update();
-	ppu->Update();
+	nes->apu->Update();
+	nes->ppu->Update();
 	UpdateLogging();
 }
 

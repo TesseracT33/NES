@@ -10,6 +10,8 @@
 class Joypad final : public Component
 {
 public:
+	using Component::Component;
+
 	enum class InputMethod { JOYPAD, KEYBOARD };
 	enum Button { A, B, SELECT, START, UP, DOWN, LEFT, RIGHT };
 	enum InputEvent { RELEASE = 0, PRESS = 1 };

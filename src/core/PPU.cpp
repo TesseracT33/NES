@@ -169,7 +169,7 @@ void PPU::Update()
 		StepCycle();
 		StepCycle();
 		// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle. Here, we are polling 2/3 in.
-		cpu->PollInterruptInputs();
+		nes->cpu->PollInterruptInputs();
 		StepCycle();
 	}
 	else /* PAL */
@@ -178,7 +178,7 @@ void PPU::Update()
 
 		StepCycle();
 		StepCycle();
-		cpu->PollInterruptInputs();
+		nes->cpu->PollInterruptInputs();
 		StepCycle();
 
 		if (++cpu_cycle_counter == 5)
@@ -295,7 +295,7 @@ void PPU::StepCycle()
 			{
 				/* When using 8x8 sprites, if the BG uses $0000, and the sprites use $1000, the MMC3 IRQ counter should decrement on PPU cycle 260. */
 				if (!PPUCTRL_sprite_height && !PPUCTRL_bg_tile_sel && PPUCTRL_sprite_tile_sel)
-					mapper->ClockIRQ();
+					nes->mapper->ClockIRQ();
 			}
 
 			// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
@@ -357,7 +357,7 @@ void PPU::StepCycle()
 			case 324:
 				/* When using 8x8 sprites, if the BG uses $1000, and the sprites use $0000, the MMC3 IRQ counter should decrement on PPU cycle 324 */
 				if (!PPUCTRL_sprite_height && PPUCTRL_bg_tile_sel && !PPUCTRL_sprite_tile_sel)
-					mapper->ClockIRQ();
+					nes->mapper->ClockIRQ();
 				UpdateBGTileFetching();
 				break;
 
@@ -468,7 +468,7 @@ u8 PPU::ReadRegister(u16 addr)
 			{
 			case 0: do_not_set_vblank_flag_on_next_vblank = true; break;
 			case 1: suppress_nmi_on_next_vblank = true;           break;
-			case 2: cpu->SetNMIHigh(); NMI_line = 1;              break;
+			case 2: nes->cpu->SetNMIHigh(); NMI_line = 1;         break;
 			default:                                              break;
 			}
 		}
@@ -635,7 +635,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// It is done by the cpu, so the cpu will be suspended during this time.
 		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
-		cpu->StartOAMDMATransfer(data, &oam[0], OAMADDR);
+		nes->cpu->StartOAMDMATransfer(data, &oam[0], OAMADDR);
 		break;
 	}
 
@@ -741,12 +741,12 @@ void PPU::CheckNMI()
 	   Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal. */
 	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank && NMI_line == 1)
 	{
-		cpu->SetNMILow();
+		nes->cpu->SetNMILow();
 		NMI_line = 0;
 	}
 	else if (NMI_line == 0)
 	{
-		cpu->SetNMIHigh();
+		nes->cpu->SetNMIHigh();
 		NMI_line = 1;
 	}
 }
@@ -1159,12 +1159,12 @@ u8 PPU::ReadMemory(u16 addr)
 	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 	if (addr <= 0x1FFF)
 	{
-		return mapper->ReadCHR(addr);
+		return nes->mapper->ReadCHR(addr);
 	}
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = mapper->TransformNametableAddr(addr);
+		addr = nes->mapper->TransformNametableAddr(addr);
 		return nametable_ram[addr & 0xFFF];
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
@@ -1182,12 +1182,12 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 	if (addr <= 0x1FFF)
 	{
-		mapper->WriteCHR(addr, data);
+		nes->mapper->WriteCHR(addr, data);
 	}
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = mapper->TransformNametableAddr(addr);
+		addr = nes->mapper->TransformNametableAddr(addr);
 		nametable_ram[addr & 0xFFF] = data;
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F

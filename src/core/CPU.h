@@ -11,7 +11,7 @@
 class CPU final : public Component
 {
 public:
-	Bus* bus;
+	using Component::Component;
 
 	// Writes to certain PPU registers are ignored earlier than ~29658 CPU clocks after reset (on NTSC)
 	bool all_ppu_regs_writable = false;
@@ -352,19 +352,19 @@ private:
 	__forceinline u8 ReadCycle(u16 addr)
 	{
 		StartCycle();
-		return bus->ReadCycle(addr);
+		return nes->bus->ReadCycle(addr);
 	}
 
 	__forceinline void WriteCycle(u16 addr, u8 data)
 	{
 		StartCycle();
-		bus->WriteCycle(addr, data);
+		nes->bus->WriteCycle(addr, data);
 	}
 
 	__forceinline void WaitCycle()
 	{
 		StartCycle();
-		bus->WaitCycle();
+		nes->bus->WaitCycle();
 	}
 
 	__forceinline void PushByteToStack(u8 byte)

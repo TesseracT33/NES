@@ -11,10 +11,10 @@
 
 #include "../../Types.h"
 
-class BaseMapper
+class BaseMapper : public Component
 {
 public:
-	CPU* cpu;
+	using Component::Component;
 
 	BaseMapper(const std::vector<u8> chr_prg_rom, MapperProperties properties) : properties(properties)
 	{

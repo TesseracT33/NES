@@ -6,6 +6,7 @@
 
 #include "SDL.h"
 
+#include "../Configurable.h"
 #include "../Observer.h"
 #include "../Snapshottable.h"
 
@@ -18,6 +19,7 @@
 #include "Component.h"
 #include "CPU.h"
 #include "Joypad.h"
+#include "NES.h"
 #include "PPU.h"
 
 class Emulator final : public Snapshottable, public Configurable
@@ -28,12 +30,6 @@ public:
 	bool emu_is_paused = false, emu_is_running = false;
 	bool emulation_speed_uncapped = false;
 	unsigned emulation_speed = 100;
-
-	APU apu;
-	BusImpl bus;
-	CPU cpu;
-	Joypad joypad;
-	PPU ppu;
 
 	Observer* gui;
 
@@ -56,36 +52,27 @@ public:
 	bool SetupSDLVideo(const void* window_handle);
 
 	void SetEmulationSpeed(unsigned speed);
-	void SetWindowScale(unsigned scale) { ppu.SetWindowScale(scale); }
-	void SetWindowSize(unsigned width, unsigned height) { ppu.SetWindowSize(width, height); }
+	void SetWindowScale(unsigned scale) { nes.ppu->SetWindowScale(scale); }
+	void SetWindowSize(unsigned width, unsigned height) { nes.ppu->SetWindowSize(width, height); }
 
-	unsigned GetWindowScale() const { return ppu.GetWindowScale(); }
-	unsigned GetWindowHeight() const { return ppu.GetWindowHeight(); }
-	unsigned GetWindowWidth() const { return ppu.GetWindowWidth(); }
+	unsigned GetWindowScale() const { return nes.ppu->GetWindowScale(); }
+	unsigned GetWindowHeight() const { return nes.ppu->GetWindowHeight(); }
+	unsigned GetWindowWidth() const { return nes.ppu->GetWindowWidth(); }
+
+	std::vector<Configurable*> GetConfigurableComponents() { return { this, nes.joypad.get(), nes.ppu.get() }; }
 
 private:
-	const unsigned cycles_per_sec_NTSC = 1789773;
-	const unsigned cycles_per_sec_PAL = 1662607;
-	const unsigned cycles_per_sec_Dendy = 1773448;
-
-	const unsigned cycles_per_frame_NTSC = 0;
-	const unsigned cycles_per_frame_PAL = 0;
-	const unsigned cycles_per_frame_Dendy = 0;
-
-	const unsigned microseconds_per_frame_NTSC = 0;
+	const std::string save_state_path = AppUtils::GetExecutablePath() + "state.bin";
 
 	bool load_state_on_next_cycle = false, save_state_on_next_cycle = false;
 
-	unsigned cycle_counter;
-
-	std::vector<Component*> components;
+	NES nes;
 
 	std::string current_rom_path;
-	std::string save_state_path = AppUtils::GetExecutablePath() + "state.bin";
 
 	std::vector<Snapshottable*> snapshottable_components{};
 
-	void CreateComponentVector();
-	void ConnectSystemComponents();
+	void CreateSnapshottableComponentVector();
+	void ConstructNES();
 };
 

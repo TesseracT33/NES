@@ -3,31 +3,25 @@
 
 Emulator::Emulator()
 {
-	CreateComponentVector();
-	ConnectSystemComponents();
+	ConstructNES();
+	CreateSnapshottableComponentVector();
 }
 
 
-void Emulator::CreateComponentVector()
+void Emulator::CreateSnapshottableComponentVector()
 {
-	components.push_back(&apu);
-	components.push_back(&cpu);
-	components.push_back(&ppu);
+	// TODO
 }
 
 
-void Emulator::ConnectSystemComponents()
+void Emulator::ConstructNES()
 {
-	apu.cpu = &cpu;
-
-	bus.apu = &apu;
-	bus.cpu = &cpu;
-	bus.joypad = &joypad;
-	bus.ppu = &ppu;
-
-	cpu.bus = &bus;
-
-	ppu.cpu = &cpu;
+	nes.apu    = std::make_unique<APU>    (&nes);
+	nes.bus    = std::make_unique<BusImpl>(&nes);
+	nes.cpu    = std::make_unique<CPU>    (&nes);
+	nes.joypad = std::make_unique<Joypad> (&nes);
+	nes.ppu    = std::make_unique<PPU>    (&nes);
+	/* Note: the mapper will be created when a game is loaded. */
 }
 
 
@@ -101,13 +95,13 @@ void Emulator::SetDefaultConfig()
 
 void Emulator::AddObserver(Observer* observer)
 {
-	this->gui = ppu.gui = observer;
+	this->gui = nes.ppu->gui = observer;
 }
 
 
 bool Emulator::SetupSDLVideo(const void* window_handle)
 {
-	bool success = ppu.CreateRenderer(window_handle);
+	bool success = nes.ppu->CreateRenderer(window_handle);
 	return success;
 }
 
@@ -124,18 +118,18 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 	std::optional<std::shared_ptr<BaseMapper>> mapper_opt = Cartridge::ConstructMapperFromRom(rom_path);
 	if (!mapper_opt.has_value()) return false;
 	std::shared_ptr<BaseMapper> mapper = mapper_opt.value();
-	apu.mapper = bus.mapper = ppu.mapper = mapper;
-	mapper->cpu = &cpu;
+	nes.mapper = mapper;
+	mapper->AttachNES(&nes);
 
 	this->current_rom_path = rom_path;
 
-	bus.Reset();
-	cpu.PowerOn();
+	nes.bus->Reset();
+	nes.cpu->PowerOn();
 
 	/* The operations of the apu and ppu are affected by the video standard (NTSC/PAL/Dendy). */
 	const System::VideoStandard video_standard = mapper.get()->GetVideoStandard();
-	apu.PowerOn(video_standard);
-	ppu.PowerOn(video_standard);
+	nes.apu->PowerOn(video_standard);
+	nes.ppu->PowerOn(video_standard);
 
 	return true;
 }
@@ -143,7 +137,7 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 
 void Emulator::LaunchGame()
 {
-	cpu.RunStartUpCycles();
+	nes.cpu->RunStartUpCycles();
 	MainLoop();
 }
 
@@ -160,14 +154,14 @@ void Emulator::MainLoop()
 
 		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU).
 		try {
-			cpu.Run();
+			nes.cpu->Run();
 		}
 		catch (const std::runtime_error& e)
 		{
 			UserMessage::Show(e.what(), UserMessage::Type::Error);
 		}
 
-		joypad.PollInput();
+		nes.joypad->PollInput();
 
 		if (load_state_on_next_cycle)
 			LoadState();

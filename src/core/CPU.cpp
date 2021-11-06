@@ -415,7 +415,7 @@ void CPU::BIT()
 {
 	u8 M = GetReadInstrOperand();
 	flags.Z = (A & M) == 0;
-	flags.V = M & 0x40;
+	flags.V = M & 0x40; /* Note: this depends on M, not on A & M */
 	flags.N = M & 0x80;
 }
 
@@ -1183,5 +1183,5 @@ void CPU::LogStateBeforeAction(Action action)
 {
 	bool nmi = action == Action::NMI;
 	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), curr_instr.opcode, SP, PC - 1, total_cpu_cycle_counter - 1, nmi);
-	bus->update_logging_on_next_cycle = true;
+	nes->bus->update_logging_on_next_cycle = true;
 }

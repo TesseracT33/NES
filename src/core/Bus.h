@@ -50,6 +50,8 @@ public:
 		IRQ_BRK_VEC = 0xFFFE
 	};
 
+	virtual void Reset() = 0;
+
 	/* CPU reads/writes/waits, that also advances the state machine by one cycle */
 	virtual u8   ReadCycle(u16 addr)           = 0;
 	virtual void WaitCycle()                   = 0;

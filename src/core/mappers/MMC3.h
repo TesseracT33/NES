@@ -254,7 +254,7 @@ public:
 	{
 		/* TODO: unsure about timing; should IRQ be triggered immediately when the counter becomes 0?*/
 		if (IRQ_counter == 0 && IRQ_enabled)
-			cpu->SetIRQLow(IRQ_MMC3_mask);
+			nes->cpu->SetIRQLow(IRQ_MMC3_mask);
 
 		if (IRQ_counter == 0 || reload_IRQ_counter_on_next_clock)
 		{

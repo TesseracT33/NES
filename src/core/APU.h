@@ -15,8 +15,7 @@
 class APU final : public Component
 {
 public:
-	std::shared_ptr<BaseMapper> mapper; /* This is heap-allocated, cpu is not. */
-	CPU* cpu;
+	using Component::Component;
 
 	void Initialize();
 	void PowerOn(const System::VideoStandard standard);
