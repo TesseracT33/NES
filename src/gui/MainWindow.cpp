@@ -783,7 +783,7 @@ int MainWindow::GetSpeedFromMenuBarID(int id) const
 }
 
 
-void MainWindow::Configure(Serialization::BaseFunctor& functor)
+void MainWindow::Configure(Serialization::Functor& functor)
 {
 	std::string str = rom_folder_path.ToStdString();
 	Serialization::STD_string(functor, str);

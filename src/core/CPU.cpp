@@ -1143,7 +1143,7 @@ void CPU::XAA()
 }
 
 
-void CPU::State(Serialization::BaseFunctor& functor)
+void CPU::State(Serialization::Functor& functor)
 {
 	functor.fun(&curr_instr, sizeof(InstrDetails));
 	functor.fun(&A, sizeof(u8));

@@ -328,6 +328,6 @@ private:
 
 	void MixAndSample();
 
-	void State(Serialization::BaseFunctor& functor);
+	void State(Serialization::Functor& functor);
 };
 

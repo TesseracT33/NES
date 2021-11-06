@@ -7,6 +7,6 @@
 class Configurable
 {
 public:
-	virtual void Configure(Serialization::BaseFunctor& functor) = 0;
+	virtual void Configure(Serialization::Functor& functor) = 0;
 	virtual void SetDefaultConfig() = 0;
 };

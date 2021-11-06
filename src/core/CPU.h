@@ -53,7 +53,7 @@ public:
 
 	void StartOAMDMATransfer(u8 page, u8* oam_start_ptr, u8 offset);
 
-	void State(Serialization::BaseFunctor& functor) override;
+	void State(Serialization::Functor& functor) override;
 
 private:
 	enum class AddrMode

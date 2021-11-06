@@ -1234,7 +1234,7 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 }
 
 
-void PPU::Configure(Serialization::BaseFunctor& functor)
+void PPU::Configure(Serialization::Functor& functor)
 {
 	functor.fun(&window_scale, sizeof(unsigned));
 }

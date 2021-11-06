@@ -5,5 +5,5 @@
 class Snapshottable
 {
 public:
-	virtual void State(Serialization::BaseFunctor& functor) = 0;
+	virtual void State(Serialization::Functor& functor) = 0;
 };

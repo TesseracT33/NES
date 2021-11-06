@@ -128,7 +128,7 @@ private:
 
 	bool full_screen_active = false;
 
-	void Configure(Serialization::BaseFunctor& functor);
+	void Configure(Serialization::Functor& functor);
 	void SetDefaultConfig() override;
 	void UpdateFPSLabel() override;
 

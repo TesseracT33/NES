@@ -31,7 +31,7 @@ public:
 	void UpdateBinding(Button button, SDL_GameControllerButton bind, Player player);
 	void UpdateBinding(Button button, SDL_Keycode key, Player player);
 
-	void Configure(Serialization::BaseFunctor& functor) override;
+	void Configure(Serialization::Functor& functor) override;
 	void SetDefaultConfig() override;
 
 private:

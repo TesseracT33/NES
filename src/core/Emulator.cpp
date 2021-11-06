@@ -75,13 +75,13 @@ void Emulator::SaveState()
 }
 
 
-void Emulator::State(Serialization::BaseFunctor& functor)
+void Emulator::State(Serialization::Functor& functor)
 {
 
 }
 
 
-void Emulator::Configure(Serialization::BaseFunctor& functor)
+void Emulator::Configure(Serialization::Functor& functor)
 {
 
 }

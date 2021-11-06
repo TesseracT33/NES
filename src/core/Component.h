@@ -11,8 +11,8 @@ public:
 	Component() = default;
 	Component(NES* nes) : nes(nes) {};
 
-	virtual void State(Serialization::BaseFunctor& functor) override {};
-	virtual void Configure(Serialization::BaseFunctor& functor) override {};
+	virtual void State(Serialization::Functor& functor) override {};
+	virtual void Configure(Serialization::Functor& functor) override {};
 	virtual void SetDefaultConfig() override {};
 
 	void AttachNES(NES* nes) { this->nes = nes; };

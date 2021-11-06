@@ -10,12 +10,12 @@ class Serialization
 {
 public:
 	// A functor which can either do serialization via an ofstream, or deserialization via an ifstream
-	struct BaseFunctor
+	struct Functor
 	{
 		virtual void fun(void* obj, size_t size) = 0;
 	};
 
-	struct SerializeFunctor final : public BaseFunctor
+	struct SerializeFunctor final : public Functor
 	{
 		std::ofstream& ofs;
 
@@ -24,7 +24,7 @@ public:
 		void fun(void* obj, size_t size) override { ofs.write((const char*)obj, size); };
 	};
 
-	struct DeserializeFunctor final : public BaseFunctor
+	struct DeserializeFunctor final : public Functor
 	{
 		std::ifstream& ifs;
 
@@ -34,7 +34,7 @@ public:
 	};
 
 	// serialize or deserialize an std::string (depending on the functor)
-	static void STD_string(Serialization::BaseFunctor& functor, std::string& string)
+	static void STD_string(Serialization::Functor& functor, std::string& string)
 	{
 		if (typeid(functor).hash_code() == typeid(serialize_functor_inst).hash_code())
 		{
@@ -58,7 +58,7 @@ public:
 
 	// serialize or deserialize an std::vector (depending on the functor)
 	template<typename T>
-	static void STD_vector(Serialization::BaseFunctor& functor, std::vector<T>& vector)
+	static void STD_vector(Serialization::Functor& functor, std::vector<T>& vector)
 	{
 		if (typeid(functor).hash_code() == typeid(serialize_functor_inst).hash_code())
 		{
@@ -88,7 +88,7 @@ public:
 
 	// serialize or deserialize an std::queue (depending on the functor)
 	template<typename T>
-	static void STD_queue(Serialization::BaseFunctor& functor, std::queue<T>& queue)
+	static void STD_queue(Serialization::Functor& functor, std::queue<T>& queue)
 	{
 		if (typeid(functor).hash_code() == typeid(serialize_functor_inst).hash_code())
 		{
