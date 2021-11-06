@@ -1,12 +1,6 @@
 #include "BusImpl.h"
 
 
-void BusImpl::Initialize()
-{
-
-}
-
-
 void BusImpl::Reset()
 {
 	ram.fill(0);
@@ -107,20 +101,19 @@ void BusImpl::Write(u16 addr, u8 data)
 
 u8 BusImpl::ReadCycle(u16 addr)
 {
-	u8 val = Read(addr);
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
-	return val;
+	return Read(addr);
 }
 
 
 void BusImpl::WriteCycle(u16 addr, u8 data)
 {
-	Write(addr, data);
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
+	Write(addr, data);
 }
 
 
@@ -129,12 +122,6 @@ void BusImpl::WaitCycle()
 	apu->Update();
 	ppu->Update();
 	UpdateLogging();
-}
-
-
-void BusImpl::State(Serialization::BaseFunctor& functor)
-{
-
 }
 
 

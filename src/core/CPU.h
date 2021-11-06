@@ -56,8 +56,6 @@ public:
 	void State(Serialization::BaseFunctor& functor) override;
 
 private:
-	friend class Logging;
-
 	enum class AddrMode
 	{
 		Implied,
@@ -340,7 +338,7 @@ private:
 	void TAS();
 	void XAA();
 
-	// Helper functions. Defined in the header to enable inlining
+	// Helper functions
 	__forceinline void StartCycle()
 	{
 #ifdef DEBUG

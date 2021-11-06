@@ -50,16 +50,10 @@ public:
 		IRQ_BRK_VEC = 0xFFFE
 	};
 
-	/* CPU r/w functions. */
-	virtual u8 Read(u16 addr) = 0;
-	virtual void Write(u16 addr, u8 data) = 0;
-
-	// Reads and writes, but also advances the state machine by one cycle
-	virtual u8 ReadCycle(u16 addr) = 0;
+	/* CPU reads/writes/waits, that also advances the state machine by one cycle */
+	virtual u8   ReadCycle(u16 addr)           = 0;
+	virtual void WaitCycle()                   = 0;
 	virtual void WriteCycle(u16 addr, u8 data) = 0;
-
-	// Simply advance the state machine
-	virtual void WaitCycle() = 0;
 
 #ifdef DEBUG
 	bool update_logging_on_next_cycle = false;

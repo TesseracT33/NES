@@ -132,15 +132,15 @@ void CPU::PerformOAMDMATransfer()
 
 void CPU::ExecuteInstruction()
 {
-#ifdef DEBUG
-	LogStateBeforeAction(Action::Instruction);
-#endif
-
 	curr_instr.opcode = ReadCycle(PC++);
 	curr_instr.addr_mode = addr_mode_table[curr_instr.opcode];
 	curr_instr.addr_mode_fun = addr_mode_fun_table[static_cast<int>(curr_instr.addr_mode)];
 	curr_instr.instr = instr_table[curr_instr.opcode];
 	curr_instr.page_crossed = false;
+
+#ifdef DEBUG
+	LogStateBeforeAction(Action::Instruction);
+#endif
 
 	std::invoke(curr_instr.addr_mode_fun, this);
 }
@@ -1182,6 +1182,6 @@ void CPU::State(Serialization::BaseFunctor& functor)
 void CPU::LogStateBeforeAction(Action action)
 {
 	bool nmi = action == Action::NMI;
-	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), bus->Read(PC), SP, PC, total_cpu_cycle_counter, nmi);
+	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), curr_instr.opcode, SP, PC - 1, total_cpu_cycle_counter - 1, nmi);
 	bus->update_logging_on_next_cycle = true;
 }

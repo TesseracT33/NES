@@ -124,7 +124,7 @@ void PPU::PowerOn(const System::VideoStandard standard)
 void PPU::Reset()
 {
 	PPUCTRL = PPUMASK = PPUSCROLL = PPUDATA = scroll.w = 0;
-	scanline_cycle = 3; // Todo: why 3? No idea. Mesen's ppu starts at cycle 27 after the CPU has ran for 8 "start-up" cycles, but there is a difference of 3 ppu cycles here
+	scanline_cycle = 0;
 	odd_frame = true;
 	scanline = 0;
 	pixel_x_pos = 0;
@@ -227,7 +227,7 @@ void PPU::StepCycle()
 				// Clear secondary OAM. Is supposed to happen one write at a time between cycles 1-64. Does not occur on the pre-render scanline
 				// However, can all be done here, as secondary OAM can is not accessed from elsewhere during this time
 				if (scanline != pre_render_scanline)
-					std::fill(secondary_oam.begin(), secondary_oam.end(), 0xFF);
+					secondary_oam.fill(0xFF);
 
 				tile_fetcher.SetBGTileFetchingActive();
 

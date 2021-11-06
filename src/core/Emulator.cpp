@@ -11,7 +11,6 @@ Emulator::Emulator()
 void Emulator::CreateComponentVector()
 {
 	components.push_back(&apu);
-	components.push_back(&bus);
 	components.push_back(&cpu);
 	components.push_back(&ppu);
 }
