@@ -17,7 +17,7 @@ It's an *attempt* at cycle-accurate APU, CPU and PPU emulation. Currently, the C
 - Controller input support (non-functioning).
 
 # Compiling and running
-Current external dependencies are wxWidgets and SDL2. I only supply Visual Studio solution files. The project settings were as follows:
+C++20 is required for compiling. Current external dependencies are wxWidgets and SDL2. I only supply Visual Studio solution files. The project settings were as follows:
 
 C/C++ -- Additional Include Directories:
 F:\SDKs\wxWidgets-3.1.3\include\msvc; F:\SDKs\wxWidgets-3.1.3\include; F:\SDKs\SDL2-2.0.12\include
