@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Serialization.h"
+#include "SerializationStream.h"
 
 class Snapshottable
 {
 public:
-	virtual void State(Serialization::Functor& functor) = 0;
+	virtual void StreamState(SerializationStream& stream) = 0;
 };

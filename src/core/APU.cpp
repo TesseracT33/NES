@@ -704,7 +704,7 @@ void APU::MixAndSample()
 }
 
 
-void APU::State(Serialization::Functor& functor)
+void APU::StreamState(SerializationStream& stream)
 {
 
 }

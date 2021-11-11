@@ -33,10 +33,10 @@
     <ClInclude Include="src\debug\DebugOptions.h" />
     <ClInclude Include="src\gui\AppUtils.h" />
     <ClInclude Include="src\gui\UserMessage.h" />
+    <ClInclude Include="src\SerializationStream.h" />
     <ClInclude Include="src\Snapshottable.h" />
     <ClInclude Include="src\gui\InputBindingsWindow.h" />
     <ClInclude Include="src\Observer.h" />
-    <ClInclude Include="src\Serialization.h" />
     <ClInclude Include="src\Config.h" />
     <ClInclude Include="src\core\BusImpl.h" />
     <ClInclude Include="src\core\Joypad.h" />
@@ -61,7 +61,6 @@
   <ItemGroup>
     <ClCompile Include="src\debug\Logging.cpp" />
     <ClCompile Include="src\gui\InputBindingsWindow.cpp" />
-    <ClCompile Include="src\Serialization.cpp" />
     <ClCompile Include="src\Config.cpp" />
     <ClCompile Include="src\core\BusImpl.cpp" />
     <ClCompile Include="src\core\Joypad.cpp" />

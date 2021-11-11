@@ -208,9 +208,10 @@ void Joypad::MatchInputToBindings(s32 button, InputEvent input_event, InputMetho
 }
 
 
-void Joypad::Configure(Serialization::Functor& functor)
+void Joypad::StreamConfig(SerializationStream& stream)
 {
-	functor.fun(bindings, sizeof Bind * num_buttons * 2);
+	// TODO; stream bindings
+	//functor.fun(bindings, sizeof Bind * num_buttons * 2);
 }
 
 

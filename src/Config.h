@@ -1,9 +1,6 @@
 #pragma once
 
-#include <fstream>
-
 #include "Configurable.h"
-#include "Serialization.h"
 
 #include "gui/AppUtils.h"
 #include "gui/UserMessage.h"
@@ -21,5 +18,5 @@ public:
 	void SetDefaults(bool save = true);
 
 private:
-	const wxString config_file_path = AppUtils::GetExecutablePath() + "config.bin";
+	const std::string config_file_path = AppUtils::GetExecutablePath() + "config.bin";
 };

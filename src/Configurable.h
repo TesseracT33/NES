@@ -1,12 +1,10 @@
 #pragma once
 
-#include <fstream>
-
-#include "Serialization.h"
+#include "SerializationStream.h"
 
 class Configurable
 {
 public:
-	virtual void Configure(Serialization::Functor& functor) = 0;
+	virtual void StreamConfig(SerializationStream& stream) = 0;
 	virtual void SetDefaultConfig() = 0;
 };

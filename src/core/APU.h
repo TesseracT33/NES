@@ -328,6 +328,6 @@ private:
 
 	void MixAndSample();
 
-	void State(Serialization::Functor& functor);
+	void StreamState(SerializationStream& stream) override;
 };
 

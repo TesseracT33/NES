@@ -14,7 +14,6 @@
 #include "../Config.h"
 #include "../core/Emulator.h"
 #include "../Observer.h"
-#include "../Serialization.h"
 
 #include "AppUtils.h"
 #include "InputBindingsWindow.h"
@@ -128,7 +127,7 @@ private:
 
 	bool full_screen_active = false;
 
-	void Configure(Serialization::Functor& functor);
+	void StreamConfig(SerializationStream& stream);
 	void SetDefaultConfig() override;
 	void UpdateFPSLabel() override;
 

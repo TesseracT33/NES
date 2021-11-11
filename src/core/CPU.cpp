@@ -1143,36 +1143,36 @@ void CPU::XAA()
 }
 
 
-void CPU::State(Serialization::Functor& functor)
+void CPU::StreamState(SerializationStream& stream)
 {
-	functor.fun(&curr_instr, sizeof(InstrDetails));
-	functor.fun(&A, sizeof(u8));
-	functor.fun(&X, sizeof(u8));
-	functor.fun(&Y, sizeof(u8));
-	functor.fun(&SP, sizeof(u8));
-	functor.fun(&PC, sizeof(u16));
-	functor.fun(&flags, sizeof(Flags));
+	// TODO: stream InstrDetails; it contains a pointer
+	stream.StreamPrimitive(A);
+	stream.StreamPrimitive(X);
+	stream.StreamPrimitive(Y);
+	stream.StreamPrimitive(SP);
+	stream.StreamPrimitive(PC);
+	stream.StreamPrimitive(flags);
 
-	functor.fun(&odd_cpu_cycle, sizeof(bool));
-	functor.fun(&stalled, sizeof(bool));
-	functor.fun(&stopped, sizeof(bool));
+	stream.StreamPrimitive(odd_cpu_cycle);
+	stream.StreamPrimitive(stalled);
+	stream.StreamPrimitive(stopped);
 
-	functor.fun(&NMI_line, sizeof(bool));
-	functor.fun(&polled_NMI_line, sizeof(bool));
-	functor.fun(&prev_polled_NMI_line, sizeof(bool));
-	functor.fun(&need_NMI, sizeof(bool));
-	functor.fun(&polled_need_NMI, sizeof(bool));
-	functor.fun(&need_IRQ, sizeof(bool));
-	functor.fun(&polled_need_IRQ, sizeof(bool));
-	functor.fun(&write_to_interrupt_disable_flag_before_next_instr, sizeof(bool));
-	functor.fun(&bit_to_write_to_interrupt_disable_flag, sizeof(bool));
-	functor.fun(&IRQ_line, sizeof(u8));
+	stream.StreamPrimitive(NMI_line);
+	stream.StreamPrimitive(polled_NMI_line);
+	stream.StreamPrimitive(prev_polled_NMI_line);
+	stream.StreamPrimitive(need_NMI);
+	stream.StreamPrimitive(polled_need_NMI);
+	stream.StreamPrimitive(need_IRQ);
+	stream.StreamPrimitive(polled_need_IRQ);
+	stream.StreamPrimitive(write_to_interrupt_disable_flag_before_next_instr);
+	stream.StreamPrimitive(bit_to_write_to_interrupt_disable_flag);
+	stream.StreamPrimitive(IRQ_line);
 
-	functor.fun(&cpu_cycle_counter, sizeof(unsigned));
-	functor.fun(&total_cpu_cycle_counter, sizeof(unsigned));
-	functor.fun(&cpu_cycles_since_reset, sizeof(unsigned));
-	functor.fun(&cpu_cycles_until_all_ppu_regs_writable, sizeof(unsigned));
-	functor.fun(&cpu_cycles_until_no_longer_stalled, sizeof(unsigned));
+	stream.StreamPrimitive(cpu_cycle_counter);
+	stream.StreamPrimitive(total_cpu_cycle_counter);
+	stream.StreamPrimitive(cpu_cycles_since_reset);
+	stream.StreamPrimitive(cpu_cycles_until_all_ppu_regs_writable);
+	stream.StreamPrimitive(cpu_cycles_until_no_longer_stalled);
 
 	/* Note: OAMDMA transfers cannot be interrupted by loading a state,
 	   so the associated variables do not need to be saved/loaded. */

@@ -48,7 +48,7 @@ public:
 	void SetWindowScale(unsigned scale) { this->window_scale = scale; }
 	void SetWindowSize(unsigned width, unsigned height);
 
-	void Configure(Serialization::Functor& functor) override;
+	void StreamConfig(SerializationStream& stream) override;
 	void SetDefaultConfig() override;
 
 private:

@@ -44,8 +44,8 @@ public:
 	void LoadState();
 	void SaveState();
 
-	void State(Serialization::Functor& functor) override;
-	void Configure(Serialization::Functor& functor) override;
+	void StreamState(SerializationStream& stream) override;
+	void StreamConfig(SerializationStream& stream) override;
 	void SetDefaultConfig() override;
 
 	void AddObserver(Observer* observer);

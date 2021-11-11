@@ -33,19 +33,17 @@ void Emulator::LoadState()
 		return;
 	}
 
-	std::ifstream ifs(save_state_path, std::ifstream::in | std::ifstream::binary);
-	if (!ifs)
+	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
+	if (stream.error)
 	{
 		UserMessage::Show("Save state does not exist or could not be opened.", UserMessage::Type::Error);
 		load_state_on_next_cycle = false;
 		return;
 	}
 
-	Serialization::DeserializeFunctor functor{ ifs };
 	for (Snapshottable* snapshottable : snapshottable_components)
-		snapshottable->State(functor);
+		snapshottable->StreamState(stream);
 
-	ifs.close();
 	load_state_on_next_cycle = false;
 }
 
@@ -58,30 +56,28 @@ void Emulator::SaveState()
 		return;
 	}
 
-	std::ofstream ofs(save_state_path, std::ofstream::out | std::ofstream::binary);
-	if (!ofs)
+	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
+	if (stream.error)
 	{
 		UserMessage::Show("Save state could not be created.", UserMessage::Type::Error);
 		save_state_on_next_cycle = false;
 		return;
 	}
 
-	Serialization::SerializeFunctor functor{ ofs };
 	for (Snapshottable* snapshottable : snapshottable_components)
-		snapshottable->State(functor);
+		snapshottable->StreamState(stream);
 
-	ofs.close();
 	save_state_on_next_cycle = false;
 }
 
 
-void Emulator::State(Serialization::Functor& functor)
+void Emulator::StreamState(SerializationStream& stream)
 {
 
 }
 
 
-void Emulator::Configure(Serialization::Functor& functor)
+void Emulator::StreamConfig(SerializationStream& stream)
 {
 
 }

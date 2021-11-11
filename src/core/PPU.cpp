@@ -1234,9 +1234,9 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 }
 
 
-void PPU::Configure(Serialization::Functor& functor)
+void PPU::StreamConfig(SerializationStream& stream)
 {
-	functor.fun(&window_scale, sizeof(unsigned));
+	stream.StreamPrimitive(window_scale);
 }
 
 

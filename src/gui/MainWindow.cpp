@@ -783,13 +783,13 @@ int MainWindow::GetSpeedFromMenuBarID(int id) const
 }
 
 
-void MainWindow::Configure(Serialization::Functor& functor)
+void MainWindow::StreamConfig(SerializationStream& stream)
 {
 	std::string str = rom_folder_path.ToStdString();
-	Serialization::STD_string(functor, str);
+	stream.StreamString(str);
 	rom_folder_path = wxString(str);
 
-	functor.fun(&display_only_nes_files, sizeof(bool));
+	stream.StreamPrimitive(display_only_nes_files);
 }
 
 
