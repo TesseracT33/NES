@@ -34,7 +34,7 @@ void Emulator::LoadState()
 	}
 
 	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
-	if (stream.error)
+	if (stream.HasError())
 	{
 		UserMessage::Show("Save state does not exist or could not be opened.", UserMessage::Type::Error);
 		load_state_on_next_cycle = false;
@@ -43,6 +43,13 @@ void Emulator::LoadState()
 
 	for (Snapshottable* snapshottable : snapshottable_components)
 		snapshottable->StreamState(stream);
+
+	if (stream.HasError())
+	{
+		UserMessage::Show("Save state does not exist or could not be opened.", UserMessage::Type::Error);
+		load_state_on_next_cycle = false;
+		return;
+	}
 
 	load_state_on_next_cycle = false;
 }
@@ -57,7 +64,7 @@ void Emulator::SaveState()
 	}
 
 	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
-	if (stream.error)
+	if (stream.HasError())
 	{
 		UserMessage::Show("Save state could not be created.", UserMessage::Type::Error);
 		save_state_on_next_cycle = false;
@@ -66,6 +73,13 @@ void Emulator::SaveState()
 
 	for (Snapshottable* snapshottable : snapshottable_components)
 		snapshottable->StreamState(stream);
+
+	if (stream.HasError())
+	{
+		UserMessage::Show("Save state could not be created.", UserMessage::Type::Error);
+		save_state_on_next_cycle = false;
+		return;
+	}
 
 	save_state_on_next_cycle = false;
 }

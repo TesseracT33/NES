@@ -17,7 +17,7 @@ bool Config::ConfigFileExists()
 void Config::Save()
 {
 	SerializationStream stream{ config_file_path, SerializationStream::Mode::Serialization };
-	if (stream.error)
+	if (stream.HasError())
 	{
 		UserMessage::Show("Config file could not be created or saved.", UserMessage::Type::Error);
 		SetDefaults(false);
@@ -26,13 +26,20 @@ void Config::Save()
 
 	for (Configurable* configurable : configurables)
 		configurable->StreamConfig(stream);
+
+	if (stream.HasError())
+	{
+		UserMessage::Show("Config file could not be created or saved.", UserMessage::Type::Error);
+		SetDefaults(false);
+		return;
+	}
 }
 
 
 void Config::Load()
 {
 	SerializationStream stream{ config_file_path, SerializationStream::Mode::Deserialization };
-	if (stream.error)
+	if (stream.HasError())
 	{
 		UserMessage::Show("Config file could not be opened. Reverting to defaults.", UserMessage::Type::Error);
 		SetDefaults(false);
@@ -41,6 +48,13 @@ void Config::Load()
 
 	for (Configurable* configurable : configurables)
 		configurable->StreamConfig(stream);
+
+	if (stream.HasError())
+	{
+		UserMessage::Show("Config file could not be opened. Reverting to defaults.", UserMessage::Type::Error);
+		SetDefaults(false);
+		return;
+	}
 }
 
 
