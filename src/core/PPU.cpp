@@ -938,7 +938,7 @@ void PPU::ShiftPixel()
 				if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
 					offset = 7 - offset;
 
-				u8 col_id = ((sprite_pattern_shift_reg[0][i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[1][i] << offset) & 0x80) >> 6;
+				u8 col_id = ((sprite_pattern_shift_reg[2 * i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[2 * i + 1] << offset) & 0x80) >> 6;
 				if (col_id != 0)
 				{
 					sprite_col_id = col_id;
@@ -1016,13 +1016,13 @@ void PPU::ReloadSpriteShiftRegisters(unsigned sprite_index)
 	// If 'sprite_index' is not less than the number of sprites copied from OAM, the registers are loaded with transparent data instead.
 	if (sprite_index < sprite_evaluation.num_sprites_copied)
 	{
-		sprite_pattern_shift_reg[0][sprite_index] = tile_fetcher.pattern_table_tile_low;
-		sprite_pattern_shift_reg[1][sprite_index] = tile_fetcher.pattern_table_tile_high;
+		sprite_pattern_shift_reg[2 * sprite_index    ] = tile_fetcher.pattern_table_tile_low;
+		sprite_pattern_shift_reg[2 * sprite_index + 1] = tile_fetcher.pattern_table_tile_high;
 	}
 	else
 	{
-		sprite_pattern_shift_reg[0][sprite_index] = 0;
-		sprite_pattern_shift_reg[1][sprite_index] = 0;
+		sprite_pattern_shift_reg[2 * sprite_index    ] = 0;
+		sprite_pattern_shift_reg[2 * sprite_index + 1] = 0;
 	}
 }
 
@@ -1231,6 +1231,79 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 		window_pixel_offset_y_temp = 0.5 * (height - window_scale_temp * standard.num_visible_scanlines);
 		reset_graphics_after_render = true;
 	}
+}
+
+
+void PPU::StreamState(SerializationStream& stream)
+{
+	/* I've tried to follow the order of the declarations in the class definition. */
+	stream.StreamPrimitive(open_bus_io.value);
+	stream.StreamArray(open_bus_io.decayed);
+	stream.StreamArray(open_bus_io.cycles_until_decay);
+
+	scroll.v = stream.StreamBitfield(scroll.v);
+	scroll.t = stream.StreamBitfield(scroll.t);
+	scroll.x = stream.StreamBitfield(scroll.x);
+	stream.StreamPrimitive(scroll.w);
+
+	sprite_evaluation.n = stream.StreamBitfield(sprite_evaluation.n);
+	sprite_evaluation.m = stream.StreamBitfield(sprite_evaluation.m);
+	stream.StreamPrimitive(sprite_evaluation.num_sprites_copied);
+	stream.StreamPrimitive(sprite_evaluation.idle);
+	stream.StreamPrimitive(sprite_evaluation.sprite_0_included);
+
+	stream.StreamPrimitive(tile_fetcher.tile_num);
+	stream.StreamPrimitive(tile_fetcher.attribute_table_byte);
+	stream.StreamPrimitive(tile_fetcher.pattern_table_tile_low);
+	stream.StreamPrimitive(tile_fetcher.pattern_table_tile_high);
+	stream.StreamPrimitive(tile_fetcher.attribute_table_quadrant);
+	stream.StreamPrimitive(tile_fetcher.sprite_y_pos);
+	stream.StreamPrimitive(tile_fetcher.sprite_attr);
+	stream.StreamPrimitive(tile_fetcher.pattern_table_data_addr);
+	stream.StreamPrimitive(tile_fetcher.step);
+
+	stream.StreamPrimitive(cycle_340_was_skipped_on_last_scanline);
+	stream.StreamPrimitive(do_not_set_vblank_flag_on_next_vblank);
+	stream.StreamPrimitive(NMI_line);
+	stream.StreamPrimitive(odd_frame);
+	stream.StreamPrimitive(reset_graphics_after_render);
+	stream.StreamPrimitive(set_sprite_0_hit_flag);
+	stream.StreamPrimitive(suppress_nmi_on_next_vblank);
+
+	stream.StreamPrimitive(pixel_x_pos);
+	stream.StreamPrimitive(PPUCTRL);
+	stream.StreamPrimitive(PPUMASK);
+	stream.StreamPrimitive(PPUSTATUS);
+	stream.StreamPrimitive(PPUSCROLL);
+	stream.StreamPrimitive(PPUDATA);
+	stream.StreamPrimitive(OAMADDR);
+	stream.StreamPrimitive(OAMADDR_at_cycle_65);
+	stream.StreamPrimitive(OAMDMA);
+
+	stream.StreamPrimitive(scanline);
+
+	stream.StreamPrimitive(framebuffer_pos);
+	stream.StreamPrimitive(scanline_cycle);
+	stream.StreamPrimitive(window_scale);
+	stream.StreamPrimitive(window_scale_temp);
+	stream.StreamPrimitive(window_pixel_offset_x);
+	stream.StreamPrimitive(window_pixel_offset_x_temp);
+	stream.StreamPrimitive(window_pixel_offset_y);
+	stream.StreamPrimitive(window_pixel_offset_y_temp);
+
+	stream.StreamArray(oam);
+	stream.StreamArray(palette_ram);
+	stream.StreamArray(secondary_oam);
+	stream.StreamArray(nametable_ram);
+
+	stream.StreamArray(sprite_attribute_latch);
+	stream.StreamArray(sprite_pattern_shift_reg);
+	stream.StreamArray(bg_palette_attr_reg);
+	stream.StreamArray(bg_pattern_shift_reg);
+
+	stream.StreamArray(sprite_x_pos_counter);
+
+	stream.StreamVector(framebuffer);
 }
 
 

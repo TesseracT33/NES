@@ -27,12 +27,17 @@ class PPU final : public Component
 public:
 	using Component::Component;
 	~PPU();
+	PPU(const PPU& other) = delete;
+	PPU(PPU&& other) = delete;
+
+	PPU& operator=(const PPU& other) = delete;
+	PPU& operator=(PPU&& other) = delete;
 
 	Observer* gui;
 
-	unsigned GetWindowScale() const { return window_scale; }
+	unsigned GetWindowScale()  const { return window_scale; }
 	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * window_scale; }
-	unsigned GetWindowWidth() const { return num_pixels_per_scanline * window_scale; }
+	unsigned GetWindowWidth()  const { return num_pixels_per_scanline * window_scale; }
 	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
 	bool IsInVblank() const { return scanline >= standard.nmi_scanline; }
 
@@ -48,6 +53,7 @@ public:
 	void SetWindowScale(unsigned scale) { this->window_scale = scale; }
 	void SetWindowSize(unsigned width, unsigned height);
 
+	void StreamState(SerializationStream& stream) override;
 	void StreamConfig(SerializationStream& stream) override;
 	void SetDefaultConfig() override;
 
@@ -66,16 +72,15 @@ private:
 		int num_visible_scanlines;
 	} standard = NTSC;
 
-	const Standard NTSC = { true,  true, 3.0f, 241, 262, 20, 240 };
-	const Standard PAL = { false, false, 3.2f, 240, 312, 70, 239 };
-	const Standard Dendy = { true, false, 3.0f, 290, 312, 20, 239 };
+	static constexpr Standard NTSC  = {  true,  true, 3.0f, 241, 262, 20, 240 };
+	static constexpr Standard PAL   = { false, false, 3.2f, 240, 312, 70, 239 };
+	static constexpr Standard Dendy = {  true, false, 3.0f, 290, 312, 20, 239 };
 
-	const int pre_render_scanline = -1;
-	const int num_colour_channels = 3;
-	const int num_cycles_per_scanline = 341; // On NTSC: is actually 340 on the pre-render scanline if on an odd-numbered frame
-	const int num_pixels_per_scanline = 256; // Horizontal resolution
-
-	const unsigned default_window_scale = 3;
+	static constexpr int default_window_scale = 3;
+	static constexpr int num_colour_channels = 3;
+	static constexpr int num_cycles_per_scanline = 341; // On NTSC: is actually 340 on the pre-render scanline if on an odd-numbered frame
+	static constexpr int num_pixels_per_scanline = 256; // Horizontal resolution
+	static constexpr int pre_render_scanline = -1;
 
 	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
 	const SDL_Color palette[64] = {
@@ -207,15 +212,7 @@ private:
 	u8 OAMADDR_at_cycle_65;
 	u8 OAMDMA;
 
-	u8 sprite_attribute_latch[8]{};
-	u8 sprite_pattern_shift_reg[2][8]{};
-
-	u16 bg_palette_attr_reg[2]{}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
-	u16 bg_pattern_shift_reg[2]{};
-
 	int scanline = 0;
-
-	int sprite_x_pos_counter[8]{};
 
 	unsigned framebuffer_pos = 0;
 	unsigned scanline_cycle;
@@ -226,10 +223,17 @@ private:
 	unsigned window_pixel_offset_y;
 	unsigned window_pixel_offset_y_temp;
 
-	std::array<u8, 0x100 > oam{}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
-	std::array<u8, 0x20  > palette_ram{}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
+	std::array<u8, 0x100 > oam          {}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
+	std::array<u8, 0x20  > palette_ram  {}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
 	std::array<u8, 0x20  > secondary_oam{}; /* Holds sprite data for sprites to be rendered on the next scanline. */
 	std::array<u8, 0x1000> nametable_ram{}; /* Mapped to PPU $2000-$2FFF (mirrored at $3000-$3EFF). */
+
+	std::array<u8 ,  8> sprite_attribute_latch  {};
+	std::array<u8 , 16> sprite_pattern_shift_reg{};
+	std::array<u16,  8> bg_palette_attr_reg     {}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
+	std::array<u16,  8> bg_pattern_shift_reg    {};
+
+	std::array<int, 8> sprite_x_pos_counter{};
 
 	std::vector<u8> framebuffer{};
 
@@ -255,9 +259,9 @@ private:
 
 	bool RenderingIsEnabled();
 
-	[[nodiscard]] u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
-	[[nodiscard]] u8 ReadMemory(u16 addr);
-	[[nodiscard]] u8 ReadPaletteRAM(u16 addr);
+	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
+	u8 ReadMemory(u16 addr);
+	u8 ReadPaletteRAM(u16 addr);
 
 	size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
 };

@@ -1145,7 +1145,6 @@ void CPU::XAA()
 
 void CPU::StreamState(SerializationStream& stream)
 {
-	// TODO: stream InstrDetails; it contains a pointer
 	stream.StreamPrimitive(A);
 	stream.StreamPrimitive(X);
 	stream.StreamPrimitive(Y);
@@ -1174,8 +1173,10 @@ void CPU::StreamState(SerializationStream& stream)
 	stream.StreamPrimitive(cpu_cycles_until_all_ppu_regs_writable);
 	stream.StreamPrimitive(cpu_cycles_until_no_longer_stalled);
 
-	/* Note: OAMDMA transfers cannot be interrupted by loading a state,
-	   so the associated variables do not need to be saved/loaded. */
+	/* Note: state saving/loading is done after CPU::Run() has finished.
+		Potential OAMDMA transfers finish before then, so data associated
+		to that does not need to be streamed.
+		The same applies to the InstrDetails struct; we always stream after an instruction has been executed. */
 }
 
 
