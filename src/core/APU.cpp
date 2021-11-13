@@ -6,8 +6,8 @@ void APU::PowerOn(const System::VideoStandard standard)
 	audio_spec.freq = sample_rate;
 	audio_spec.format = AUDIO_F32;
 	audio_spec.channels = 2;
-	audio_spec.samples = sample_buffer_size;
-	audio_spec.callback = NULL;
+	audio_spec.samples = sample_buffer_size / 2;
+	audio_spec.callback = nullptr;
 
 	SDL_AudioSpec obtainedSpec;
 	SDL_OpenAudio(&audio_spec, &obtainedSpec);
@@ -670,7 +670,7 @@ void APU::DMC::ReadSample()
 
 void APU::MixAndSample()
 {
-    // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
+    https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
     f32 pulse_out = pulse_table[pulse_sum];
     u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
@@ -682,12 +682,15 @@ void APU::MixAndSample()
     sample_buffer[sample_buffer_index++] = output;
     sample_buffer[sample_buffer_index++] = output;
 
-    if (sample_buffer_index == sample_buffer_size)
-    {
-        while (SDL_GetQueuedAudioSize(1) > sample_buffer_size * sizeof(f32));
+	if (sample_buffer_index == sample_buffer_size)
+	{
+		while (std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
+
+		last_audio_enqueue_time_point = std::chrono::steady_clock::now();
 		SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
-        sample_buffer_index = 0;
-    }
+		sample_buffer_index = 0;
+	}
 }
 
 

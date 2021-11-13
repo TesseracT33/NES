@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <chrono>
+#include <cmath>
 
 #include "SDL.h"
 
@@ -84,10 +86,14 @@ private:
 		return table;
 	}();
 
-	static constexpr unsigned sample_buffer_size = 2048;
-	static constexpr unsigned sample_rate = 44100;
 	static constexpr unsigned cpu_cycles_per_sec_ntsc = 1789773;
 	static constexpr unsigned cpu_cycles_per_sec_pal  = 1662607;
+	static constexpr unsigned num_audio_channels = 2;
+	static constexpr unsigned sample_buffer_size = 2048;
+	static constexpr unsigned sample_buffer_size_per_channel = sample_buffer_size / num_audio_channels;
+	static constexpr unsigned sample_rate = 44100;
+	static constexpr unsigned microseconds_per_audio_enqueue =
+		double(sample_buffer_size_per_channel) / double(sample_rate) * 1'000'000;
 
 	struct Standard
 	{
@@ -96,9 +102,9 @@ private:
 		unsigned cpu_cycles_per_sec;
 	};
 
-	const Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc };
-	const Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
-	const Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , cpu_cycles_per_sec_pal  };
+	static constexpr Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc };
+	static constexpr Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
+	static constexpr Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , cpu_cycles_per_sec_pal  };
 	Standard standard = NTSC; /* The default */
 
 	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
@@ -308,6 +314,8 @@ private:
 	f32 sample_buffer[sample_buffer_size];
 
 	SDL_AudioSpec audio_spec;
+
+	std::chrono::steady_clock::time_point last_audio_enqueue_time_point = std::chrono::steady_clock::now();
 
 	__forceinline void ClockEnvelopeUnits()
 	{
