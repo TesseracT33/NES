@@ -1,14 +1,18 @@
 #include "APU.h"
 
 
-void APU::Initialize()
-{
-
-}
-
-
 void APU::PowerOn(const System::VideoStandard standard)
 {
+	audio_spec.freq = sample_rate;
+	audio_spec.format = AUDIO_F32;
+	audio_spec.channels = 2;
+	audio_spec.samples = sample_buffer_size;
+	audio_spec.callback = NULL;
+
+	SDL_AudioSpec obtainedSpec;
+	SDL_OpenAudio(&audio_spec, &obtainedSpec);
+	SDL_PauseAudio(0);
+
 	Reset();
 
     for (u16 addr = 0x4000; addr <= 0x4013; addr++)
@@ -33,35 +37,20 @@ void APU::PowerOn(const System::VideoStandard standard)
 
 void APU::Reset()
 {
-    // TODO: move this to somewhere else
-    audio_spec.freq = sample_rate;
-    audio_spec.format = AUDIO_F32;
-    audio_spec.channels = 2;
-    audio_spec.samples = sample_buffer_size;
-    audio_spec.callback = NULL;
-
-    SDL_AudioSpec obtainedSpec;
-    SDL_OpenAudio(&audio_spec, &obtainedSpec);
-    SDL_PauseAudio(0);
-
     WriteRegister(0x4015, 0x00);
 }
 
 
 void APU::Update()
 {
-    frame_counter.Step();
 
     // APU::Update() is called every CPU cycle, and 2 CPU cycles = 1 APU cycle
-    if (!on_apu_cycle)
+	// Certain component update every APU cycle, others every CPU cycle.
+    if (on_apu_cycle)
     {
-        on_apu_cycle = true;
-    }
-    else
-    {
-        // The pulse channels' timers are clocked every apu cycle.
-        pulse_ch_1.Step();
-        pulse_ch_2.Step();
+		frame_counter.Step();
+		pulse_ch_1.Step();
+		pulse_ch_2.Step();
     }
 
     dmc.Step();
@@ -73,6 +62,8 @@ void APU::Update()
         MixAndSample();
         cpu_cycle_sample_counter -= standard.cpu_cycles_per_sec;
     }
+
+	on_apu_cycle = !on_apu_cycle;
 }
 
 
@@ -115,31 +106,25 @@ void APU::WriteRegister(u16 addr, u8 data)
         pulse_ch_1.sweep.divider_period = data >> 4;
         pulse_ch_1.sweep.enabled = data & 0x80;
         pulse_ch_1.sweep.reload = true;
+		pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ1_LO: // $4002
         pulse_ch_1.timer_period = pulse_ch_1.timer_period & 0x700 | data;
-        if (pulse_ch_1.timer_period < 8)
-        {
-            pulse_ch_1.sweep.muting = true;
-            pulse_ch_1.UpdateVolume();
-        }
+		pulse_ch_1.UpdateSweepMuting();
         pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ1_HI: // $4003
         pulse_ch_1.timer_period = pulse_ch_1.timer_period & 0xFF | data << 8;
-        if (pulse_ch_1.timer_period < 8)
-        {
-            pulse_ch_1.sweep.muting = true;
-            pulse_ch_1.UpdateVolume();
-        }
+		pulse_ch_1.UpdateSweepMuting();
         if (pulse_ch_1.enabled)
         {
             pulse_ch_1.length_counter.SetValue(length_table[data >> 3]);
             pulse_ch_1.UpdateVolume(); // TODO: possible to somehow call UpdateVolume from SetValue?
         }
-        pulse_ch_1.envelope.start_flag = true;
+		pulse_ch_1.duty_pos = 0;
+		pulse_ch_1.envelope.start_flag = true;
         pulse_ch_1.ComputeTargetTimerPeriod();
         break;
 
@@ -157,38 +142,31 @@ void APU::WriteRegister(u16 addr, u8 data)
         pulse_ch_2.sweep.divider_period = data >> 4;
         pulse_ch_2.sweep.enabled = data & 0x80;
         pulse_ch_2.sweep.reload = true;
+		pulse_ch_2.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ2_LO: // $4006
         pulse_ch_2.timer_period = pulse_ch_2.timer_period & 0x700 | data;
-        if (pulse_ch_2.timer_period < 8)
-        {
-            pulse_ch_2.sweep.muting = true;
-            pulse_ch_2.UpdateVolume();
-        }
+		pulse_ch_2.UpdateSweepMuting();
         pulse_ch_2.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::SQ2_HI: // $4007
         pulse_ch_2.timer_period = pulse_ch_2.timer_period & 0xFF | data << 8;
-        if (pulse_ch_2.timer_period < 8)
-        {
-            pulse_ch_2.sweep.muting = true;
-            pulse_ch_2.UpdateVolume();
-        }
+		pulse_ch_2.UpdateSweepMuting();
         if (pulse_ch_2.enabled)
         {
             pulse_ch_2.length_counter.SetValue(length_table[data >> 3]);
             pulse_ch_2.UpdateVolume();
         }
-        pulse_ch_2.envelope.start_flag = true;
+		pulse_ch_2.duty_pos = 0;
+		pulse_ch_2.envelope.start_flag = true;
         pulse_ch_2.ComputeTargetTimerPeriod();
         break;
 
     case Bus::Addr::TRI_LINEAR: // $4008
         triangle_ch.linear_counter.reload_value = data;
-        triangle_ch.linear_counter.control = data & 0x80; // Doubles as the length counter halt flag
-        //triangle_ch.linear_counter.reload = triangle_ch.linear_counter.control; // TODO: why was this here?
+        triangle_ch.length_counter.halt = data & 0x80; // Doubles as the linear counter control flag
         break;
 
     case Bus::Addr::TRI_LO: // $400A
@@ -248,20 +226,32 @@ void APU::WriteRegister(u16 addr, u8 data)
 
     case Bus::Addr::APU_STAT: // $4015
         pulse_ch_1.enabled = data & 0x01;
-        if (!pulse_ch_1.enabled)
-            pulse_ch_1.length_counter.SetToZero();
+		if (!pulse_ch_1.enabled)
+		{
+			pulse_ch_1.length_counter.SetToZero();
+			pulse_ch_1.volume = 0;
+		}
 
         pulse_ch_2.enabled = data & 0x02;
-        if (!pulse_ch_2.enabled)
-            pulse_ch_2.length_counter.SetToZero();
+		if (!pulse_ch_2.enabled)
+		{
+			pulse_ch_2.length_counter.SetToZero();
+			pulse_ch_2.volume = 0;
+		}
 
         triangle_ch.enabled = data & 0x04;
-        if (!triangle_ch.enabled)
-            triangle_ch.length_counter.SetToZero();
+		if (!triangle_ch.enabled)
+		{
+			triangle_ch.length_counter.SetToZero();
+			triangle_ch.volume = 0;
+		}
 
         noise_ch.enabled = data & 0x08;
-        if (!noise_ch.enabled)
-            noise_ch.length_counter.SetToZero();
+		if (!noise_ch.enabled)
+		{
+			noise_ch.length_counter.SetToZero();
+			noise_ch.volume = 0;
+		}
 
         dmc.enabled = data & 0x10;
         // todo: not clear if the xor between the new dmc.enabled and previous one matters
@@ -306,7 +296,14 @@ void APU::FrameCounter::Step()
     // If $4017 was written to, the write doesn't apply until a few cpu cycles later.
     if (pending_4017_write && --cpu_cycles_until_apply_4017_write == 0)
     {
-        interrupt_inhibit = data_written_to_4017 & 0x40;
+		/* If bit 6 is set, the frame interrupt flag is cleared, otherwise it is unaffected. */
+		interrupt_inhibit = data_written_to_4017 & 0x40;
+		if (interrupt_inhibit)
+		{
+			apu->nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
+			interrupt = false;
+		}
+
         mode = data_written_to_4017 & 0x80;
         pending_4017_write = false;
         cpu_cycle_count = 0;
@@ -426,14 +423,14 @@ void APU::PulseCh::ClockLength()
     if (length_counter.halt || length_counter.has_reached_zero)
         return;
 
-    // The length counter silences the channel when clocked while already zero.
-    if (length_counter.value == 0)
-    {
-        length_counter.has_reached_zero = true;
-        UpdateVolume(); // Set volume to 0
-    }
-    else
-        length_counter.value--;
+    /* Technically, the length counter silences the channel when clocked while already zero.
+	   The values in the length table are the actual values the length counter gets loaded with plus one,
+	   to allow us to use a model where the channel is silenced when the length counter becomes zero. */
+	if (--length_counter.value == 0)
+	{
+		length_counter.has_reached_zero = true;
+		volume = 0;
+	}
 }
 
 
@@ -441,17 +438,16 @@ void APU::PulseCh::ClockSweep()
 {
     if (sweep.divider == 0 && sweep.enabled && !sweep.muting)
     {
-        // If the shift count is zero, the channel's period is never updated.
-        if (sweep.shift_count != 0)
-        {
-            timer_period = sweep.target_timer_period;
-            ComputeTargetTimerPeriod();
-            if (timer_period < 8)
-            {
-                sweep.muting = true;
-                UpdateVolume();
-            }
-        }
+		ComputeTargetTimerPeriod();
+		// If the shift count is zero, the channel's period is never updated.
+		if (sweep.shift_count != 0)
+		{
+			timer_period = sweep.target_timer_period;
+			/* The target period is continuously recomputed. However, parameters change only ever so often,
+			   so the function only needs to be called when this happens.
+			   The current period is one of the parameters. */
+			ComputeTargetTimerPeriod();
+		}
     }
     if (sweep.divider == 0 || sweep.reload)
     {
@@ -474,13 +470,9 @@ void APU::PulseCh::ComputeTargetTimerPeriod()
         if (id == 1)
             timer_period_change--;
     }
-    sweep.target_timer_period = timer_period + timer_period_change;
+    sweep.target_timer_period = std::max(0, (int)timer_period + timer_period_change);
 
-    if (sweep.target_timer_period > 0x7FF)
-    {
-        sweep.muting = true;
-        UpdateVolume();
-    }
+	UpdateSweepMuting();
 }
 
 
@@ -499,15 +491,13 @@ void APU::PulseCh::Step()
 
 void APU::TriangleCh::ClockLength()
 {
-    // Note: the control flag doubles as the length counter halt flag
-    if (!linear_counter.control || length_counter.has_reached_zero)
+    if (length_counter.halt || length_counter.has_reached_zero)
         return;
 
-    // The length counter silences the channel when it reaches zero (unlike for e.g. pulse channels, which are silenced on the next clock).
     if (--length_counter.value == 0)
     {
         length_counter.has_reached_zero = true;
-        UpdateVolume(); // Set volume to 0
+		volume = 0;
     }
 }
 
@@ -524,10 +514,10 @@ void APU::TriangleCh::ClockLinear()
         if (--linear_counter.value == 0)
         {
             linear_counter.has_reached_zero = true;
-            UpdateVolume(); // Set volume to 0
+			volume = 0;
         }
     }
-    if (!linear_counter.control)
+    if (!length_counter.halt) // Note: this flag doubles as the linear counter control flag.
         linear_counter.reload = false;
 }
 
@@ -589,14 +579,11 @@ void APU::NoiseCh::ClockLength()
     if (length_counter.halt || length_counter.has_reached_zero)
         return;
 
-    // The length counter silences the channel when clocked while already zero.
-    if (length_counter.value == 0)
+    if (--length_counter.value == 0)
     {
-        length_counter.has_reached_zero = true;
-        UpdateVolume(); // Set volume to 0
+		length_counter.has_reached_zero = true;
+		volume = 0;
     }
-    else
-        length_counter.value--;
 }
 
 

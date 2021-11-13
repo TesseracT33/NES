@@ -17,7 +17,6 @@ class APU final : public Component
 public:
 	using Component::Component;
 
-	void Initialize();
 	void PowerOn(const System::VideoStandard standard);
 	void Reset();
 	void Update();
@@ -127,13 +126,15 @@ private:
 		void SetValue(unsigned value)
 		{
 			this->value = value;
+			/* The length counter silences the channel when clocked while already zero,
+			   so we should probably not set this to true if value == 0. */
 			has_reached_zero = false;
 		}
 	};
 
 	struct LinearCounter
 	{
-		bool control; // Doubles as the length counter halt flag for the triangle channel
+		/* Note: this counter has a control flag, but it is the same thing has the length counter halt flag. */
 		bool has_reached_zero = true;
 		bool reload;
 		unsigned reload_value : 7;
@@ -155,7 +156,7 @@ private:
 		unsigned divider : 3;
 		unsigned divider_period : 3;
 		unsigned shift_count : 3;
-		unsigned target_timer_period : 11;
+		unsigned target_timer_period;
 	};
 
 	struct Channel
@@ -163,18 +164,20 @@ private:
 		bool enabled = false;
 		u8 output;
 		u8 volume = 0;
+
+		virtual void Step() = 0;
 		virtual void UpdateVolume() = 0;
 	};
 
 	struct PulseCh : Channel
 	{
-		PulseCh(int _id) : id(_id) {};
-		const int id;
+		PulseCh(int id) : id(id) {};
+		const int id; /* 1 or 2 */
 
-		unsigned duty : 2;
-		unsigned duty_pos : 3;
-		unsigned timer : 11;
-		unsigned timer_period : 11;
+		unsigned duty         :  2 = 0;
+		unsigned duty_pos     :  3 = 0;
+		unsigned timer        : 11 = 0;
+		unsigned timer_period : 11 = 0;
 		Envelope envelope;
 		LengthCounter length_counter;
 		Sweep sweep;
@@ -184,6 +187,12 @@ private:
 		void ClockSweep();
 		void ComputeTargetTimerPeriod();
 		void Step();
+
+		void UpdateSweepMuting()
+		{
+			sweep.muting = sweep.target_timer_period > 0x7FF || timer_period < 8;
+			UpdateVolume();
+		}
 
 		void UpdateVolume()
 		{
