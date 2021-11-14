@@ -213,9 +213,9 @@ private:
 
 	struct TriangleCh : Channel
 	{
-		unsigned duty_pos : 5;
-		unsigned timer : 11;
-		unsigned timer_period : 11;
+		unsigned duty_pos     :  5 = 0;
+		unsigned timer        : 11 = 0;
+		unsigned timer_period : 11 = 0;
 		LengthCounter length_counter;
 		LinearCounter linear_counter;
 
@@ -234,10 +234,10 @@ private:
 
 	struct NoiseCh : Channel
 	{
-		bool loop_noise;
-		unsigned LFSR : 15;
-		u16 timer;
-		u16 timer_period;
+		bool mode = 0;
+		unsigned LFSR : 15 = 1;
+		u16 timer = 0;
+		u16 timer_period = 0;
 		Envelope envelope;
 		LengthCounter length_counter;
 

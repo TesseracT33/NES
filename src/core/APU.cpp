@@ -43,17 +43,20 @@ void APU::Reset()
 
 void APU::Update()
 {
-
-    // APU::Update() is called every CPU cycle, and 2 CPU cycles = 1 APU cycle
-	// Certain component update every APU cycle, others every CPU cycle.
+	/* APU::Update() is called every CPU cycle, and 2 CPU cycles = 1 APU cycle.
+	   Some components update every APU cycle, others every CPU cycle.
+	   The triangle channel's timer is clocked on every CPU cycle,
+	   but the pulse, noise, and DMC timers are clocked only on every second CPU cycle.
+	   Further, the frame counter should be stepped every cpu cycle, because it is counting cpu cycles.
+	*/
     if (on_apu_cycle)
     {
-		frame_counter.Step();
+		dmc.Step();
+		noise_ch.Step();
 		pulse_ch_1.Step();
 		pulse_ch_2.Step();
     }
-
-    dmc.Step();
+	frame_counter.Step();
     triangle_ch.Step();
 
     cpu_cycle_sample_counter += sample_rate;
@@ -192,7 +195,7 @@ void APU::WriteRegister(u16 addr, u8 data)
 
     case Bus::Addr::NOISE_LO: // $400E
         noise_ch.timer_period = standard.noise_period_table[data & 0xF];
-        noise_ch.loop_noise = data & 0x80;
+        noise_ch.mode = data & 0x80;
         break;
 
     case Bus::Addr::NOISE_HI: // $400F
@@ -592,7 +595,7 @@ void APU::NoiseCh::Step()
     if (timer == 0)
     {
         timer = timer_period;
-        output = (LFSR & 1) ^ (loop_noise ? (LFSR >> 6 & 1) : (LFSR >> 1 & 1));
+        output = (LFSR & 1) ^ (mode ? (LFSR >> 6 & 1) : (LFSR >> 1 & 1));
         LFSR >>= 1;
         LFSR |= output << 14;
         UpdateVolume(); // The volume is set to 0 if bit 0 of the LFSR is set.
