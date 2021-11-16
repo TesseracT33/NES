@@ -123,10 +123,12 @@ public:
 		{
 			size_t size = queue.size();
 			Stream(&size, sizeof(size_t));
-			while (!queue.empty())
+
+			auto tmp_queue = queue;
+			while (!tmp_queue.empty())
 			{
-				T t = queue.front();
-				queue.pop();
+				T t = tmp_queue.front();
+				tmp_queue.pop();
 				Stream(&t, sizeof(T));
 			}
 		}
