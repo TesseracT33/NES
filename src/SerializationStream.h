@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <deque>
 #include <fstream>
 #include <queue>
 #include <string>
@@ -13,7 +14,7 @@ private:
 	bool has_error = false; // an error has occured while reading/writing.
 	std::fstream fstream;
 
-	void Stream(void* obj, size_t size)
+	void Stream(void* obj, const size_t size)
 	{
 		if (has_error)
 			return;
@@ -148,13 +149,39 @@ public:
 		}
 	}
 
+	template<typename T> void StreamDeque(std::deque<T>& deque)
+	{
+		if (mode == Mode::Serialization)
+		{
+			size_t size = deque.size();
+			Stream(&size, sizeof(size_t));
+			for (T& t : deque)
+				Stream(&t, sizeof(T));
+		}
+		else
+		{
+			deque.clear();
+
+			size_t size = 0;
+			Stream(&size, sizeof(size_t));
+			if (size > 0)
+				deque.resize(size);
+			for (size_t i = 0; i < size; i++)
+			{
+				T t;
+				Stream(&t, sizeof(T));
+				deque.push_back(t);
+			}
+		}
+	}
+
 	template<typename T> void StreamVector(std::vector<T>& vector)
 	{
 		if (mode == Mode::Serialization)
 		{
 			size_t size = vector.size();
 			Stream(&size, sizeof(size_t));
-			for (T t : vector)
+			for (T& t : vector)
 				Stream(&t, sizeof(T));
 		}
 		else
