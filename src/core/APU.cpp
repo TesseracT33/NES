@@ -47,8 +47,7 @@ void APU::Update()
 	   Some components update every APU cycle, others every CPU cycle.
 	   The triangle channel's timer is clocked on every CPU cycle,
 	   but the pulse, noise, and DMC timers are clocked only on every second CPU cycle.
-	   Further, the frame counter should be stepped every cpu cycle, because it is counting cpu cycles.
-	*/
+	   Further, the frame counter should be stepped every cpu cycle, because it is counting cpu cycles. */
     if (on_apu_cycle)
     {
 		dmc.Step();
@@ -58,6 +57,12 @@ void APU::Update()
     }
 	frame_counter.Step();
     triangle_ch.Step();
+
+	/* If the length counter halt flag was set to be set/cleared on the last cpu cycle, set/clear it now. */
+	pulse_ch_1.length_counter.UpdateHaltFlag();
+	pulse_ch_2.length_counter.UpdateHaltFlag();
+	triangle_ch.length_counter.UpdateHaltFlag();
+	noise_ch.length_counter.UpdateHaltFlag();
 
     cpu_cycle_sample_counter += sample_rate;
     if (cpu_cycle_sample_counter >= standard.cpu_cycles_per_sec)
@@ -81,9 +86,9 @@ u8 APU::ReadRegister(u16 addr)
                | (noise_ch.length_counter.value    > 0) << 3
                | (dmc.bytes_remaining > 0             ) << 4
                | (frame_counter.interrupt             ) << 6
-               | (dmc.IRQ_enable                      ) << 7;
-        frame_counter.interrupt = 0;
-        nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
+               | (dmc.interrupt                       ) << 7;
+
+		SetFrameCounterIRQHigh();
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
         return ret;
     }
@@ -98,7 +103,8 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::SQ1_VOL: // $4000
         pulse_ch_1.envelope.divider_period = data;
         pulse_ch_1.envelope.const_vol = data & 0x10;
-        pulse_ch_1.length_counter.halt = data & 0x20;
+		pulse_ch_1.length_counter.write_to_halt_next_cpu_cycle = true;
+        pulse_ch_1.length_counter.bit_to_write_to_halt = data & 0x20;
         pulse_ch_1.duty = data >> 6;
         pulse_ch_1.UpdateVolume();
         break;
@@ -134,7 +140,8 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::SQ2_VOL: // $4004
         pulse_ch_2.envelope.divider_period = data;
         pulse_ch_2.envelope.const_vol = data & 0x10;
-        pulse_ch_2.length_counter.halt = data & 0x20;
+		pulse_ch_2.length_counter.write_to_halt_next_cpu_cycle = true;
+		pulse_ch_2.length_counter.bit_to_write_to_halt = data & 0x20;
         pulse_ch_2.duty = data >> 6;
         pulse_ch_2.UpdateVolume();
         break;
@@ -169,7 +176,8 @@ void APU::WriteRegister(u16 addr, u8 data)
 
     case Bus::Addr::TRI_LINEAR: // $4008
         triangle_ch.linear_counter.reload_value = data;
-        triangle_ch.length_counter.halt = data & 0x80; // Doubles as the linear counter control flag
+		triangle_ch.length_counter.write_to_halt_next_cpu_cycle = true;
+		triangle_ch.length_counter.bit_to_write_to_halt = data & 0x80; // Doubles as the linear counter control flag
         break;
 
     case Bus::Addr::TRI_LO: // $400A
@@ -189,7 +197,8 @@ void APU::WriteRegister(u16 addr, u8 data)
     case Bus::Addr::NOISE_VOL: // $400C
         noise_ch.envelope.divider_period = data;
         noise_ch.envelope.const_vol = data & 0x10;
-        noise_ch.length_counter.halt = data & 0x20;
+		noise_ch.length_counter.write_to_halt_next_cpu_cycle = true;
+		noise_ch.length_counter.bit_to_write_to_halt = data & 0x20;
         noise_ch.UpdateVolume();
         break;
 
@@ -211,12 +220,13 @@ void APU::WriteRegister(u16 addr, u8 data)
         dmc.period = standard.dmc_rate_table[data & 0xF];
         dmc.loop = data & 0x40;
         dmc.IRQ_enable = data & 0x80;
-        if (!dmc.IRQ_enable)
-			nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+		if (!dmc.IRQ_enable)
+			SetDMCIRQHigh();
         break;
 
     case Bus::Addr::DMC_RAW: // $4011
         dmc.output_level = data;
+		dmc.UpdateVolume();
         break;
 
     case Bus::Addr::DMC_START: // $4012
@@ -257,7 +267,6 @@ void APU::WriteRegister(u16 addr, u8 data)
 		}
 
         dmc.enabled = data & 0x10;
-        // todo: not clear if the xor between the new dmc.enabled and previous one matters
         if (dmc.enabled)
         {
             if (dmc.bytes_remaining == 0)
@@ -271,21 +280,24 @@ void APU::WriteRegister(u16 addr, u8 data)
         else
             dmc.bytes_remaining = 0;
 
-		dmc.interrupt = 0;
-		nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+		SetDMCIRQHigh();
         break;
 
     case Bus::Addr::FRAME_CNT: // $4017
-        /* If the write occurs during an APU cycle, the effects occur 3 CPU cycles after the $4017 write cycle, 
+        /* If the write occurs during an APU cycle, the effects occur 2 CPU cycles after the $4017 write cycle, 
            and if the write occurs between APU cycles, the effects occurs 4 CPU cycles after the write cycle. */
         frame_counter.pending_4017_write = true;
         frame_counter.cpu_cycles_until_apply_4017_write = on_apu_cycle ? 3 : 4;
         frame_counter.data_written_to_4017 = data;
 
-        /* Writing $80 to $4017 should clock length immediately. Source: blarrg apu test */
-        /* TODO: is only $80 allowed, or any number with bit 7 set? */
-        if (data == 0x80)
-            ClockLengthUnits();
+        /* Writing to $4017 with bit 7 set should clock all units immediately. */
+		if (data & 0x80)
+		{
+			frame_counter.ClockEnvelopeUnits();
+			frame_counter.ClockLengthUnits();
+			frame_counter.ClockLinearUnits();
+			frame_counter.ClockSweepUnits();
+		}
         break;
 
     default:
@@ -302,10 +314,7 @@ void APU::FrameCounter::Step()
 		/* If bit 6 is set, the frame interrupt flag is cleared, otherwise it is unaffected. */
 		interrupt_inhibit = data_written_to_4017 & 0x40;
 		if (interrupt_inhibit)
-		{
-			apu->nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
-			interrupt = false;
-		}
+			apu->SetFrameCounterIRQHigh();
 
         mode = data_written_to_4017 & 0x80;
         pending_4017_write = false;
@@ -316,74 +325,56 @@ void APU::FrameCounter::Step()
     // The frame counter is clocked on every other CPU cycle, i.e. on every APU cycle.
     // This function is called every CPU cycle.
     // Therefore, the APU cycle counts from https://wiki.nesdev.org/w/index.php?title=APU_Frame_Counter have been doubled.
-    switch (++cpu_cycle_count)
-    {
-    case 7459: // APU cycle 3728.5
-        apu->ClockEnvelopeUnits();
-        apu->ClockLinearUnits();
-        break;
+	cpu_cycle_count++;
 
-    case 14915: // APU cycle 7456.5
-        apu->ClockEnvelopeUnits();
-        apu->ClockLengthUnits();
-        apu->ClockLinearUnits();
-        apu->ClockSweepUnits();
-        break;
-
-    case 22373: // APU cycle 11185.5
-        apu->ClockEnvelopeUnits();
-        apu->ClockLinearUnits();
-        break;
-
-    case 29830: // APU cycle 14914
-        if (mode == 0 && interrupt_inhibit == 0)
-        {
-            apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
-            interrupt = true;
-        }
-        break;
-
-    case 29831: // APU cycle 14914.5
-        if (mode == 0)
-        {
-            apu->ClockEnvelopeUnits();
-            apu->ClockLengthUnits();
-            apu->ClockLinearUnits();
-            apu->ClockSweepUnits();
-            if (interrupt_inhibit == 0)
-            {
-                apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
-                interrupt = true;
-            }
-        }
-        break;
-
-    case 29832: // APU cycle 14915
-        if (mode == 0)
-        {
-            if (interrupt_inhibit == 0)
-            {
-                apu->nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask); // TODO: make less ugly
-                interrupt = true;
-            }
-            cpu_cycle_count = 1;
-        }
-        break;
-
-    case 37283: // APU cycle 18640.5
-        apu->ClockEnvelopeUnits();
-        apu->ClockLengthUnits();
-        apu->ClockLinearUnits();
-        apu->ClockSweepUnits();
-        break;
-
-    case 37284: // APU cycle 18641
-        cpu_cycle_count = 1;
-        break;
-
-    default:
-        break;
-    }
+	const unsigned* const table = apu->standard.frame_counter_step_cycle_table;
+	/* NTSC: cycle 7457/22371. PAL: cycle 8313/24939. */
+	if (cpu_cycle_count == table[0] || cpu_cycle_count == table[2])
+	{
+		ClockEnvelopeUnits();
+		ClockLinearUnits();
+	}
+	/* NTSC: cycle 14913/37281. PAL: cycle 16627/41565. */
+	else if (cpu_cycle_count == table[1] || cpu_cycle_count == table[6])
+	{
+		ClockEnvelopeUnits();
+		ClockLengthUnits();
+		ClockLinearUnits();
+		ClockSweepUnits();
+	}
+	/* NTSC: cycle 29828. PAL: cycle 33252. */
+	else if (cpu_cycle_count == table[3])
+	{
+		if (mode == 0 && !interrupt_inhibit)
+			apu->SetFrameCounterIRQLow();
+	}
+	/* NTSC: cycle 29829. PAL: cycle 33253. */
+	else if (cpu_cycle_count == table[4])
+	{
+		if (mode == 0)
+		{
+			ClockEnvelopeUnits();
+			ClockLengthUnits();
+			ClockLinearUnits();
+			ClockSweepUnits();
+			if (!interrupt_inhibit)
+				apu->SetFrameCounterIRQLow();
+		}
+	}
+	/* NTSC: cycle 29830. PAL: cycle 33254. */
+	else if (cpu_cycle_count == table[5])
+	{
+		if (mode == 0 && !interrupt_inhibit)
+		{
+			apu->SetFrameCounterIRQLow();
+			cpu_cycle_count = 0;
+		}
+	}
+	/* NTSC: cycle 37282. PAL: cycle 41566. */
+	else if (cpu_cycle_count == table[7])
+	{
+		cpu_cycle_count = 0;
+	}
 }
 
 
@@ -500,7 +491,7 @@ void APU::TriangleCh::ClockLength()
     if (--length_counter.value == 0)
     {
         length_counter.has_reached_zero = true;
-		volume = 0;
+		/* The volume is not set to 0; silencing the triangle channel merely halts it. It will continue to output its last value, rather than 0. */
     }
 }
 
@@ -517,7 +508,7 @@ void APU::TriangleCh::ClockLinear()
         if (--linear_counter.value == 0)
         {
             linear_counter.has_reached_zero = true;
-			volume = 0;
+			/* The volume is not set to 0; silencing the triangle channel merely halts it. It will continue to output its last value, rather than 0. */
         }
     }
     if (!length_counter.halt) // Note: this flag doubles as the linear counter control flag.
@@ -598,7 +589,8 @@ void APU::NoiseCh::Step()
         output = (LFSR & 1) ^ (mode ? (LFSR >> 6 & 1) : (LFSR >> 1 & 1));
         LFSR >>= 1;
         LFSR |= output << 14;
-        UpdateVolume(); // The volume is set to 0 if bit 0 of the LFSR is set.
+		if (LFSR & 1)
+			volume = 0;
     }
     else
         timer--;
@@ -613,7 +605,7 @@ void APU::DMC::Step()
         read_sample_on_next_apu_cycle = false;
     }
 
-    if (--cpu_cycles_until_step > 0)
+    if (--apu_cycles_until_step > 0)
         return;
 
     if (!silence_flag)
@@ -650,7 +642,7 @@ void APU::DMC::Step()
         }
     }
 
-    cpu_cycles_until_step = period;
+    apu_cycles_until_step = period;
 }
 
 
@@ -666,14 +658,14 @@ void APU::DMC::ReadSample()
 		if (loop)
 			RestartSample();
 		else if (IRQ_enable)
-			apu->nes->cpu->SetIRQLow(IRQ_APU_DMC_mask); // TODO: make less ugly
+			apu->SetDMCIRQLow();
     }
 }
 
 
 void APU::MixAndSample()
 {
-    https://wiki.nesdev.org/w/index.php?title=APU_Mixer
+    // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
     f32 pulse_out = pulse_table[pulse_sum];
     u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
@@ -687,11 +679,11 @@ void APU::MixAndSample()
 
 	if (sample_buffer_index == sample_buffer_size)
 	{
-		while (std::chrono::duration_cast<std::chrono::microseconds>(
-			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
+		//while (std::chrono::duration_cast<std::chrono::microseconds>(
+			//std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
 
 		last_audio_enqueue_time_point = std::chrono::steady_clock::now();
-		SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
+		//SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
 		sample_buffer_index = 0;
 	}
 }

@@ -2,7 +2,6 @@
 
 #include <array>
 #include <chrono>
-#include <cmath>
 
 #include "SDL.h"
 
@@ -33,10 +32,10 @@ private:
 	};
 
 	static constexpr u8 pulse_duty_table[4][8] = {
-		{0, 1, 0, 0, 0, 0, 0, 0},
-		{0, 1, 1, 0, 0, 0, 0, 0},
-		{0, 1, 1, 1, 1, 0, 0, 0},
-		{1, 0, 0, 1, 1, 1, 1, 1}
+		{ 0, 1, 0, 0, 0, 0, 0, 0 },
+		{ 0, 1, 1, 0, 0, 0, 0, 0 },
+		{ 0, 1, 1, 1, 1, 0, 0, 0 },
+		{ 1, 0, 0, 1, 1, 1, 1, 1 }
 	};
 
 	static constexpr u8 triangle_duty_table[32] = {
@@ -45,11 +44,11 @@ private:
 	};
 
 	static constexpr u16 dmc_rate_table_ntsc[16] = {
-		428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54
+		214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27
 	};
 
 	static constexpr u16 dmc_rate_table_pal[16] = {
-		398, 354, 316, 298, 276, 236, 210, 198, 176, 148, 132, 118, 98, 78, 66, 50
+		199, 177, 158, 149, 138, 118, 105, 99, 88, 74, 66, 59, 49, 39, 33, 25
 	};
 
 	static constexpr u16 noise_period_table_ntsc[16] = {
@@ -58,6 +57,14 @@ private:
 
 	static constexpr u16 noise_period_table_pal[16] = {
 		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778 
+	};
+
+	static constexpr unsigned frame_counter_step_cycle_table_ntsc[8] = {
+		7457, 14913, 22371, 29828, 29829, 29830, 37281, 37282
+	};
+
+	static constexpr unsigned frame_counter_step_cycle_table_pal[8] = {
+		8313, 16627, 24939, 33252, 33253, 33254, 41565, 41566
 	};
 
 	static constexpr size_t pulse_table_len = 31;
@@ -93,36 +100,39 @@ private:
 	static constexpr unsigned sample_buffer_size_per_channel = sample_buffer_size / num_audio_channels;
 	static constexpr unsigned sample_rate = 44100;
 	static constexpr unsigned microseconds_per_audio_enqueue =
-		double(sample_buffer_size_per_channel) / double(sample_rate) * 1'000'000;
+		double(sample_buffer_size_per_channel) / double(sample_rate) * 1'000'000 + 1;
 
 	struct Standard
 	{
 		const u16* dmc_rate_table;
 		const u16* noise_period_table;
+		const unsigned* frame_counter_step_cycle_table;
 		unsigned cpu_cycles_per_sec;
 	};
 
-	static constexpr Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc };
-	static constexpr Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
-	static constexpr Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , cpu_cycles_per_sec_pal  };
+	static constexpr Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, frame_counter_step_cycle_table_ntsc, cpu_cycles_per_sec_ntsc };
+	static constexpr Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, frame_counter_step_cycle_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
+	static constexpr Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , frame_counter_step_cycle_table_pal , cpu_cycles_per_sec_pal  };
 	Standard standard = NTSC; /* The default */
 
 	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 
 	struct Envelope
 	{
-		bool const_vol;
-		bool start_flag;
-		unsigned decay_level_cnt : 4; 
-		unsigned divider : 4;
-		unsigned divider_period : 4; // Doubles as the channels volume when in constant volume mode
+		bool const_vol  = false;
+		bool start_flag = false;
+		unsigned decay_level_cnt : 4 = 0; 
+		unsigned divider         : 4 = 0;
+		unsigned divider_period  : 4 = 0; // Doubles as the channels volume when in constant volume mode
 	};
 
 	struct LengthCounter
 	{
-		bool halt;
-		bool has_reached_zero = true;
-		unsigned value : 5;
+		bool halt                          = false;
+		bool has_reached_zero              = true;
+		bool write_to_halt_next_cpu_cycle  = false; /* Write to halt flag is delayed by one clock */
+		bool bit_to_write_to_halt          = false;
+		u8 value = 0;
 		
 		void SetToZero()
 		{
@@ -136,15 +146,23 @@ private:
 			   so we should probably not set this to true if value == 0. */
 			has_reached_zero = false;
 		}
+		void UpdateHaltFlag()
+		{
+			if (write_to_halt_next_cpu_cycle)
+			{
+				halt = bit_to_write_to_halt;
+				write_to_halt_next_cpu_cycle = false;
+			}
+		}
 	};
 
 	struct LinearCounter
 	{
 		/* Note: this counter has a control flag, but it is the same thing has the length counter halt flag. */
 		bool has_reached_zero = true;
-		bool reload;
-		unsigned reload_value : 7;
-		unsigned value : 7;
+		bool reload           = false;
+		unsigned reload_value : 7 = 0;
+		unsigned value        : 7 = 0;
 
 		void Reload()
 		{
@@ -155,20 +173,20 @@ private:
 
 	struct Sweep
 	{
-		bool enabled;
-		bool muting;
-		bool negate;
-		bool reload;
-		unsigned divider : 3;
-		unsigned divider_period : 3;
-		unsigned shift_count : 3;
-		unsigned target_timer_period;
+		bool enabled = false;
+		bool muting  = false;
+		bool negate  = false;
+		bool reload  = false;
+		unsigned divider          : 3 = 0;
+		unsigned divider_period   : 3 = 0;
+		unsigned shift_count      : 3 = 0;
+		unsigned target_timer_period  = 0;
 	};
 
 	struct Channel
 	{
 		bool enabled = false;
-		u8 output;
+		u8 output = 0;
 		u8 volume = 0;
 
 		virtual void Step() = 0;
@@ -234,10 +252,10 @@ private:
 
 	struct NoiseCh : Channel
 	{
-		bool mode = 0;
+		bool mode          = 0;
 		unsigned LFSR : 15 = 1;
-		u16 timer = 0;
-		u16 timer_period = 0;
+		u16 timer          = 0;
+		u16 timer_period   = 0;
 		Envelope envelope;
 		LengthCounter length_counter;
 
@@ -258,26 +276,26 @@ private:
 
 	struct DMC : Channel
 	{
-		DMC(APU* apu) { this->apu = apu; }
+		DMC(APU* apu) : apu(apu) {};
 		APU* apu; /* This unit needs access to some members outside of the struct. */
 
-		bool interrupt;
-		bool IRQ_enable;
-		bool loop;
-		bool read_sample_on_next_apu_cycle = false;
+		bool interrupt                              = false;
+		bool IRQ_enable                             = false;
+		bool loop                                   = false;
+		bool read_sample_on_next_apu_cycle          = false;
 		bool restart_sample_after_buffer_is_emptied = false;
-		bool sample_buffer_is_empty = true;
-		bool silence_flag;
-		unsigned output_level : 7;
-		u8 bits_remaining;
-		u8 sample_buffer;
-		u8 shift_register;
-		u16 bytes_remaining;
-		u16 cpu_cycles_until_step;
-		u16 current_sample_addr;
-		u16 period;
-		u16 sample_addr;
-		u16 sample_len;
+		bool sample_buffer_is_empty                 = true ;
+		bool silence_flag                           = false;
+		unsigned output_level : 7 = 0;
+		u8 bits_remaining         = 0;
+		u8 sample_buffer          = 0;
+		u8 shift_register         = 0;
+		u16 apu_cycles_until_step = 0;
+		u16 bytes_remaining       = 0;
+		u16 current_sample_addr   = 0;
+		u16 period                = 0;
+		u16 sample_addr           = 0;
+		u16 sample_len            = 0;
 
 		void ReadSample();
 		void RestartSample()
@@ -292,18 +310,41 @@ private:
 
 	struct FrameCounter
 	{
-		FrameCounter(APU* apu) { this->apu = apu; }
+		FrameCounter(APU* apu) : apu(apu) {}
 		APU* apu; /* This unit needs access to some members outside of the struct. */
 
-		bool interrupt = 0;
-		bool interrupt_inhibit = 0;
-		bool mode = 0;
-		bool pending_4017_write = false;
+		bool interrupt          = 0;
+		bool interrupt_inhibit  = 0;
+		bool mode               = 0;
+		bool pending_4017_write = 0;
 		u8 data_written_to_4017;
 		unsigned cpu_cycle_count = 0;
 		unsigned cpu_cycles_until_apply_4017_write;
 
 		void Step();
+
+		void ClockEnvelopeUnits()
+		{
+			apu->pulse_ch_1.ClockEnvelope();
+			apu->pulse_ch_2.ClockEnvelope();
+			apu->noise_ch.ClockEnvelope();
+		}
+		void ClockLengthUnits()
+		{
+			apu->pulse_ch_1.ClockLength();
+			apu->pulse_ch_2.ClockLength();
+			apu->triangle_ch.ClockLength();
+			apu->noise_ch.ClockLength();
+		}
+		void ClockLinearUnits()
+		{
+			apu->triangle_ch.ClockLinear();
+		}
+		void ClockSweepUnits()
+		{
+			apu->pulse_ch_1.ClockSweep();
+			apu->pulse_ch_2.ClockSweep();
+		}
 	} frame_counter{ this };
 
 	bool on_apu_cycle = true;
@@ -317,30 +358,28 @@ private:
 
 	std::chrono::steady_clock::time_point last_audio_enqueue_time_point = std::chrono::steady_clock::now();
 
-	__forceinline void ClockEnvelopeUnits()
+	void SetFrameCounterIRQLow()
 	{
-		pulse_ch_1.ClockEnvelope();
-		pulse_ch_2.ClockEnvelope();
-		noise_ch.ClockEnvelope();
+		frame_counter.interrupt = 1;
+		nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
 	}
 
-	__forceinline void ClockLengthUnits()
+	void SetFrameCounterIRQHigh()
 	{
-		pulse_ch_1.ClockLength();
-		pulse_ch_2.ClockLength();
-		triangle_ch.ClockLength();
-		noise_ch.ClockLength();
+		frame_counter.interrupt = 0;
+		nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
 	}
 
-	__forceinline void ClockLinearUnits()
+	void SetDMCIRQLow()
 	{
-		triangle_ch.ClockLinear();
+		dmc.interrupt = 1;
+		nes->cpu->SetIRQLow(IRQ_APU_DMC_mask);
 	}
 
-	__forceinline void ClockSweepUnits()
+	void SetDMCIRQHigh()
 	{
-		pulse_ch_1.ClockSweep();
-		pulse_ch_2.ClockSweep();
+		dmc.interrupt = 0;
+		nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
 	}
 
 	void MixAndSample();
