@@ -342,20 +342,21 @@ void PPU::StepCycle()
 			// The coarse X scroll is incremented at cycles 328 and 336.
 			// Between cycles 322 and 337, the background shift registers are shifted.
 			// Todo: the very last byte fetched (at cycle 340) should be the same as the previous one (at cycle 338)
-			if (scanline_cycle >= 322 && scanline_cycle <= 337)
+			if (scanline_cycle == 321)
+			{
+				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th and last sprite.
+				tile_fetcher.SetBGTileFetchingActive();
+			}
+			else if (scanline_cycle <= 337)
 			{
 				bg_pattern_shift_reg[0] <<= 1;
 				bg_pattern_shift_reg[1] <<= 1;
 				bg_palette_attr_reg[0] <<= 1;
 				bg_palette_attr_reg[1] <<= 1;
 			}
+
 			switch (scanline_cycle)
 			{
-			case 321:
-				ReloadSpriteShiftRegisters(7); // Reload the shift registers for the 7th and last sprite.
-				tile_fetcher.SetBGTileFetchingActive();
-				break;
-
 			case 324:
 				/* When using 8x8 sprites, if the BG uses $1000, and the sprites use $0000, the MMC3 IRQ counter should decrement on PPU cycle 324 */
 				if (!PPUCTRL_sprite_height && PPUCTRL_bg_tile_sel && !PPUCTRL_sprite_tile_sel)
@@ -516,7 +517,7 @@ u8 PPU::ReadRegister(u16 addr)
 			else
 			{
 				// High 2 bits from palette should be from open bus. Reading palette shouldn't refresh high 2 bits of open bus.
-				ret = ReadPaletteRAM(v_read) & 0x3F | open_bus_io.Read(0xC0);
+				ret = ReadPaletteRAM(v_read) | open_bus_io.Read(0xC0); // Note: the result from ReadPaletteRAM is guaranteed to have bits 7-6 cleared.
 				PPUDATA = ReadMemory(v_read & 0xFFF | 0x2000); // Read from vram at $2000-$2FFF
 				open_bus_io.UpdateValue(ret, 0x3F); /* Update bits 5-0 of open bus with the read value */
 			}
@@ -642,36 +643,13 @@ void PPU::WriteRegister(u16 addr, u8 data)
 }
 
 
-u8 PPU::OpenBusIO::Read(u8 mask)
-{
-	/* Reading the bits of open bus with the bits determined by 'mask' does not refresh those bits. */
-	return value & mask;
-}
-
-
-void PPU::OpenBusIO::Write(u8 data)
-{
-	/* Writing to any PPU register sets the entire decay register to the value written, and refreshes all bits. */
-	UpdateDecayOnIOAccess(0xFF);
-	value = data;
-}
-
-
-void PPU::OpenBusIO::UpdateValue(u8 data, u8 mask)
-{
-	/* Here, the bits of open bus determined by the mask are updated with the supplied data. Also, these bits are refreshed, but not the other ones. */
-	UpdateDecayOnIOAccess(mask);
-	value = data & mask | value & ~mask;
-}
-
-
 void PPU::OpenBusIO::UpdateDecayOnIOAccess(u8 mask)
 {
 	/* Optimization; a lot of the time, the mask will be $FF. */
 	if (mask == 0xFF)
 	{
-		std::fill(cycles_until_decay.begin(), cycles_until_decay.end(), decay_cycle_length);
-		std::fill(decayed.begin(), decayed.end(), false);
+		cycles_until_decay.fill(decay_cycle_length);
+		decayed.fill(false);
 	}
 	else
 	{
@@ -1016,8 +994,8 @@ void PPU::UpdateBGTileFetching()
 		  || ++-------------- Nametable select
 		  ++----------------- Nametable base address ($2000)
 		*/
-		u16 addr = 0x2000 | (scroll.v & 0x0FFF);
-		tile_fetcher.tile_num = ReadMemory(addr);
+		u16 addr = 0x2000 | (scroll.v & 0xFFF);
+		tile_fetcher.tile_num = ReadNametableRAM(addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_attribute_table_byte;
 		break;
 	}
@@ -1032,8 +1010,8 @@ void PPU::UpdateBGTileFetching()
 		  || ++--------------- Nametable select
 		  ++------------------ Nametable base address ($2000)
 		*/
-		u16 addr = 0x23C0 | (scroll.v & 0x0C00) | ((scroll.v >> 4) & 0x38) | ((scroll.v >> 2) & 7);
-		tile_fetcher.attribute_table_byte = ReadMemory(addr);
+		u16 addr = 0x23C0 | (scroll.v & 0x0C00) | ((scroll.v >> 4) & 0x38) | ((scroll.v >> 2) & 0x07);
+		tile_fetcher.attribute_table_byte = ReadNametableRAM(addr);
 
 		// Determine in which quadrant (0-3) of the 32x32 pixel metatile that the current tile is in
 		// topleft == 0, topright == 1, bottomleft == 2, bottomright = 3
@@ -1057,14 +1035,14 @@ void PPU::UpdateBGTileFetching()
 		  For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
 		tile_fetcher.pattern_table_data_addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | scroll.v >> 12;
-		tile_fetcher.pattern_table_tile_low = ReadMemory(tile_fetcher.pattern_table_data_addr);
+		tile_fetcher.pattern_table_tile_low = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
 	{
-		tile_fetcher.pattern_table_tile_high = ReadMemory(tile_fetcher.pattern_table_data_addr | 8);
+		tile_fetcher.pattern_table_tile_high = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr | 8);
 		tile_fetcher.step = TileFetcher::Step::fetch_nametable_byte;
 		break;
 	}
@@ -1140,8 +1118,7 @@ u8 PPU::ReadMemory(u16 addr)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = nes->mapper->TransformNametableAddr(addr);
-		return nametable_ram[addr & 0xFFF];
+		return ReadNametableRAM(addr);
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
@@ -1163,8 +1140,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		addr = nes->mapper->TransformNametableAddr(addr);
-		nametable_ram[addr & 0xFFF] = data;
+		WriteNametableRAM(addr, data);
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)

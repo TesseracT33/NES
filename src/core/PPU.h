@@ -107,12 +107,23 @@ private:
 
 		const int decay_cycle_length = 29781 * 60 * 0.6; // roughly 600 ms = 36 frames; how long it takes for a bit to decay to 0.
 		u8 value = 0; // the value read back when reading from open bus.
-		std::array<bool, 8> decayed; // each bit can decay separately
-		std::array<unsigned, 8> cycles_until_decay;
+		std::array<bool, 8> decayed{}; // each bit can decay separately
+		std::array<unsigned, 8> cycles_until_decay{};
 
-		u8 Read(u8 mask = 0xFF);
-		void Write(u8 data);
-		void UpdateValue(u8 data, u8 mask); /* Write to the bits of open bus given by the mask. Different from the write function, as there, all bits are refreshed. */
+		u8 Read(u8 mask = 0xFF)
+		{   /* Reading the bits of open bus with the bits determined by 'mask' does not refresh those bits. */
+			return value & mask;
+		}
+		void Write(u8 data)
+		{   /* Writing to any PPU register sets the entire decay register to the value written, and refreshes all bits. */
+			UpdateDecayOnIOAccess(0xFF);
+			value = data;
+		}
+		void UpdateValue(u8 data, u8 mask)
+		{   /* Here, the bits of open bus determined by the mask are updated with the supplied data. Also, these bits are refreshed, but not the other ones. */
+			UpdateDecayOnIOAccess(mask);
+			value = data & mask | value & ~mask;
+		}
 		void UpdateDecay();
 		void UpdateDecayOnIOAccess(u8 mask);
 	} open_bus_io;
@@ -254,8 +265,8 @@ private:
 
 	std::array<u8 ,  8> sprite_attribute_latch  {};
 	std::array<u8 , 16> sprite_pattern_shift_reg{};
-	std::array<u16,  8> bg_palette_attr_reg     {}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
-	std::array<u16,  8> bg_pattern_shift_reg    {};
+	std::array<u16,  2> bg_palette_attr_reg     {}; // These are actually 8 bits on real HW, but it's easier this way. Similar to the pattern shift registers, the MSB contain data for the current tile, and the bottom LSB for the next tile.
+	std::array<u16,  2> bg_pattern_shift_reg    {};
 
 	std::array<int, 8> sprite_x_pos_counter{};
 
@@ -288,4 +299,15 @@ private:
 	u8 ReadPaletteRAM(u16 addr);
 
 	size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
+
+	u8 ReadNametableRAM(u16 addr) const
+	{
+		addr = nes->mapper->TransformNametableAddr(addr);
+		return nametable_ram[addr & 0xFFF];
+	}
+	void WriteNametableRAM(u16 addr, u8 data)
+	{
+		addr = nes->mapper->TransformNametableAddr(addr);
+		nametable_ram[addr & 0xFFF] = data;
+	}
 };
