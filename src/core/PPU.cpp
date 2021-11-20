@@ -484,20 +484,16 @@ u8 PPU::ReadRegister(u16 addr)
 	}
 
 	case Bus::Addr::OAMDATA: // $2004 (read/write)
-		// during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
-		// TODO: is this actually true? Mesen does not implement this, and blargg ppu_open_bus doesn't expect it.
-		u8 ret;
-		if (scanline_cycle >= 1 && scanline_cycle <= 64)
-			ret = 0xFF;
-		else
-		{
-			ret = oam[OAMADDR];
-			// Bits 2-4 of sprite attributes should always be clear when read (these are unimplemented).
-			if ((OAMADDR & 3) == 2)
-				ret &= 0xE3;
-		}
+	{
+		// TODO: according to nesdev: during cycles 1-64, all entries of secondary OAM are initialised to 0xFF, and an internal signal makes reading from OAMDATA always return 0xFF during this time
+		// Is this actually true? blargg 'ppu_open_bus' and 'sprite_ram' tests fail if this is emulated, and Mesen does not seem to implement it.
+		u8 ret = oam[OAMADDR];
+		// Bits 2-4 of sprite attributes should always be clear when read (these are unimplemented).
+		if ((OAMADDR & 3) == 2)
+			ret &= 0xE3;
 		open_bus_io.UpdateValue(ret, 0xFF); /* Update all bits of open bus with the read value */
 		return ret;
+	}
 
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
 	{
