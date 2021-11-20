@@ -94,6 +94,11 @@ private:
 		{204, 210, 120}, {180, 222, 120}, {168, 226, 144}, {152, 226, 180}, {160, 214, 228}, {160, 162, 160}, {  0,   0,   0}, {  0,   0,   0}
 	};
 
+	const std::array<u8, 0x20> palette_ram_on_powerup = { /* Source: blargg_ppu_tests_2005.09.15b */
+		0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D, 0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C,
+		0x09, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08
+	};
+
 	// PPU IO open bus related. See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
 	// and the 'NES PPU Open-Bus Test' test rom readme
 	struct OpenBusIO
@@ -168,6 +173,25 @@ private:
 		bool sprite_0_included = false; // whether the 0th byte was copied from OAM into secondary OAM
 
 		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
+
+		void IncrementN()
+		{
+			if (++n == 0)
+				idle = true;
+		}
+
+		void IncrementM()
+		{
+			// Check whether we have copied all four bytes of a sprite yet.
+			if (++m == 0)
+			{
+				// Move to the next sprite in OAM (by incrementing n). 
+				if (n == 0)
+					sprite_0_included = true;
+				IncrementN();
+				num_sprites_copied++;
+			}
+		}
 	} sprite_evaluation;
 
 	struct TileFetcher

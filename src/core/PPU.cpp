@@ -109,6 +109,8 @@ void PPU::PowerOn(const System::VideoStandard standard)
 	//PPUSTATUS = 0b10100000;
 	PPUSTATUS = 0;
 
+	palette_ram = palette_ram_on_powerup;
+
 	switch (standard)
 	{
 	case System::VideoStandard::NTSC: this->standard = NTSC; break;
@@ -507,21 +509,20 @@ u8 PPU::ReadRegister(u16 addr)
 			u16 v_read = scroll.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			// When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes), the read will return the contents of an internal read buffer which is updated only when reading PPUDATA.
 			// After the CPU reads and gets the contents of the internal buffer, the PPU will immediately update the internal buffer with the byte at the current VRAM address.
-			if (v_read < 0x3F00)
+			if (v_read <= 0x3EFF)
 			{
 				ret = PPUDATA;
 				PPUDATA = ReadMemory(v_read);
 				open_bus_io.UpdateValue(ret, 0xFF); /* Update all bits of open bus with the read value */
 			}
 			// When reading palette data $3F00-$3FFF, the palette data is placed immediately on the data bus.
-			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of the mirrored nametable data ($3000-$3EFF) (?).
-			// TODO: no clue what this mean exactly. 
+			// However, reading the palettes still updates the internal buffer, but the data is taken from a section of mirrored nametable data.
 			else
 			{
 				// High 2 bits from palette should be from open bus. Reading palette shouldn't refresh high 2 bits of open bus.
-				ret = ReadMemory(v_read) & 0x3F | open_bus_io.Read(0xC0);
+				ret = ReadPaletteRAM(v_read) & 0x3F | open_bus_io.Read(0xC0);
+				PPUDATA = ReadMemory(v_read & 0xFFF | 0x2000); // Read from vram at $2000-$2FFF
 				open_bus_io.UpdateValue(ret, 0x3F); /* Update bits 5-0 of open bus with the read value */
-				PPUDATA = ReadMemory(v_read - 0xF00); // ???
 			}
 			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
 			return ret;
@@ -754,28 +755,6 @@ void PPU::CheckNMI()
 
 void PPU::UpdateSpriteEvaluation()
 {
-	auto increment_n = [&]() -> void
-	{
-		if (++sprite_evaluation.n == 0)
-		{
-			sprite_evaluation.idle = true;
-		}
-	};
-
-	auto increment_m = [&]() -> void
-	{
-		// Check whether we have copied all four bytes of a sprite yet.
-		if (++sprite_evaluation.m == 0)
-		{
-			// Move to the next sprite in OAM (by incrementing n). 
-			sprite_evaluation.m = 0;
-			if (sprite_evaluation.n == 0)
-				sprite_evaluation.sprite_0_included = true;
-			increment_n();
-			sprite_evaluation.num_sprites_copied++;
-		}
-	};
-
 	if (sprite_evaluation.idle) return;
 
 	// Fetch the next entry in OAM
@@ -801,10 +780,10 @@ void PPU::UpdateSpriteEvaluation()
 			if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
 				sprite_evaluation.m = 1;
 			else
-				increment_n();
+				sprite_evaluation.IncrementN();
 		}
 		else
-			increment_m();
+			sprite_evaluation.IncrementM();
 	}
 	else
 	{
@@ -820,8 +799,8 @@ void PPU::UpdateSpriteEvaluation()
 		else
 		{
 			// hw bug: increment both n and m (instead of just n)
-			increment_m();
-			increment_n();
+			sprite_evaluation.IncrementM();
+			sprite_evaluation.IncrementN();
 		}
 	}
 }
@@ -995,6 +974,7 @@ void PPU::ShiftPixel()
 void PPU::ReloadBackgroundShiftRegisters()
 {
 	// Reload the lower 8 bits of the two 16-bit background shifters with pattern data for the next tile.
+	// The lower byte is already 0x00.
 	bg_pattern_shift_reg[0] |= tile_fetcher.pattern_table_tile_low;
 	bg_pattern_shift_reg[1] |= tile_fetcher.pattern_table_tile_high;
 
