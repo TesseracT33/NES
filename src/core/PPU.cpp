@@ -221,7 +221,7 @@ void PPU::StepCycle()
 		if (scanline_cycle <= 256) // Cycles 1-256
 		{
 			// On even cycles, update the bg tile fetching (each step actually takes 2 cycles, starting at cycle 1).
-			// On odd cycles >= 65, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both are done at once.
+			// On even cycles >= 66, update the sprite evaluation. On real HW, the process reads from OAM on odd cycles and writes to secondary OAM on even cycles. Here, both are done at once.
 			// On all cycles, push a pixel to the framebuffer.
 			switch (scanline_cycle)
 			{
@@ -244,26 +244,18 @@ void PPU::StepCycle()
 			case 65:
 				OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
 				sprite_evaluation.Reset();
-				// Sprite evaluation happens either if bg or sprite rendering is enabled, but not on the pre render scanline
-				if (RenderingIsEnabled() && scanline != pre_render_scanline)
-					UpdateSpriteEvaluation();
 				ReloadBackgroundShiftRegisters();
 				break;
 
 			default:
-				if (scanline_cycle & 1) // odd cycle
-				{
-					if (scanline_cycle >= 65 && RenderingIsEnabled() && scanline != pre_render_scanline)
-						UpdateSpriteEvaluation();
-					// Update the bg shift registers at cycles 9, 17, ..., 249, 257 (the one for cycle 257 is done later)
-					if (scanline_cycle % 8 == 1)
-						ReloadBackgroundShiftRegisters();
-				}
-				else // even cycle
+				if ((scanline_cycle & 1) == 0) // Even cycle
 				{
 					UpdateBGTileFetching();
 					if (RenderingIsEnabled())
 					{
+						// Sprite evaluation happens either if bg or sprite rendering is enabled, but not on the pre render scanline
+						if (scanline_cycle >= 66 && scanline != pre_render_scanline)
+							UpdateSpriteEvaluation();
 						// Increment the coarse X scroll at cycles 8, 16, ..., 256
 						if (scanline_cycle % 8 == 0)
 							scroll.increment_coarse_x();
@@ -271,6 +263,10 @@ void PPU::StepCycle()
 						if (scanline_cycle == 256)
 							scroll.increment_y();
 					}
+				}
+				else if (scanline_cycle % 8 == 1)
+				{
+					ReloadBackgroundShiftRegisters();
 				}
 				break;
 			}
