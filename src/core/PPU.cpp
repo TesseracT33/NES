@@ -281,7 +281,10 @@ void PPU::StepCycle()
 		}
 		else if (scanline_cycle <= 320) // Cycles 257-320
 		{
-			OAMADDR = 0; // is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one
+			bool rendering_is_enabled = RenderingIsEnabled();
+			// OAMADDR is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one (if rendering is enabled)
+			if (rendering_is_enabled)
+				OAMADDR = 0;
 
 			static unsigned sprite_index;
 
@@ -289,7 +292,7 @@ void PPU::StepCycle()
 			{
 				tile_fetcher.SetSpriteTileFetchingActive();
 				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
-				if (RenderingIsEnabled())
+				if (rendering_is_enabled)
 					scroll.v = scroll.v & ~0x41F | scroll.t & 0x41F; // copy all bits related to horizontal position from t to v:
 				sprite_index = 0;
 			}
