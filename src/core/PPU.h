@@ -105,10 +105,10 @@ private:
 	{
 		OpenBusIO() { decayed.fill(true); }
 
-		const int decay_cycle_length = 29781 * 60 * 0.6; // roughly 600 ms = 36 frames; how long it takes for a bit to decay to 0.
+		const unsigned decay_ppu_cycle_length = 262 * 341 * 36; // roughly 600 ms = 36 frames; how long it takes for a bit to decay to 0.
 		u8 value = 0; // the value read back when reading from open bus.
 		std::array<bool, 8> decayed{}; // each bit can decay separately
-		std::array<unsigned, 8> cycles_until_decay{};
+		std::array<unsigned, 8> ppu_cycles_since_refresh{};
 
 		u8 Read(u8 mask = 0xFF)
 		{   /* Reading the bits of open bus with the bits determined by 'mask' does not refresh those bits. */
@@ -124,7 +124,7 @@ private:
 			UpdateDecayOnIOAccess(mask);
 			value = data & mask | value & ~mask;
 		}
-		void UpdateDecay();
+		void UpdateDecay(unsigned elapsed_ppu_cycles);
 		void UpdateDecayOnIOAccess(u8 mask);
 	} open_bus_io;
 

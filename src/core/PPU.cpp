@@ -173,6 +173,9 @@ void PPU::Update()
 		// The NMI edge detector and IRQ level detector is polled during the second half of each cpu cycle. Here, we are polling 2/3 in.
 		nes->cpu->PollInterruptInputs();
 		StepCycle();
+
+		/* Updated on a per-cpu-cycle basis, as precision isn't very important here. */
+		open_bus_io.UpdateDecay(3 /* elapsed ppu cycles */);
 	}
 	else /* PAL */
 	{
@@ -188,15 +191,16 @@ void PPU::Update()
 			/* This makes for a total of 3 * 5 + 1 = 16 = 3.2 * 5 ppu cycles per every 5 cpu cycles. */
 			StepCycle();
 			cpu_cycle_counter = 0;
+			open_bus_io.UpdateDecay(4);
 		}
+		else
+			open_bus_io.UpdateDecay(3);
 	}
 }
 
 
 void PPU::StepCycle()
 {
-	open_bus_io.UpdateDecay();
-
 	if (set_sprite_0_hit_flag && scanline_cycle >= 2) // todo: not sure if this should be at the end of this function instead
 	{
 		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
@@ -644,16 +648,17 @@ void PPU::OpenBusIO::UpdateDecayOnIOAccess(u8 mask)
 	/* Optimization; a lot of the time, the mask will be $FF. */
 	if (mask == 0xFF)
 	{
-		cycles_until_decay.fill(decay_cycle_length);
+		ppu_cycles_since_refresh.fill(0);
 		decayed.fill(false);
 	}
 	else
 	{
+		/* Refresh the bits given by the mask */
 		for (int n = 0; n < 8; n++)
 		{
 			if (mask & 1 << n)
 			{
-				cycles_until_decay[n] = decay_cycle_length;
+				ppu_cycles_since_refresh[n] = 0;
 				decayed[n] = false;
 			}
 		}
@@ -661,15 +666,19 @@ void PPU::OpenBusIO::UpdateDecayOnIOAccess(u8 mask)
 }
 
 
-void PPU::OpenBusIO::UpdateDecay()
+void PPU::OpenBusIO::UpdateDecay(unsigned elapsed_ppu_cycles)
 {
 	/* Each bit of the open bus byte can decay at different points, depending on when a particular bit was read/written to last time. */
 	for (int n = 0; n < 8; n++)
 	{
-		if (!decayed[n] && --cycles_until_decay[n] == 0)
+		if (!decayed[n])
 		{
-			value &= ~(1 << n);
-			decayed[n] = true;
+			ppu_cycles_since_refresh[n] += elapsed_ppu_cycles;
+			if (ppu_cycles_since_refresh[n] >= decay_ppu_cycle_length)
+			{
+				value &= ~(1 << n);
+				decayed[n] = true;
+			}
 		}
 	}
 }
@@ -1187,7 +1196,7 @@ void PPU::StreamState(SerializationStream& stream)
 	/* I've tried to follow the order of the declarations in the class definition. */
 	stream.StreamPrimitive(open_bus_io.value);
 	stream.StreamArray(open_bus_io.decayed);
-	stream.StreamArray(open_bus_io.cycles_until_decay);
+	stream.StreamArray(open_bus_io.ppu_cycles_since_refresh);
 
 	scroll.v = stream.StreamBitfield(scroll.v);
 	scroll.t = stream.StreamBitfield(scroll.t);
