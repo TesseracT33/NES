@@ -94,6 +94,9 @@
 #define PPUSTATUS_sprite_overflow (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
 
 
+#define RENDERING_IS_ENABLED (PPUMASK_bg_enable || PPUMASK_sprite_enable)
+
+
 PPU::~PPU()
 {
 	SDL_DestroyRenderer(renderer);
@@ -255,7 +258,7 @@ void PPU::StepCycle()
 				if ((scanline_cycle & 1) == 0) // Even cycle
 				{
 					UpdateBGTileFetching();
-					if (RenderingIsEnabled())
+					if (RENDERING_IS_ENABLED)
 					{
 						// Sprite evaluation happens either if bg or sprite rendering is enabled, but not on the pre render scanline
 						if (scanline_cycle >= 66 && scanline != pre_render_scanline)
@@ -281,9 +284,8 @@ void PPU::StepCycle()
 		}
 		else if (scanline_cycle <= 320) // Cycles 257-320
 		{
-			bool rendering_is_enabled = RenderingIsEnabled();
 			// OAMADDR is set to 0 at every cycle in this interval on visible scanlines + on the pre-render one (if rendering is enabled)
-			if (rendering_is_enabled)
+			if (RENDERING_IS_ENABLED)
 				OAMADDR = 0;
 
 			static unsigned sprite_index;
@@ -292,7 +294,7 @@ void PPU::StepCycle()
 			{
 				tile_fetcher.SetSpriteTileFetchingActive();
 				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
-				if (rendering_is_enabled)
+				if (RENDERING_IS_ENABLED)
 					scroll.v = scroll.v & ~0x41F | scroll.t & 0x41F; // copy all bits related to horizontal position from t to v:
 				sprite_index = 0;
 			}
@@ -332,7 +334,7 @@ void PPU::StepCycle()
 			default: break;
 			}
 
-			if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304 && RenderingIsEnabled())
+			if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304 && RENDERING_IS_ENABLED)
 			{
 				// Copy the vertical bits of t to v
 				scroll.v = scroll.v & ~0x7BE0 | scroll.t & 0x7BE0;
@@ -369,7 +371,7 @@ void PPU::StepCycle()
 
 			case 328: case 336:
 				UpdateBGTileFetching();
-				if (RenderingIsEnabled())
+				if (RENDERING_IS_ENABLED)
 					scroll.increment_coarse_x();
 				break;
 
@@ -407,7 +409,7 @@ void PPU::StepCycle()
 	if (scanline_cycle == 339)
 	{
 		if (standard.pre_render_line_is_one_dot_shorter_on_every_other_frame &&
-			scanline == pre_render_scanline && odd_frame && RenderingIsEnabled())
+			scanline == pre_render_scanline && odd_frame && RENDERING_IS_ENABLED)
 		{
 			scanline_cycle = 0;
 			cycle_340_was_skipped_on_last_scanline = true;
@@ -503,7 +505,7 @@ u8 PPU::ReadRegister(u16 addr)
 	{
 		// Outside of rendering, read the value at address 'v' and add either 1 or 32 to 'v'.
 		// During rendering, return $FF (?), and increment both coarse x and y.
-		if (IsInVblank() || !RenderingIsEnabled())
+		if (IsInVblank() || !RENDERING_IS_ENABLED)
 		{
 			u8 ret;
 			u16 v_read = scroll.v & 0x3FFF; // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
@@ -574,7 +576,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// On NTSC/Dendy: OAM can only be written to during vertical (up to 20 scanlines after NMI) or forced blanking.
 		// On PAL: OAM can only be written to during the first 20 scanlines after NMI
 		if (scanline < standard.nmi_scanline + 20 ||
-			standard.oam_can_be_written_to_during_forced_blanking && !RenderingIsEnabled())
+			standard.oam_can_be_written_to_during_forced_blanking && !RENDERING_IS_ENABLED)
 		{
 			oam[OAMADDR++] = data;
 		}
@@ -618,7 +620,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
 		// During rendering, the write is not done (?), and both coarse x and y are incremented.
-		if (IsInVblank() || !RenderingIsEnabled())
+		if (IsInVblank() || !RENDERING_IS_ENABLED)
 		{
 			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
@@ -795,7 +797,7 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 	if (col_id == 0)
 	{
 		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
-		if (scroll.v >= 0x3F00 && scroll.v <= 0x3FFF && !RenderingIsEnabled())
+		if (scroll.v >= 0x3F00 && scroll.v <= 0x3FFF && !RENDERING_IS_ENABLED)
 			return ReadPaletteRAM(scroll.v);
 		return ReadPaletteRAM(0x3F00);
 	}
@@ -850,12 +852,6 @@ void PPU::RenderGraphics()
 	SDL_DestroyTexture(texture);
 
 	gui->frames_since_update++;
-}
-
-
-bool PPU::RenderingIsEnabled()
-{
-	return PPUMASK_bg_enable || PPUMASK_sprite_enable;
 }
 
 
