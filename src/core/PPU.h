@@ -38,8 +38,8 @@ public:
 	unsigned GetWindowScale()  const { return window_scale; }
 	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * window_scale; }
 	unsigned GetWindowWidth()  const { return num_pixels_per_scanline * window_scale; }
-	/* Note: vblank only begins after the "post-render" scanlines, i.e. on the same scanline as NMI is triggered. */
-	bool IsInVblank() const { return scanline >= standard.nmi_scanline; }
+	/* Note: vblank is counted to begin on the first "post-render" scanline, not on the same scanline as when NMI is triggered. */
+	bool IsInVblank() const { return scanline >= standard.nmi_scanline - 1; }
 
 	[[nodiscard]] bool CreateRenderer(const void* window_handle);
 	void PowerOn(const System::VideoStandard standard);
@@ -177,29 +177,38 @@ private:
 
 	struct SpriteEvaluation
 	{
-		unsigned num_sprites_copied = 0; // 0-8, the number of sprites copied from OAM into secondary OAM
-		unsigned n : 6; // index (0-63) of the sprite currently being checked in OAM
-		unsigned m : 2; // byte (0-3) of this sprite
+		unsigned num_sprites_copied = 0; // (0-8) the number of sprites copied from OAM into secondary OAM
+		unsigned sprite_index; // (0-63) index of the sprite currently being checked in OAM
+		unsigned byte_index; // (0-3) byte of this sprite
 		bool idle = false; // whether the sprite evaluation is finished for the current scanline
-		bool sprite_0_included = false; // whether the 0th byte was copied from OAM into secondary OAM
+		// Whether the 0th byte was copied from OAM into secondary OAM
+		bool sprite_0_included_current_scanline = false;
+		// Sprite evaluation is done for the *next* scanline. Set this to true during sprite evaluation, and then copy 'next' into 'current' when transitioning to a new scanline.
+		bool sprite_0_included_next_scanline = false;
 
-		void Reset() { num_sprites_copied = n = m = idle = sprite_0_included = 0; }
+		void Restart() { num_sprites_copied = sprite_index = byte_index = idle = 0; }
+		void Reset() { Restart(); sprite_0_included_current_scanline = sprite_0_included_next_scanline = false; }
 
-		void IncrementN()
+		void IncrementSpriteIndex()
 		{
-			if (++n == 0)
+			if (++sprite_index == 64)
 				idle = true;
 		}
 
-		void IncrementM()
+		void IncrementByteIndex()
 		{
 			// Check whether we have copied all four bytes of a sprite yet.
-			if (++m == 0)
+			if (++byte_index == 4)
 			{
 				// Move to the next sprite in OAM (by incrementing n). 
-				if (n == 0)
-					sprite_0_included = true;
-				IncrementN();
+				if (sprite_index == 0)
+				{
+					sprite_0_included_next_scanline = true;
+					sprite_index = 1;
+				}
+				else
+					IncrementSpriteIndex();
+				byte_index = 0;
 				num_sprites_copied++;
 			}
 		}

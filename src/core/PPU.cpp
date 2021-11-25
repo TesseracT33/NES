@@ -133,6 +133,8 @@ void PPU::Reset()
 	odd_frame = true;
 	scanline = 0;
 	pixel_x_pos = 0;
+
+	// TODO: reset more things.
 }
 
 
@@ -250,7 +252,7 @@ void PPU::StepCycle()
 
 			case 65:
 				OAMADDR_at_cycle_65 = OAMADDR; // used in sprite evaluation as the offset addr in OAM
-				sprite_evaluation.Reset();
+				sprite_evaluation.Restart();
 				ReloadBackgroundShiftRegisters();
 				break;
 
@@ -261,7 +263,7 @@ void PPU::StepCycle()
 					if (RENDERING_IS_ENABLED)
 					{
 						// Sprite evaluation happens either if bg or sprite rendering is enabled, but not on the pre render scanline
-						if (scanline_cycle >= 66 && scanline != pre_render_scanline)
+						if (scanline_cycle >= 66 && scanline != pre_render_scanline && !sprite_evaluation.idle)
 							UpdateSpriteEvaluation();
 						// Increment the coarse X scroll at cycles 8, 16, ..., 256
 						if (scanline_cycle % 8 == 0)
@@ -619,11 +621,16 @@ void PPU::WriteRegister(u16 addr, u8 data)
 
 	case Bus::Addr::PPUDATA: // $2007 (read/write)
 		// Outside of rendering, write the value and add either 1 or 32 to v.
-		// During rendering, the write is not done (?), and both coarse x and y are incremented.
+		// During rendering, the write is not done, unless it is to palette ram. Else, both coarse x and y are incremented.
 		if (IsInVblank() || !RENDERING_IS_ENABLED)
 		{
 			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
+		}
+		else if ((scroll.v & 0x3FFF) >= 0x3F00)
+		{
+			WritePaletteRAM(scroll.v, data);
+			// Do not increment scroll.v
 		}
 		else
 		{
@@ -633,14 +640,12 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		break;
 
 	case Bus::Addr::OAMDMA: // $4014 (write-only)
-	{
 		// Perform OAM DMA transfer. Writing $XX will upload 256 bytes of data from CPU page $XX00-$XXFF to the internal PPU OAM.
 		// It is done by the cpu, so the cpu will be suspended during this time.
 		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
 		nes->cpu->StartOAMDMATransfer(data, &oam[0], OAMADDR);
 		break;
-	}
 
 	default:
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteRegister(u16).", addr));
@@ -739,13 +744,11 @@ void PPU::CheckNMI()
 
 void PPU::UpdateSpriteEvaluation()
 {
-	if (sprite_evaluation.idle) return;
-
 	// Fetch the next entry in OAM
 	// The value of OAMADDR as it were at dot 65 is used as an offset to the address here.
 	// If OAMADDR is unaligned and does not point to the y-position (first byte) of an OAM entry, then whatever it points to will be reinterpreted as a y position, and the following bytes will be similarly reinterpreted.
 	// When the end of OAM is reached, no more sprites will be found (it will not wrap around to the start of OAM).
-	unsigned addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.n + sprite_evaluation.m;
+	u32 addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.sprite_index + sprite_evaluation.byte_index;
 	if (addr >= oam.size())
 	{
 		sprite_evaluation.idle = true;
@@ -756,18 +759,18 @@ void PPU::UpdateSpriteEvaluation()
 	if (sprite_evaluation.num_sprites_copied < 8)
 	{
 		// Copy the read oam entry into secondary oam. Note that this occurs even if this is the first byte of a sprite, and we later decide not to copy the rest of it due to it not being in range!
-		secondary_oam[4 * sprite_evaluation.num_sprites_copied + sprite_evaluation.m] = oam_entry;
+		secondary_oam[4 * sprite_evaluation.num_sprites_copied + sprite_evaluation.byte_index] = oam_entry;
 
-		if (sprite_evaluation.m == 0) // Means that the read oam entry is being interpreted as a y-position.
+		if (sprite_evaluation.byte_index == 0) // Means that the read oam entry is being interpreted as a y-position.
 		{
 			// If the y-position is in range, copy the three remaining bytes for that sprite. Else move on to the next sprite.
 			if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
-				sprite_evaluation.m = 1;
+				sprite_evaluation.byte_index = 1;
 			else
-				sprite_evaluation.IncrementN();
+				sprite_evaluation.IncrementSpriteIndex();
 		}
 		else
-			sprite_evaluation.IncrementM();
+			sprite_evaluation.IncrementByteIndex();
 	}
 	else
 	{
@@ -783,8 +786,8 @@ void PPU::UpdateSpriteEvaluation()
 		else
 		{
 			// hw bug: increment both n and m (instead of just n)
-			sprite_evaluation.IncrementM();
-			sprite_evaluation.IncrementN();
+			sprite_evaluation.IncrementByteIndex();
+			sprite_evaluation.IncrementSpriteIndex();
 		}
 	}
 }
@@ -909,7 +912,7 @@ void PPU::ShiftPixel()
 
 	// Set the sprite zero hit flag if all conditions below are met
 	if (!PPUSTATUS_sprite_0_hit                                                              && // The flag has not already been set this frame
-		sprite_evaluation.sprite_0_included && sprite_index == 0                             && // The current sprite is the 0th sprite in OAM
+		sprite_evaluation.sprite_0_included_current_scanline && sprite_index == 0            && // The current sprite is the 0th sprite in OAM
 		bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
 		PPUMASK_bg_enable && PPUMASK_sprite_enable                                           && // Both bg and sprite rendering must be enabled
 		(pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
@@ -1045,11 +1048,9 @@ void PPU::UpdateBGTileFetching()
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
-	{
 		tile_fetcher.pattern_table_tile_high = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr | 8);
 		tile_fetcher.step = TileFetcher::Step::fetch_nametable_byte;
 		break;
-	}
 	}
 }
 
@@ -1096,17 +1097,15 @@ void PPU::UpdateSpriteTileFetching()
 			tile_fetcher.pattern_table_data_addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | sprite_row_num;
 		}
 
-		tile_fetcher.pattern_table_tile_low = ReadMemory(tile_fetcher.pattern_table_data_addr);
+		tile_fetcher.pattern_table_tile_low = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
-	{
-		tile_fetcher.pattern_table_tile_high = ReadMemory(tile_fetcher.pattern_table_data_addr | 8);
+		tile_fetcher.pattern_table_tile_high = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr | 8);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_low;
 		break;
-	}
 	}
 }
 
@@ -1175,6 +1174,8 @@ void PPU::PrepareForNewScanline()
 		scanline++;
 	}
 	pixel_x_pos = 0;
+	sprite_evaluation.sprite_0_included_current_scanline = sprite_evaluation.sprite_0_included_next_scanline;
+	sprite_evaluation.sprite_0_included_next_scanline = false;
 }
 
 
@@ -1202,11 +1203,12 @@ void PPU::StreamState(SerializationStream& stream)
 	scroll.x = stream.StreamBitfield(scroll.x);
 	stream.StreamPrimitive(scroll.w);
 
-	sprite_evaluation.n = stream.StreamBitfield(sprite_evaluation.n);
-	sprite_evaluation.m = stream.StreamBitfield(sprite_evaluation.m);
+	sprite_evaluation.sprite_index = stream.StreamBitfield(sprite_evaluation.sprite_index);
+	sprite_evaluation.byte_index = stream.StreamBitfield(sprite_evaluation.byte_index);
 	stream.StreamPrimitive(sprite_evaluation.num_sprites_copied);
 	stream.StreamPrimitive(sprite_evaluation.idle);
-	stream.StreamPrimitive(sprite_evaluation.sprite_0_included);
+	stream.StreamPrimitive(sprite_evaluation.sprite_0_included_current_scanline);
+	stream.StreamPrimitive(sprite_evaluation.sprite_0_included_next_scanline);
 
 	stream.StreamPrimitive(tile_fetcher.tile_num);
 	stream.StreamPrimitive(tile_fetcher.attribute_table_byte);
