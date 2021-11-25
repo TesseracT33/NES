@@ -133,6 +133,7 @@ void PPU::Reset()
 	odd_frame = true;
 	scanline = 0;
 	pixel_x_pos = 0;
+	framebuffer_pos = 0;
 
 	// TODO: reset more things.
 }

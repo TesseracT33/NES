@@ -134,11 +134,11 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 	this->current_rom_path = rom_path;
 
 	nes.bus->Reset();
-	nes.cpu->PowerOn();
 
 	/* The operations of the apu and ppu are affected by the video standard (NTSC/PAL/Dendy). */
 	const System::VideoStandard video_standard = mapper.get()->GetVideoStandard();
 	nes.apu->PowerOn(video_standard);
+	nes.cpu->PowerOn();
 	nes.ppu->PowerOn(video_standard);
 
 	return true;
@@ -181,15 +181,6 @@ void Emulator::MainLoop()
 		auto frame_end_t = std::chrono::steady_clock::now();
 		long long microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
 
-		//if (!emulation_speed_uncapped)
-		//{
-		//	while (microseconds_elapsed_this_frame < 11111)
-		//	{
-		//		joypad.PollInput();
-		//		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - frame_start_t).count();
-		//	}
-		//}
-
 		// update fps on window title if it is time to do so (updated once every second)
 		frame_end_t = std::chrono::steady_clock::now();
 		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
@@ -211,7 +202,10 @@ void Emulator::Pause()
 
 void Emulator::Reset()
 {
-	PrepareLaunchOfGame(this->current_rom_path);
+	nes.apu->Reset();
+	nes.bus->Reset();
+	nes.cpu->Reset();
+	nes.ppu->Reset();
 }
 
 

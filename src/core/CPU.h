@@ -17,7 +17,7 @@ public:
 	bool all_ppu_regs_writable = false;
 
 	void PowerOn();
-	void Reset();
+	void Reset(bool jump_to_reset_vector = true);
 	void Run();
 	void RunStartUpCycles();
 	void Stall();
@@ -394,7 +394,7 @@ private:
 	{
 		u8 lo = ReadCycle(addr);
 		u8 hi = ReadCycle(addr + 1);
-		return lo | hi << 8;
+		return hi << 8 | lo;
 	}
 
 	__forceinline void Branch(bool cond)

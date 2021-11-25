@@ -5,7 +5,7 @@ void CPU::PowerOn()
 {
 	// https://wiki.nesdev.com/w/index.php?title=CPU_power_up_state
 
-	Reset();
+	Reset(false /* do not jump to reset vector */);
 
 	SetStatusReg(0x34);
 	A = X = Y = 0;
@@ -13,7 +13,7 @@ void CPU::PowerOn()
 }
 
 
-void CPU::Reset()
+void CPU::Reset(bool jump_to_reset_vector)
 {
 	odd_cpu_cycle = false;
 	stalled = stopped = false;
@@ -25,6 +25,9 @@ void CPU::Reset()
 	write_to_interrupt_disable_flag_before_next_instr = false;
 
 	oam_dma_transfer_pending = false;
+
+	if (jump_to_reset_vector)
+		PC = ReadWord(Bus::Addr::RESET_VEC);
 }
 
 
@@ -92,6 +95,9 @@ void CPU::Run()
 
 void CPU::Stall()
 {
+	/* Called from the APU class when the DMC memory reader fetches a new byte sample.
+	* The CPU will then stop executing for a few cycles.
+	*/
 	// TODO: better emulate cpu stalling. Currently, it is always stalled for four cycles.
 	stalled = true;
 	cpu_cycles_until_no_longer_stalled = 4;
