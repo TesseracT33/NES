@@ -29,16 +29,16 @@ public:
 		prg_ram.resize(properties.prg_ram_size);
 		prg_rom.resize(properties.prg_rom_size);
 
-		/* Fill vectors with either rom data or $FF */
+		/* Fill vectors with either rom data or $00 */
 		std::copy(chr_prg_rom.begin(), chr_prg_rom.begin() + properties.prg_rom_size, prg_rom.begin());
 
 		if (!properties.has_chr_ram)
 			std::copy(chr_prg_rom.begin() + properties.prg_rom_size, chr_prg_rom.end(), chr.begin());
 		else
-			std::fill(chr.begin(), chr.end(), 0xFF);
+			std::fill(chr.begin(), chr.end(), 0x00);
 
 		if (!prg_ram.empty())
-			std::fill(prg_ram.begin(), prg_ram.end(), 0xFF);
+			std::fill(prg_ram.begin(), prg_ram.end(), 0x00);
 	}
 
 	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
