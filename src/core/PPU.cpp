@@ -18,20 +18,20 @@
  +--------- Generate an NMI at the start of the
 			vertical blanking interval (0: off; 1: on)
 */
-#define PPUCTRL_NMI_enable_mask       0x80
-#define PPUCTRL_PPU_master_mask       0x40
-#define PPUCTRL_sprite_height_mask    0x20
-#define PPUCTRL_bg_tile_sel_mask      0x10
-#define PPUCTRL_sprite_tile_sel_mask  0x08
-#define PPUCTRL_incr_mode_mask        0x04
-#define PPUCTRL_nametable_sel_mask    0x03
-#define PPUCTRL_NMI_enable            (PPUCTRL & PPUCTRL_NMI_enable_mask)
-#define PPUCTRL_PPU_master            (PPUCTRL & PPUCTRL_PPU_master_mask)
-#define PPUCTRL_sprite_height         (PPUCTRL & PPUCTRL_sprite_height_mask)
-#define PPUCTRL_bg_tile_sel           (PPUCTRL & PPUCTRL_bg_tile_sel_mask)
-#define PPUCTRL_sprite_tile_sel       (PPUCTRL & PPUCTRL_sprite_tile_sel_mask)
-#define PPUCTRL_incr_mode             (PPUCTRL & PPUCTRL_incr_mode_mask)
-#define PPUCTRL_nametable_sel         (PPUCTRL & PPUCTRL_nametable_sel_mask)
+#define PPUCTRL_NMI_ENABLE_MASK         0x80
+#define PPUCTRL_PPU_MASTER_MASK         0x40
+#define PPUCTRL_SPRITE_HEIGHT_MASK      0x20
+#define PPUCTRL_BG_TILE_SELECT_MASK     0x10
+#define PPUCTRL_SPRITE_TILE_SELECT_MASK 0x08
+#define PPUCTRL_INCR_MODE_MASK          0x04
+#define PPUCTRL_NAMETABLE_SELECT_MASK   0x03
+#define PPUCTRL_NMI_ENABLE         (PPUCTRL & PPUCTRL_NMI_ENABLE_MASK)
+#define PPUCTRL_PPU_MASTER         (PPUCTRL & PPUCTRL_PPU_MASTER_MASK)
+#define PPUCTRL_SPRITE_HEIGHT      (PPUCTRL & PPUCTRL_SPRITE_HEIGHT_MASK)
+#define PPUCTRL_BG_TILE_SELECT     (PPUCTRL & PPUCTRL_BG_TILE_SELECT_MASK)
+#define PPUCTRL_SPRITE_TILE_SELECT (PPUCTRL & PPUCTRL_SPRITE_TILE_SELECT_MASK)
+#define PPUCTRL_INCR_MODE          (PPUCTRL & PPUCTRL_INCR_MODE_MASK)
+#define PPUCTRL_NAMETABLE_SELECT   (PPUCTRL & PPUCTRL_NAMETABLE_SELECT_MASK)
 
 /* PPUMASK
  7  bit  0
@@ -47,22 +47,22 @@
  |+-------- Emphasize green (red on PAL/Dendy)
  +--------- Emphasize blue
 */
-#define PPUMASK_emphasize_blue_mask         0x80
-#define PPUMASK_emphasize_green_mask        0x40
-#define PPUMASK_emphasize_red_mask          0x20
-#define PPUMASK_sprite_enable_mask          0x10
-#define PPUMASK_bg_enable_mask              0x08
-#define PPUMASK_sprite_left_col_enable_mask 0x04
-#define PPUMASK_bg_left_col_enable_mask     0x02
-#define PPUMASK_greyscale_mask              0x01
-#define PPUMASK_emphasize_blue         (PPUMASK & PPUMASK_emphasize_blue_mask)
-#define PPUMASK_emphasize_green        (PPUMASK & PPUMASK_emphasize_green_mask)
-#define PPUMASK_emphasize_red          (PPUMASK & PPUMASK_emphasize_red_mask)
-#define PPUMASK_sprite_enable          (PPUMASK & PPUMASK_sprite_enable_mask)
-#define PPUMASK_bg_enable              (PPUMASK & PPUMASK_bg_enable_mask)
-#define PPUMASK_sprite_left_col_enable (PPUMASK & PPUMASK_sprite_left_col_enable_mask)
-#define PPUMASK_bg_left_col_enable     (PPUMASK & PPUMASK_bg_left_col_enable_mask)
-#define PPUMASK_greyscale              (PPUMASK & PPUMASK_greyscale_mask)
+#define PPUMASK_EMPHASIZE_BLUE_MASK         0x80
+#define PPUMASK_EMPHASIZE_GREEN_MASK        0x40
+#define PPUMASK_EMPHASIZE_RED_MASK          0x20
+#define PPUMASK_SPRITE_ENABLE_MASK          0x10
+#define PPUMASK_BG_ENABLE_MASK              0x08
+#define PPUMASK_SPRITE_LEFT_COL_ENABLE_MASK 0x04
+#define PPUMASK_BG_LEFT_COL_ENABLE_MASK     0x02
+#define PPUMASK_GREYSCALE_MASK              0x01
+#define PPUMASK_EMPHASIZE_BLUE         (PPUMASK & PPUMASK_EMPHASIZE_BLUE_MASK)
+#define PPUMASK_EMPHASIZE_GREEN        (PPUMASK & PPUMASK_EMPHASIZE_GREEN_MASK)
+#define PPUMASK_EMPHASIZE_RED          (PPUMASK & PPUMASK_EMPHASIZE_RED_MASK)
+#define PPUMASK_SPRITE_ENABLE          (PPUMASK & PPUMASK_SPRITE_ENABLE_MASK)
+#define PPUMASK_BG_ENABLE              (PPUMASK & PPUMASK_BG_ENABLE_MASK)
+#define PPUMASK_SPRITE_LEFT_COL_ENABLE (PPUMASK & PPUMASK_SPRITE_LEFT_COL_ENABLE_MASK)
+#define PPUMASK_BG_LEFT_COL_ENABLE     (PPUMASK & PPUMASK_BG_LEFT_COL_ENABLE_MASK)
+#define PPUMASK_GREYSCALE              (PPUMASK & PPUMASK_GREYSCALE_MASK)
 
 /* PPUSTATUS
  7  bit  0
@@ -86,15 +86,15 @@
 			line); cleared after reading $2002 and at dot 1 of the
 			pre-render line.
 */
-#define PPUSTATUS_vblank_mask           0x80
-#define PPUSTATUS_sprite_0_hit_mask     0x40
-#define PPUSTATUS_sprite_overflow_mask  0x20
-#define PPUSTATUS_vblank          (PPUSTATUS & PPUSTATUS_vblank_mask)
-#define PPUSTATUS_sprite_0_hit    (PPUSTATUS & PPUSTATUS_sprite_0_hit_mask)
-#define PPUSTATUS_sprite_overflow (PPUSTATUS & PPUSTATUS_sprite_overflow_mask)
+#define PPUSTATUS_VBLANK_MASK           0x80
+#define PPUSTATUS_SPRITE_0_HIT_MASK     0x40
+#define PPUSTATUS_SPRITE_OVERFLOW_MASK  0x20
+#define PPUSTATUS_VBLANK          (PPUSTATUS & PPUSTATUS_VBLANK_MASK)
+#define PPUSTATUS_SPRITE_0_HIT    (PPUSTATUS & PPUSTATUS_SPRITE_0_HIT_MASK)
+#define PPUSTATUS_SPRITE_OVERFLOW (PPUSTATUS & PPUSTATUS_SPRITE_OVERFLOW_MASK)
 
 
-#define RENDERING_IS_ENABLED (PPUMASK_bg_enable || PPUMASK_sprite_enable)
+#define RENDERING_IS_ENABLED (PPUMASK_BG_ENABLE || PPUMASK_SPRITE_ENABLE)
 
 
 PPU::~PPU()
@@ -208,7 +208,7 @@ void PPU::StepCycle()
 {
 	if (set_sprite_0_hit_flag && scanline_cycle >= 2) // todo: not sure if this should be at the end of this function instead
 	{
-		PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
+		PPUSTATUS |= PPUSTATUS_SPRITE_0_HIT_MASK;
 		set_sprite_0_hit_flag = false;
 	}
 	if (scanline_cycle == 0)
@@ -244,7 +244,7 @@ void PPU::StepCycle()
 
 				if (scanline == pre_render_scanline)
 				{
-					PPUSTATUS &= ~(PPUSTATUS_vblank_mask | PPUSTATUS_sprite_0_hit_mask | PPUSTATUS_sprite_overflow_mask);
+					PPUSTATUS &= ~(PPUSTATUS_VBLANK_MASK | PPUSTATUS_SPRITE_0_HIT_MASK | PPUSTATUS_SPRITE_OVERFLOW_MASK);
 					CheckNMI();
 					RenderGraphics();
 				}
@@ -303,7 +303,7 @@ void PPU::StepCycle()
 			else if (scanline_cycle == 260)
 			{
 				/* When using 8x8 sprites, if the BG uses $0000, and the sprites use $1000, the MMC3 IRQ counter should decrement on PPU cycle 260. */
-				if (!PPUCTRL_sprite_height && !PPUCTRL_bg_tile_sel && PPUCTRL_sprite_tile_sel)
+				if (!PPUCTRL_SPRITE_HEIGHT && !PPUCTRL_BG_TILE_SELECT && PPUCTRL_SPRITE_TILE_SELECT)
 					nes->mapper->ClockIRQ();
 			}
 
@@ -366,7 +366,7 @@ void PPU::StepCycle()
 			{
 			case 324:
 				/* When using 8x8 sprites, if the BG uses $1000, and the sprites use $0000, the MMC3 IRQ counter should decrement on PPU cycle 324 */
-				if (!PPUCTRL_sprite_height && PPUCTRL_bg_tile_sel && !PPUCTRL_sprite_tile_sel)
+				if (!PPUCTRL_SPRITE_HEIGHT && PPUCTRL_BG_TILE_SELECT && !PPUCTRL_SPRITE_TILE_SELECT)
 					nes->mapper->ClockIRQ();
 				UpdateBGTileFetching();
 				break;
@@ -397,7 +397,7 @@ void PPU::StepCycle()
 		}
 		else
 		{
-			PPUSTATUS |= PPUSTATUS_vblank_mask;
+			PPUSTATUS |= PPUSTATUS_VBLANK_MASK;
 			CheckNMI();
 		}
 		scanline_cycle = 2;
@@ -485,7 +485,7 @@ u8 PPU::ReadRegister(u16 addr)
 
 		u8 ret = PPUSTATUS & 0xE0 | open_bus_io.Read(0x1F); /* Bits 4-0 are unused and then return bits 4-0 of open bus */
 		open_bus_io.UpdateValue(PPUSTATUS, 0xE0); /* Update bits 7-5 of open bus with the read value */
-		PPUSTATUS &= ~PPUSTATUS_vblank_mask; /* Reading this register clears the vblank flag */
+		PPUSTATUS &= ~PPUSTATUS_VBLANK_MASK; /* Reading this register clears the vblank flag */
 		CheckNMI();
 		scroll.w = 0;
 		return ret;
@@ -528,7 +528,7 @@ u8 PPU::ReadRegister(u16 addr)
 				PPUDATA = ReadMemory(v_read & 0xFFF | 0x2000); // Read from vram at $2000-$2FFF
 				open_bus_io.UpdateValue(ret, 0x3F); /* Update bits 5-0 of open bus with the read value */
 			}
-			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
+			scroll.v += PPUCTRL_INCR_MODE ? 32 : 1;
 			return ret;
 		}
 		else
@@ -625,7 +625,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		if (IsInVblank() || !RENDERING_IS_ENABLED)
 		{
 			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
-			scroll.v += PPUCTRL_incr_mode ? 32 : 1;
+			scroll.v += PPUCTRL_INCR_MODE ? 32 : 1;
 		}
 		else if ((scroll.v & 0x3FFF) >= 0x3F00)
 		{
@@ -701,8 +701,9 @@ u8 PPU::ReadPaletteRAM(u16 addr)
 	// Note: bits 4-0 of all mirrors have the form 1xy00, and the redirected addresses have the form 0xy00
 	if ((addr & 0x13) == 0x10)
 		addr -= 0x10;
-	if (PPUMASK_greyscale)
-		return palette_ram[addr & 0x30]; // TODO: ???
+	// In greyscale mode, use colors only from the grey column: $00, $10, $20, $30.
+	if (PPUMASK_GREYSCALE)
+		return palette_ram[addr & 0x30];
 	return palette_ram[addr];
 }
 
@@ -713,8 +714,8 @@ void PPU::WritePaletteRAM(u16 addr, u8 data)
 	data &= 0x3F; // Each value is 6 bits (0-63)
 	if ((addr & 0x13) == 0x10)
 		addr -= 0x10;
-	if (PPUMASK_greyscale)
-		palette_ram[addr & 0x30] = data; // TODO: ???
+	if (PPUMASK_GREYSCALE)
+		palette_ram[addr & 0x30] = data; 
 	palette_ram[addr] = data;
 }
 
@@ -729,7 +730,7 @@ void PPU::CheckNMI()
 	}
 	/* The PPU pulls /NMI low only if both PPUCTRL.7 and PPUSTATUS.7 are set.
 	   Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal. */
-	if (PPUCTRL_NMI_enable && PPUSTATUS_vblank && NMI_line == 1)
+	if (PPUCTRL_NMI_ENABLE && PPUSTATUS_VBLANK && NMI_line == 1)
 	{
 		nes->cpu->SetNMILow();
 		NMI_line = 0;
@@ -764,7 +765,7 @@ void PPU::UpdateSpriteEvaluation()
 		if (sprite_evaluation.byte_index == 0) // Means that the read oam entry is being interpreted as a y-position.
 		{
 			// If the y-position is in range, copy the three remaining bytes for that sprite. Else move on to the next sprite.
-			if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
+			if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_SPRITE_HEIGHT ? 16 : 8))
 				sprite_evaluation.byte_index = 1;
 			else
 				sprite_evaluation.IncrementSpriteIndex();
@@ -774,10 +775,10 @@ void PPU::UpdateSpriteEvaluation()
 	}
 	else
 	{
-		if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_sprite_height ? 16 : 8))
+		if (scanline >= oam_entry && scanline < oam_entry + (PPUCTRL_SPRITE_HEIGHT ? 16 : 8))
 		{
 			// If a ninth in-range sprite is found, set the sprite overflow flag.
-			PPUSTATUS |= PPUSTATUS_sprite_overflow_mask;
+			PPUSTATUS |= PPUSTATUS_SPRITE_OVERFLOW_MASK;
 			// On real hw, the ppu will continue scanning oam after setting this.
 			// However, none of it will have an effect on anything other than n and m, which is not visible from the rest of the ppu and system as a whole, so we can start idling from here.
 			// Note also that the sprite overflow flag is not writeable by the cpu, and cleared only on the pre-render scanline. Thus, setting it more than one time will not be any different from setting it only once.
@@ -796,20 +797,24 @@ void PPU::UpdateSpriteEvaluation()
 // Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given the palette id (0-3)
 u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 {
-	// If the color ID is 0, then the 'universal background color', located at $3F00, is used.
-	if (col_id == 0)
+	if (RENDERING_IS_ENABLED)
 	{
-		// Background palette hack: if the conditions below are true, then the backdrop colour is the colour at the current vram address, not $3F00.
-		if (scroll.v >= 0x3F00 && scroll.v <= 0x3FFF && !RENDERING_IS_ENABLED)
+		// If the color ID is 0, then the 'universal background color', located at $3F00, is used.
+		if (col_id == 0)
+			return ReadPaletteRAM(0x3F00);
+		// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
+		// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
+		// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
+		return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ));
+	}
+	else
+	{
+		// If rendering is disabled, show the backdrop colour. 
+		// Background palette hack: if the current vram address is in palette "territory", the colour at the current vram address is used, not $3F00.
+		if (scroll.v >= 0x3F00 && scroll.v <= 0x3FFF)
 			return ReadPaletteRAM(scroll.v);
 		return ReadPaletteRAM(0x3F00);
 	}
-	// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
-	// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
-	// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
-	if (PPUMASK_greyscale)
-		return ReadPaletteRAM(0x10 * palette_id); // todo: wrong
-	return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ));
 }
 
 
@@ -874,7 +879,7 @@ void PPU::ShiftPixel()
 	// Fetch one bit from each of the two bg shift registers containing pattern table data for the current tile, forming the colour id for the current bg pixel.
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
 	u8 bg_col_id;
-	if (PPUMASK_bg_enable && (pixel_x_pos >= 8 || PPUMASK_bg_left_col_enable))
+	if (PPUMASK_BG_ENABLE && (pixel_x_pos >= 8 || PPUMASK_BG_LEFT_COL_ENABLE))
 		bg_col_id = ((bg_pattern_shift_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << scroll.x) & 0x8000) >> 14;
 	else
 		bg_col_id = 0;
@@ -892,7 +897,7 @@ void PPU::ShiftPixel()
 		if (sprite_is_in_range)
 		{
 			// If the PPUMASK_sprite_left_col_enable flag is not set, then sprites are not rendered in the leftmost 8 pixel columns.
-			if (!opaque_pixel_found && PPUMASK_sprite_enable && (pixel_x_pos >= 8 || PPUMASK_sprite_left_col_enable))
+			if (!opaque_pixel_found && PPUMASK_SPRITE_ENABLE && (pixel_x_pos >= 8 || PPUMASK_SPRITE_LEFT_COL_ENABLE))
 			{
 				u8 offset = -sprite_x_pos_counter[i]; // Which pixel of the sprite line to render.
 				if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
@@ -911,16 +916,16 @@ void PPU::ShiftPixel()
 	}
 
 	// Set the sprite zero hit flag if all conditions below are met
-	if (!PPUSTATUS_sprite_0_hit                                                              && // The flag has not already been set this frame
+	if (!PPUSTATUS_SPRITE_0_HIT                                                              && // The flag has not already been set this frame
 		sprite_evaluation.sprite_0_included_current_scanline && sprite_index == 0            && // The current sprite is the 0th sprite in OAM
 		bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
-		PPUMASK_bg_enable && PPUMASK_sprite_enable                                           && // Both bg and sprite rendering must be enabled
-		(pixel_x_pos >= 8 || (PPUMASK_bg_left_col_enable && PPUMASK_sprite_left_col_enable)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
+		PPUMASK_BG_ENABLE && PPUMASK_SPRITE_ENABLE                                           && // Both bg and sprite rendering must be enabled
+		(pixel_x_pos >= 8 || (PPUMASK_BG_LEFT_COL_ENABLE && PPUMASK_SPRITE_LEFT_COL_ENABLE)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
 		pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
 	{
 		// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
 		if (scanline_cycle >= 2)
-			PPUSTATUS |= PPUSTATUS_sprite_0_hit_mask;
+			PPUSTATUS |= PPUSTATUS_SPRITE_0_HIT_MASK;
 		else
 			set_sprite_0_hit_flag = true;
 	}
@@ -990,6 +995,9 @@ void PPU::ReloadSpriteShiftRegisters(unsigned sprite_index)
 
 void PPU::UpdateBGTileFetching()
 {
+	if (!RENDERING_IS_ENABLED)
+		return;
+
 	switch (tile_fetcher.step)
 	{
 	case TileFetcher::Step::fetch_nametable_byte:
@@ -1030,7 +1038,6 @@ void PPU::UpdateBGTileFetching()
 	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_low:
-	{
 		/* Composition of the pattern table address for BG tiles and 8x8 sprites:
 		  H RRRR CCCC P yyy
 		  | |||| |||| | +++-- The row number within a tile. For BG tiles: fine Y scroll. For sprites: sprite_y_pos - fine_y_scroll
@@ -1041,11 +1048,10 @@ void PPU::UpdateBGTileFetching()
 		  For BG tiles    : RRRR CCCC == the nametable byte fetched in step 1
 		  For 8x8 sprites : RRRR CCCC == the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
-		tile_fetcher.pattern_table_data_addr = (PPUCTRL_bg_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | scroll.v >> 12;
+		tile_fetcher.pattern_table_data_addr = (PPUCTRL_BG_TILE_SELECT ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | scroll.v >> 12;
 		tile_fetcher.pattern_table_tile_low = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr);
 		tile_fetcher.step = TileFetcher::Step::fetch_pattern_table_tile_high;
 		break;
-	}
 
 	case TileFetcher::Step::fetch_pattern_table_tile_high:
 		tile_fetcher.pattern_table_tile_high = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr | 8);
@@ -1080,7 +1086,7 @@ void PPU::UpdateSpriteTileFetching()
 		if (flip_sprite_y)
 			sprite_row_num = 7 - sprite_row_num;
 
-		if (PPUCTRL_sprite_height) // 8x16 sprites
+		if (PPUCTRL_SPRITE_HEIGHT) // 8x16 sprites
 		{
 			bool sprite_table_half = tile_fetcher.tile_num & 0x01;
 			u8 tile_num = tile_fetcher.tile_num & 0xFE; // Tile number of the top of sprite (0 to 254; bottom half gets the next tile)
@@ -1094,7 +1100,7 @@ void PPU::UpdateSpriteTileFetching()
 		}
 		else // 8x8 sprites
 		{
-			tile_fetcher.pattern_table_data_addr = (PPUCTRL_sprite_tile_sel ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | sprite_row_num;
+			tile_fetcher.pattern_table_data_addr = (PPUCTRL_SPRITE_TILE_SELECT ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | sprite_row_num;
 		}
 
 		tile_fetcher.pattern_table_tile_low = nes->mapper->ReadCHR(tile_fetcher.pattern_table_data_addr);
