@@ -165,7 +165,7 @@ public:
 			size_t size = 0;
 			Stream(&size, sizeof(size_t));
 			if (size > 0)
-				deque.resize(size);
+				deque.reserve(size);
 			for (size_t i = 0; i < size; i++)
 			{
 				T t;
@@ -191,7 +191,7 @@ public:
 			size_t size = 0;
 			Stream(&size, sizeof(size_t));
 			if (size > 0)
-				vector.resize(size);
+				vector.reserve(size);
 			for (size_t i = 0; i < size; i++)
 			{
 				T t;
