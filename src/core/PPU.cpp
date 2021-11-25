@@ -122,7 +122,7 @@ void PPU::PowerOn(const System::VideoStandard standard)
 	}
 
 	const size_t framebuffer_size = GetFrameBufferSize();
-	this->framebuffer.reserve(framebuffer_size);
+	this->framebuffer.resize(framebuffer_size);
 }
 
 

@@ -25,9 +25,9 @@ public:
 		this->properties.num_prg_rom_banks = properties.prg_rom_size / properties.prg_rom_bank_size;
 
 		/* Resize all vectors */
-		chr.reserve(properties.chr_size);
-		prg_ram.reserve(properties.prg_ram_size);
-		prg_rom.reserve(properties.prg_rom_size);
+		chr.resize(properties.chr_size);
+		prg_ram.resize(properties.prg_ram_size);
+		prg_rom.resize(properties.prg_rom_size);
 
 		/* Fill vectors with either rom data or $FF */
 		std::copy(chr_prg_rom.begin(), chr_prg_rom.begin() + properties.prg_rom_size, prg_rom.begin());
