@@ -7,6 +7,7 @@
 
 #include "Bus.h"
 #include "Component.h"
+#include "IRQSources.h"
 
 class CPU final : public Component
 {
@@ -46,8 +47,8 @@ public:
 		polled_need_NMI = need_NMI;
 		polled_need_IRQ = need_IRQ;
 	}
-	__forceinline void SetIRQLow(u8 source_mask)  { IRQ_line &= ~source_mask; }
-	__forceinline void SetIRQHigh(u8 source_mask) { IRQ_line |= source_mask; }
+	__forceinline void SetIRQLow(IRQSource source_mask)  { IRQ_line &= ~static_cast<u8>(source_mask); }
+	__forceinline void SetIRQHigh(IRQSource source_mask) { IRQ_line |=  static_cast<u8>(source_mask); }
 	__forceinline void SetNMILow()  { NMI_line = 0; }
 	__forceinline void SetNMIHigh() { NMI_line = 1; }
 

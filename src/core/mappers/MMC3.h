@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../CPU.h"
 #include "../IRQSources.h"
 
 #include "BaseMapper.h"
@@ -260,7 +261,7 @@ public:
 	void ClockIRQ() override
 	{
 		if (IRQ_counter == 0 && IRQ_enabled)
-			nes->cpu->SetIRQLow(IRQ_MMC3_mask);
+			nes->cpu->SetIRQLow(IRQSource::MMC3);
 
 		if (IRQ_counter == 0 || reload_IRQ_counter_on_next_clock)
 		{

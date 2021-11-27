@@ -361,25 +361,25 @@ private:
 	void SetFrameCounterIRQLow()
 	{
 		frame_counter.interrupt = 1;
-		nes->cpu->SetIRQLow(IRQ_APU_FRAME_COUNTER_mask);
+		nes->cpu->SetIRQLow(IRQSource::APU_FRAME);
 	}
 
 	void SetFrameCounterIRQHigh()
 	{
 		frame_counter.interrupt = 0;
-		nes->cpu->SetIRQHigh(IRQ_APU_FRAME_COUNTER_mask);
+		nes->cpu->SetIRQHigh(IRQSource::APU_FRAME);
 	}
 
 	void SetDMCIRQLow()
 	{
 		dmc.interrupt = 1;
-		nes->cpu->SetIRQLow(IRQ_APU_DMC_mask);
+		nes->cpu->SetIRQLow(IRQSource::APU_DMC);
 	}
 
 	void SetDMCIRQHigh()
 	{
 		dmc.interrupt = 0;
-		nes->cpu->SetIRQHigh(IRQ_APU_DMC_mask);
+		nes->cpu->SetIRQHigh(IRQSource::APU_DMC);
 	}
 
 	void MixAndSample();
