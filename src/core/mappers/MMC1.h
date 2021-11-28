@@ -53,6 +53,7 @@ public:
 				return prg_rom[addr - 0x8000 + prg_bank * 0x4000];
 			return prg_rom[addr - 0xC000 + (properties.num_prg_rom_banks - 1) * 0x4000];
 		}
+		return 0xFF;
 	};
 
 	void WritePRG(u16 addr, u8 data) override
@@ -162,6 +163,7 @@ public:
 		case 1: return NametableAddrSingleUpper(addr);
 		case 2: return NametableAddrVertical(addr);
 		case 3: return NametableAddrHorizontal(addr);
+		default: return addr; // impossible
 		}
 	};
 
