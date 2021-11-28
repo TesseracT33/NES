@@ -197,7 +197,7 @@ void PPU::Update()
 		else
 			open_bus_io.UpdateDecay(3);
 	}
-	if (cpu_cycles_since_a12_set_low < 3)
+	if (cpu_cycles_since_a12_set_low < 3 && a12 == 0)
 		cpu_cycles_since_a12_set_low++;
 }
 
