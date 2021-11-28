@@ -6,7 +6,7 @@
 
 #include "MapperProperties.h"
 
-#include "../CPU.h"
+#include "../Component.h"
 #include "../System.h"
 
 #include "../../Types.h"

@@ -88,8 +88,6 @@ public:
 			else
 			{
 				nametable_mirroring = data & 0x01;
-				// TODO This bit has no effect on cartridges with hardwired 4-screen VRAM
-				// In the iNES and NES 2.0 formats, this can be identified through bit 3 of byte $06 of the header.
 			}
 			break;
 
@@ -107,6 +105,8 @@ public:
 		// CPU $E000-$FFFF: IRQ disable (even), IRQ enable (odd)
 		case 0xE: case 0xF:
 			IRQ_enabled = addr & 1;
+			if (!IRQ_enabled)
+				nes->cpu->SetIRQHigh(IRQSource::MMC3);
 			// TODO Writing any value to this register will disable MMC3 interrupts AND acknowledge any pending interrupts.
 			break;
 
@@ -260,9 +260,6 @@ public:
 
 	void ClockIRQ() override
 	{
-		if (IRQ_counter == 0 && IRQ_enabled)
-			nes->cpu->SetIRQLow(IRQSource::MMC3);
-
 		if (IRQ_counter == 0 || reload_IRQ_counter_on_next_clock)
 		{
 			IRQ_counter = IRQ_counter_reload;
@@ -270,6 +267,9 @@ public:
 		}
 		else
 			IRQ_counter--;
+
+		if (IRQ_counter == 0 && IRQ_enabled)
+			nes->cpu->SetIRQLow(IRQSource::MMC3);
 	}
 
 protected:
@@ -308,6 +308,7 @@ protected:
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
 	{
+		SetCHRRAMSize(properties, 0x2000);
 		SetPRGRAMSize(properties, 0x2000);
 		SetPRGROMBankSize(properties, 0x2000);
 		return properties;

@@ -140,7 +140,7 @@ private:
 		unsigned v : 15; // Current VRAM address (15 bits): yyy NN YYYYY XXXXX
 		unsigned t : 15; // Temporary VRAM address (15 bits); can also be thought of as the address of the top left onscreen tile.
 		unsigned x : 3; // Fine X scroll (3 bits)
-		bool w; // First or second write toggle (1 bit)
+		bool w; // First or second $2005/$2006 write toggle (1 bit)
 
 		void increment_coarse_x()
 		{
@@ -151,28 +151,22 @@ private:
 			}
 			else v++; // increment coarse X
 		}
-
-		void increment_y()
+		void increment_fine_y()
 		{
 			if ((v & 0x7000) == 0x7000) // if fine y == 7
 			{
 				v &= ~0x7000; // set fine y = 0
-				switch ((v >> 5) & 0x1F) // branch on coarse y
+				if ((v & 0x3A0) == 0x3A0) // if course y is 29 or 31
 				{
-				case 29:
-					v &= ~(0x1F << 5); // set course y = 0
-					v ^= 0x800; // switch vertical nametable
-					break;
-				case 31:
-					v &= ~(0x1F << 5); // set course y = 0
-					break;
-				default:
-					v += 0x20; // increment coarse y
-					break;
+					if ((v & 0x40) == 0) // if course y is 29
+						v ^= 0x800; // switch vertical nametable
+					v &= ~0x3E0; // set course y = 0
 				}
+				else v += 0x20; // increment coarse y
 			}
-			else v += 0x1000;
+			else v += 0x1000; // increment fine y
 		}
+
 	} scroll;
 
 	struct SpriteEvaluation
@@ -228,15 +222,29 @@ private:
 		u8 sprite_y_pos;
 		u8 sprite_attr;
 
-		u16 pattern_table_data_addr;
+		u16 addr;
 
-		enum class Step {
-			fetch_nametable_byte, fetch_attribute_table_byte, fetch_pattern_table_tile_low, fetch_pattern_table_tile_high
-		} step;
+		unsigned cycle_step : 3; // (0-7)
 
-		void SetBGTileFetchingActive() { step = Step::fetch_nametable_byte; }
-		void SetSpriteTileFetchingActive() { step = Step::fetch_pattern_table_tile_low; }
+		void StartOver() { cycle_step = 0; }
 	} tile_fetcher;
+
+	/* "A12" refers to the 12th ppu address bus pin.
+	   It is set/cleared by the PPU during rendering, specifically when fetching BG tiles / sprites.
+	   It can also be set/cleared outside of rendering, when $2006/$2007 is read/written to,
+	   for the reason that the address bus pins outside of rendering are set to the vram address (scroll.v).
+	   MMC3 contains a scanline counter that gets clocked when A12 (0 -> 1), once A12 has remained low for 3 cpu cycles.
+	   TODO: in the future: consider the entire address bus, not just A12? This is basically just to get MMC3 to work. */
+	bool a12;
+	unsigned cpu_cycles_since_a12_set_low = 0;
+	void set_a12(bool new_val)
+	{
+		if (a12 == 0 && new_val == 1 && cpu_cycles_since_a12_set_low >= 3)
+			nes->mapper->ClockIRQ();
+		else if (a12 == 1 && new_val == 0)
+			cpu_cycles_since_a12_set_low = 0;
+		a12 = new_val;
+	}
 
 	bool cycle_340_was_skipped_on_last_scanline = false; // On NTSC, cycle 340 of the pre render scanline may be skipped every other frame.
 	bool do_not_set_vblank_flag_on_next_vblank = false; // The VBL flag may not be set if PPUSTATUS is read to close to when the flag is supposed to be set.
