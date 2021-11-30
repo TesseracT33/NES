@@ -40,7 +40,7 @@ public:
 			return prg_rom[addr + 0x2000 * (properties.num_prg_rom_banks - 1) - 0xE000];
 
 		default:
-			return 0xFF;
+			return 0;
 		}
 	};
 
@@ -113,138 +113,16 @@ public:
 
 	u8 ReadCHR(u16 addr) override
 	{
-		/* CHR map mode -> $8000.D7 = 0  $8000.D7 = 1
-		   PPU Bank	         Value of MMC3 register
-		   $0000-$03FF	        R0          R2
-		   $0400-$07FF	        R0          R3
-		   $0800-$0BFF	        R1          R4
-		   $0C00-$0FFF	        R1          R5
-		   $1000-$13FF	        R2          R0
-		   $1400-$17FF	        R3          R0
-		   $1800-$1BFF	        R4          R1
-		   $1C00-$1FFF	        R5          R1
-
-		   CHR inversion:
-		   0: two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF;
-		   1: two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF.
-		*/
-		switch (addr >> 8)
-		{
-		// PPU $0000-$07FF (or $1000-$17FF): 2 KiB switchable CHR bank
-		case 0x00: case 0x01: case 0x02: case 0x03:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[0]];
-			return chr[addr + 0x400 * rom_bank[2]];
-
-		case 0x04: case 0x05: case 0x06: case 0x07:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[0]];
-			return chr[addr + 0x400 * rom_bank[3] - 0x400];
-
-		// PPU $0800-$0FFF (or $1800-$1FFF): 2 KiB switchable CHR bank
-		case 0x08: case 0x09: case 0x0A: case 0x0B:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[1] - 0x800];
-			return chr[addr + 0x400 * rom_bank[4] - 0x800];
-
-		case 0x0C: case 0x0D: case 0x0E: case 0x0F:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[1] - 0x800];
-			return chr[addr + 0x400 * rom_bank[5] - 0xC00];
-
-		// PPU $1000-$13FF (or $0000-$03FF): 1 KiB switchable CHR bank
-		case 0x10: case 0x11: case 0x12: case 0x13:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[2] - 0x1000];
-			return chr[addr + 0x400 * rom_bank[0] - 0x1000];
-
-		// PPU $1400-$17FF (or $0400-$07FF): 1 KiB switchable CHR bank
-		case 0x14: case 0x15: case 0x16: case 0x17:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[3] - 0x1400];
-			return chr[addr + 0x400 * rom_bank[0] - 0x1000];
-
-		// PPU $1800-$1BFF (or $0800-$0BFF): 1 KiB switchable CHR bank
-		case 0x18: case 0x19: case 0x1A: case 0x1B:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[4] - 0x1800];
-			return chr[addr + 0x400 * rom_bank[1] - 0x1800];
-
-		// PPU $1C00-$1FFF (or $0C00-$0FFF): 1 KiB switchable CHR bank
-		case 0x1C: case 0x1D: case 0x1E: case 0x1F:
-			if (chr_a12_inversion == 0)
-				return chr[addr + 0x400 * rom_bank[5] - 0x1C00];
-			return chr[addr + 0x400 * rom_bank[1] - 0x1800];
-
-		default:
-			return 0xFF;
-		}
+		size_t physical_addr = GetPhysicalCHRAddress(addr);
+		return chr[physical_addr];
 	}
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
 		if (!properties.has_chr_ram)
 			return;
-
-		switch (addr >> 8)
-		{
-		// PPU $0000-$07FF (or $1000-$17FF): 2 KiB switchable CHR bank
-		case 0x00: case 0x01: case 0x02: case 0x03:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[0]] = data;
-			chr[addr + 0x400 * rom_bank[2]] = data;
-			break;
-
-		case 0x04: case 0x05: case 0x06: case 0x07:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[0]] = data;
-			chr[addr + 0x400 * rom_bank[3] - 0x400] = data;
-			break;
-
-		// PPU $0800-$0FFF (or $1800-$1FFF): 2 KiB switchable CHR bank
-		case 0x08: case 0x09: case 0x0A: case 0x0B:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[1] - 0x800] = data;
-			chr[addr + 0x400 * rom_bank[4] - 0x800] = data;
-			break;
-
-		case 0x0C: case 0x0D: case 0x0E: case 0x0F:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[1] - 0x800] = data;
-			chr[addr + 0x400 * rom_bank[5] - 0xC00] = data;
-			break;
-
-		// PPU $1000-$13FF (or $0000-$03FF): 1 KiB switchable CHR bank
-		case 0x10: case 0x11: case 0x12: case 0x13:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[2] - 0x1000] = data;
-			chr[addr + 0x400 * rom_bank[0] - 0x1000] = data;
-			break;
-
-		// PPU $1400-$17FF (or $0400-$07FF): 1 KiB switchable CHR bank
-		case 0x14: case 0x15: case 0x16: case 0x17:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[3] - 0x1400] = data;
-			chr[addr + 0x400 * rom_bank[0] - 0x1000] = data;
-			break;
-
-		// PPU $1800-$1BFF (or $0800-$0BFF): 1 KiB switchable CHR bank
-		case 0x18: case 0x19: case 0x1A: case 0x1B:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[4] - 0x1800] = data;
-			chr[addr + 0x400 * rom_bank[1] - 0x1800] = data;
-			break;
-
-		// PPU $1C00-$1FFF (or $0C00-$0FFF): 1 KiB switchable CHR bank
-		case 0x1C: case 0x1D: case 0x1E: case 0x1F:
-			if (chr_a12_inversion == 0)
-				chr[addr + 0x400 * rom_bank[5] - 0x1C00] = data;
-			chr[addr + 0x400 * rom_bank[1] - 0x1800] = data;
-			break;
-
-		default:
-			break;
-		}
+		size_t physical_addr = GetPhysicalCHRAddress(addr);
+		chr[physical_addr] = data;
 	}
 
 	u16 TransformNametableAddr(u16 addr) override
@@ -301,8 +179,75 @@ protected:
 	u8 prg_ram_open_bus = 0;
 	u8 rom_bank[8]{}; // 0..5 : CHR; 6, 7 : PRG
 
-	u8 prg_ram[0x2000]{};
+	size_t GetPhysicalCHRAddress(const u16 addr) const
+	{
+		/* CHR map mode -> $8000.D7 = 0  $8000.D7 = 1
+		   PPU Bank	         Value of MMC3 register
+		   $0000-$03FF	        R0          R2
+		   $0400-$07FF	        R0          R3
+		   $0800-$0BFF	        R1          R4
+		   $0C00-$0FFF	        R1          R5
+		   $1000-$13FF	        R2          R0
+		   $1400-$17FF	        R3          R0
+		   $1800-$1BFF	        R4          R1
+		   $1C00-$1FFF	        R5          R1
 
+		   CHR inversion:
+		   0: two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF;
+		   1: two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF.
+		*/
+		switch (addr >> 8)
+		{
+		// PPU $0000-$07FF (or $1000-$17FF): 2 KiB switchable CHR bank
+		case 0x00: case 0x01: case 0x02: case 0x03:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[0];
+			return addr + 0x400 * rom_bank[2];
+
+		case 0x04: case 0x05: case 0x06: case 0x07:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[0];
+			return addr + 0x400 * rom_bank[3] - 0x400;
+
+		// PPU $0800-$0FFF (or $1800-$1FFF): 2 KiB switchable CHR bank
+		case 0x08: case 0x09: case 0x0A: case 0x0B:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[1] - 0x800;
+			return addr + 0x400 * rom_bank[4] - 0x800;
+
+		case 0x0C: case 0x0D: case 0x0E: case 0x0F:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[1] - 0x800;
+			return addr + 0x400 * rom_bank[5] - 0xC00;
+
+		// PPU $1000-$13FF (or $0000-$03FF): 1 KiB switchable CHR bank
+		case 0x10: case 0x11: case 0x12: case 0x13:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[2] - 0x1000;
+			return addr + 0x400 * rom_bank[0] - 0x1000;
+
+		// PPU $1400-$17FF (or $0400-$07FF): 1 KiB switchable CHR bank
+		case 0x14: case 0x15: case 0x16: case 0x17:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[3] - 0x1400;
+			return addr + 0x400 * rom_bank[0] - 0x1000;
+
+		// PPU $1800-$1BFF (or $0800-$0BFF): 1 KiB switchable CHR bank
+		case 0x18: case 0x19: case 0x1A: case 0x1B:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[4] - 0x1800;
+			return addr + 0x400 * rom_bank[1] - 0x1800;
+
+		// PPU $1C00-$1FFF (or $0C00-$0FFF): 1 KiB switchable CHR bank
+		case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+			if (chr_a12_inversion == 0)
+				return addr + 0x400 * rom_bank[5] - 0x1C00;
+			return addr + 0x400 * rom_bank[1] - 0x1800;
+
+		default: /* Should never happen */
+			throw std::runtime_error(std::format("Invalid address ${:X} given as argument to MMC3::GetPhysicalCHRAddress(u16). The range is $0000-$1FFF.", addr));
+		}
+	}
 
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
