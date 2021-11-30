@@ -17,9 +17,7 @@ public:
 		// CPU $6000-$7FFF: Family Basic only: PRG RAM, mirrored as necessary to fill entire 8 KiB window, write protectable with an external switch
 		if (addr <= 0x7FFF)
 		{
-			if (properties.has_prg_ram)
-				return prg_ram[addr - 0x6000];
-			return 0xFF;
+			return prg_ram[addr - 0x6000];
 		}
 		// CPU $8000-$BFFF: First 16 KiB of ROM.
 		if (addr <= 0xBFFF)
@@ -32,7 +30,7 @@ public:
 
 	void WritePRG(u16 addr, u8 data) override
 	{
-		if (addr >= 0x6000 && addr <= 0x7FFF && properties.has_prg_ram)
+		if (addr >= 0x6000 && addr <= 0x7FFF)
 		{
 			prg_ram[addr - 0x6000] = data;
 		}

@@ -20,9 +20,7 @@ public:
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		if (addr <= 0x7FFF)
 		{
-			if (properties.has_prg_ram)
-				return prg_ram[addr - 0x6000];
-			return 0xFF;
+			return prg_ram[addr - 0x6000];
 		}
 		// CPU $8000-$BFFF and CPU $C000-FFFF: depends on the control register
 		switch (prg_rom_bank_mode)
@@ -30,8 +28,8 @@ public:
 		case 0: case 1: // 32 KiB mode; $8000-$FFFF is mapped to a 32 KiB bank (bit 0 of the bank number is ignored).
 			if (properties.prg_rom_size < 0x8000)
 			{
-				// If PRG ROM is smaller than 32 KiB (in that case 16 KiB), transform addresses $C000-$FFFF into $8000-$BFFF.
-				return prg_rom[(addr & ~0x4000) - 0x8000];
+				// If PRG ROM is smaller than 32 KiB (in that case 16 KiB), transform addresses $C000-$FFFF into $8000-$BFFF (and in turn into $0000-$3FFF).
+				return prg_rom[addr & ~0xC000];
 			}
 			else
 			{
@@ -64,8 +62,7 @@ public:
 		}
 		else if (addr <= 0x7FFF)
 		{
-			if (properties.has_prg_ram)
-				prg_ram[addr - 0x6000] = data;
+			prg_ram[addr - 0x6000] = data;
 		}
 		else
 		{
@@ -183,8 +180,8 @@ private:
 	static MapperProperties MutateProperties(MapperProperties properties)
 	{
 		SetCHRBankSize(properties, 0x1000);
-		SetCHRRAMSize(properties, 0x2000); /*  Known carts with CHR RAM have 8 KiB capacity. */
-		SetPRGRAMSize(properties, 0x2000);
+		SetCHRRAMSize(properties, 0x2000); /* Known carts with CHR RAM have 8 KiB capacity. */
+		SetPRGRAMSize(properties, 0x2000); /* TODO: some carts have 32 KiB */
 		return properties;
 	};
 };

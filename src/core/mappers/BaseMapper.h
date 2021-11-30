@@ -100,11 +100,16 @@ protected:
 			properties.chr_size = size;
 	}
 
-	/* The PRG RAM size may or may not be specified in the rom header. */
+	/* The PRG RAM size (or PRG RAM presence) may or may not be specified in the rom header,
+	   in particular if using iNES and not NES 2.0.
+	   For now, let games with mappers that support PRG RAM, always have PRG RAM of some predefined size. */
 	static void SetPRGRAMSize(MapperProperties& properties, size_t size)
 	{
-		if (properties.has_prg_ram && properties.prg_ram_size == 0)
+		if (properties.prg_ram_size == 0)
+		{
+			properties.has_prg_ram = true;
 			properties.prg_ram_size = size;
+		}
 	}
 };
 

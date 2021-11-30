@@ -17,10 +17,7 @@ public:
 		{
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		case 0x6: case 0x7:
-			// Disabling PRG RAM causes reads from the PRG RAM region to return open bus.
-			if (properties.has_prg_ram && prg_ram_enabled)
-				return prg_ram_open_bus = prg_ram[addr - 0x6000];
-			return prg_ram_open_bus;
+			return prg_ram[addr - 0x6000];
 
 		// CPU $8000-$9FFF (or $C000-$DFFF): 8 KiB switchable PRG ROM bank
 		case 0x8: case 0x9:
@@ -53,15 +50,14 @@ public:
 		{
 		// CPU $6000-$7FFF: 8 KiB PRG RAM bank (optional)
 		case 0x6: case 0x7:
-			if (properties.has_prg_ram && prg_ram_enabled && !prg_ram_write_protection)
-				prg_ram[addr - 0x6000] = data;
+			prg_ram[addr - 0x6000] = data;
 			break;
 
 		// CPU $8000-$9FFF; bank select (even), bank data (odd)
 		case 0x8: case 0x9:
 			if (addr & 1)
 			{
-				rom_bank[bank_reg_select] = data; 
+				rom_bank[bank_reg_select] = data;
 				/* MMC3 has 8 CHR address lines, and the CHR capacity is always 256K, so no need to mod with the number of available banks, if a CHR bank was chosen.
 				   R0 and R1 ignore the bottom bit, as the value written still counts banks in 1KB units but odd numbered banks can't be selected. */
 				if (bank_reg_select == 0 || bank_reg_select == 1)
@@ -139,7 +135,7 @@ public:
 			if (chr_a12_inversion == 0)
 				return chr[addr + 0x400 * rom_bank[0]];
 			return chr[addr + 0x400 * rom_bank[2]];
-		
+
 		case 0x04: case 0x05: case 0x06: case 0x07:
 			if (chr_a12_inversion == 0)
 				return chr[addr + 0x400 * rom_bank[0]];
@@ -304,6 +300,9 @@ protected:
 	u8 IRQ_counter_reload = 0;
 	u8 prg_ram_open_bus = 0;
 	u8 rom_bank[8]{}; // 0..5 : CHR; 6, 7 : PRG
+
+	u8 prg_ram[0x2000]{};
+
 
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
