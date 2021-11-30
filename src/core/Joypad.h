@@ -41,9 +41,9 @@ private:
 		InputMethod type;
 
 		Bind() = default;
-		Bind(s32 _button, InputMethod _type)  : button(_button), type(_type) {}
-		Bind(SDL_Keycode keycode)              : button(keycode) { type = InputMethod::KEYBOARD; }
-		Bind(SDL_GameControllerButton _button) : button(_button) { type = InputMethod::JOYPAD; }
+		Bind(s32 button, InputMethod type)    : button(button) , type(type)                  {}
+		Bind(SDL_Keycode keycode)             : button(keycode), type(InputMethod::KEYBOARD) {}
+		Bind(SDL_GameControllerButton button) : button(button) , type(InputMethod::JOYPAD)   {}
 	};
 
 	static const unsigned num_buttons = 8;

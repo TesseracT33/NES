@@ -210,8 +210,14 @@ void Joypad::MatchInputToBindings(s32 button, InputEvent input_event, InputMetho
 
 void Joypad::StreamConfig(SerializationStream& stream)
 {
-	// TODO; stream bindings
-	//functor.fun(bindings, sizeof Bind * num_buttons * 2);
+	for (int i = 0; i < num_buttons; i++)
+	{
+		for (int j = 0; j < 2; j++)
+		{
+			stream.StreamPrimitive(bindings[i][j].button);
+			stream.StreamPrimitive(bindings[i][j].type);
+		}
+	}
 }
 
 
