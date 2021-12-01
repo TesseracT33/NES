@@ -83,7 +83,7 @@ public:
 			}
 			else
 			{
-				nametable_mirroring = data & 0x01;
+				nametable_mirroring = data & 0x01; // (0: vertical; 1: horizontal)
 			}
 			break;
 
@@ -127,9 +127,13 @@ public:
 
 	u16 TransformNametableAddr(u16 addr) override
 	{
-		if (properties.mirroring == 0)
-			return NametableAddrHorizontal(addr);
-		return NametableAddrVertical(addr);
+		/* $A000.0 is ingored on cartridges with hardwired 4-screen VRAM. */
+		/* TODO: put this in BaseMapper? */
+		if (properties.hard_wired_four_screen)
+			return addr;
+		if (nametable_mirroring == 0)
+			return NametableAddrVertical(addr);
+		return NametableAddrHorizontal(addr);
 	};
 
 	void ClockIRQ() override
@@ -147,11 +151,11 @@ public:
 	}
 
 protected:
-	bool nametable_mirroring;
+	bool nametable_mirroring = 0;
 
 	/* 0: two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF;
 	   1: two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF. */
-	bool chr_a12_inversion = false;
+	bool chr_a12_inversion = 0;
 
 	bool IRQ_enabled = false;
 	bool prg_ram_enabled = false;
