@@ -160,8 +160,8 @@ void Emulator::MainLoop()
 	emu_is_running = true;
 	emu_is_paused = false;
 
-	long long milliseconds_since_fps_update = 0; // how many milliseconds since the fps window label was updated
-	long long milliseconds_since_save_data_flushed_to_disk = 0;
+	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
+	long long microseconds_since_save_data_flushed_to_disk = 0;
 
 	while (emu_is_running && !emu_is_paused)
 	{
@@ -184,23 +184,23 @@ void Emulator::MainLoop()
 			SaveState();
 
 		auto frame_end_t = std::chrono::steady_clock::now();
-		long long milliseconds_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(frame_end_t - frame_start_t).count();
+		long long microseconds_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
 
 		// update fps on window title if it is time to do so
-		milliseconds_since_fps_update += milliseconds_elapsed;
-		const long long milliseconds_per_fps_update = 1000;
-		if (milliseconds_since_fps_update >= milliseconds_per_fps_update && emu_is_running)
+		microseconds_since_fps_update += microseconds_elapsed;
+		const long long microseconds_per_fps_update = 1'000'000;
+		if (microseconds_since_fps_update >= microseconds_per_fps_update && emu_is_running)
 		{
 			gui->UpdateFPSLabel();
-			milliseconds_since_fps_update -= milliseconds_per_fps_update;
+			microseconds_since_fps_update -= microseconds_per_fps_update;
 		}
 
-		milliseconds_since_save_data_flushed_to_disk += milliseconds_elapsed;
-		const long long milliseconds_per_save_data_flush = 5000;
-		if (milliseconds_since_save_data_flushed_to_disk >= milliseconds_per_save_data_flush && emu_is_running)
+		microseconds_since_save_data_flushed_to_disk += microseconds_elapsed;
+		const long long microseconds_per_save_data_flush = 5'000'000;
+		if (microseconds_since_save_data_flushed_to_disk >= microseconds_per_save_data_flush && emu_is_running)
 		{
 			nes.mapper->WritePRGRAMToDisk();
-			milliseconds_since_save_data_flushed_to_disk -= milliseconds_per_save_data_flush;
+			microseconds_since_save_data_flushed_to_disk -= microseconds_per_save_data_flush;
 		}
 	}
 }
