@@ -11,6 +11,8 @@
 
 #include "../../Types.h"
 
+#include "../../gui/AppUtils.h"
+
 class BaseMapper : public Component
 {
 public:
@@ -43,6 +45,44 @@ public:
 
 	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
 
+	void ReadPRGRAMFromDisk()
+	{
+		if (properties.has_persistent_prg_ram)
+		{
+			const std::string save_data_path = properties.rom_path + save_file_postfix;
+			if (AppUtils::FileExists(save_data_path))
+			{
+				std::ifstream ifs{ save_data_path, std::ifstream::in | std::ofstream::binary };
+				if (!ifs)
+				{
+					UserMessage::Show("Save file loading failed!");
+					return;
+				}
+				ifs.read((char*)prg_ram.data(), prg_ram.size());
+			}
+		}
+	}
+
+	void WritePRGRAMToDisk() const
+	{
+		if (properties.has_persistent_prg_ram)
+		{
+			static bool save_data_creation_has_failed = false;
+			if (!save_data_creation_has_failed) /* Avoid the spamming of user messages, since this function is called regularly. */
+			{
+				const std::string save_data_path = properties.rom_path + save_file_postfix;
+				std::ofstream ofs{ save_data_path, std::ofstream::out | std::ofstream::binary };
+				if (!ofs)
+				{
+					save_data_creation_has_failed = true;
+					UserMessage::Show("Save file creation failed!");
+					return;
+				}
+				ofs.write((const char*)prg_ram.data(), prg_ram.size());
+			}
+		}
+	}
+
 	virtual u8 ReadPRG(u16 addr) = 0;
 	virtual u8 ReadCHR(u16 addr) = 0;
 
@@ -54,6 +94,8 @@ public:
 	virtual void ClockIRQ() {};
 
 protected:
+	const std::string save_file_postfix = "_SAVE_DATA.bin";
+
 	MapperProperties properties;
 
 	std::vector<u8> chr; /* Either RAM or ROM (a cart cannot have both). */

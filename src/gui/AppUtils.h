@@ -14,6 +14,11 @@ namespace AppUtils
 		return path.ToStdString();
 	}
 
+	inline std::string GetFileNameFromPath(const std::string& path)
+	{
+		return wxFileName(path).GetName().ToStdString();
+	}
+
 	inline bool FileExists(const wxString& path)
 	{
 		return wxFileExists(path);

@@ -18,7 +18,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 
 	/* Read and parse the rom header (16 bytes), containing properties of the cartridge/mapper. */
 	std::array<u8, header_size> header{};
-	MapperProperties mapper_properties{};
+	MapperProperties mapper_properties{rom_path};
 	rom_ifs.read((char*)&header[0], header_size);
 	bool success = ParseHeader(header, mapper_properties);
 	if (!success)
@@ -65,7 +65,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperN
 	case  94: return Instantiate.template operator() < Mapper094 > ();
 	case 180: return Instantiate.template operator() < Mapper180 > ();
 	default:
-		UserMessage::Show(std::format("Unsupported mapper number. {} detected.", mapper_properties.mapper_num), UserMessage::Type::Error);
+		UserMessage::Show(std::format("Unsupported mapper number {} detected.", mapper_properties.mapper_num), UserMessage::Type::Error);
 		return std::nullopt;
 	}
 }
@@ -74,7 +74,7 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperN
 /* Returns true on success */
 bool Cartridge::ParseHeader(const std::array<u8, header_size>& header, MapperProperties& mapper_properties)
 {
-	// https://wiki.nesdev.com/w/index.php/NES_2.0#Identification
+	// https://wiki.nesdev.org/w/index.php/NES_2.0#Identification
 	/* Check if the header is a valid iNES header */
 	if (!(header[0] == 'N' && header[1] == 'E' && header[2] == 'S' && header[3] == 0x1A))
 	{
@@ -104,16 +104,17 @@ void Cartridge::ParseFirstEightBytesOfHeader(const std::array<u8, header_size>& 
 	if (header[5] == 0)
 	{
 		mapper_properties.has_chr_ram = true;
+		mapper_properties.chr_size = 0; /* To be found out from a potential NES 2.0 header, or set by the mapper. */
 	}
 	else
 	{
-		mapper_properties.chr_size = header[5] * chr_bank_size;
 		mapper_properties.has_chr_ram = false;
+		mapper_properties.chr_size = header[5] * chr_bank_size;
 	}
 
-	mapper_properties.mirroring = header[6] & 0x01;
-	mapper_properties.has_prg_ram = header[6] & 0x02;
-	mapper_properties.has_trainer = header[6] & 0x04;
+	mapper_properties.mirroring              = header[6] & 0x01;
+	mapper_properties.has_persistent_prg_ram = header[6] & 0x02;
+	mapper_properties.has_trainer            = header[6] & 0x04;
 	mapper_properties.hard_wired_four_screen = header[6] & 0x08;
 
 	mapper_properties.mapper_num = header[7] & 0xF0 | header[6] >> 4;

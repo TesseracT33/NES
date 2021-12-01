@@ -1,12 +1,25 @@
 #pragma once
 
+#include <string>
+
 #include "../System.h"
 
 #include "../../Types.h"
 
+#include "../../gui/AppUtils.h"
+
 struct MapperProperties
 {
+	MapperProperties() = delete;
+	explicit MapperProperties(const std::string rom_path) :
+		rom_name(AppUtils::GetFileNameFromPath(rom_path)),
+		rom_path(rom_path) {};
+
+	const std::string rom_name;
+	const std::string rom_path;
+
 	bool hard_wired_four_screen;
+	bool has_persistent_prg_ram;
 	bool has_chr_ram;
 	bool has_chr_nvram;
 	bool has_prg_ram;

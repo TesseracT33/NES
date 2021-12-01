@@ -141,6 +141,9 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 	nes.cpu->PowerOn();
 	nes.ppu->PowerOn(video_standard);
 
+	/* Read potential save data */
+	nes.mapper->ReadPRGRAMFromDisk();
+
 	return true;
 }
 
@@ -156,7 +159,9 @@ void Emulator::MainLoop()
 {
 	emu_is_running = true;
 	emu_is_paused = false;
-	long long microseconds_since_fps_update = 0; // how many microseconds since the fps window label was updated
+
+	long long milliseconds_since_fps_update = 0; // how many milliseconds since the fps window label was updated
+	long long milliseconds_since_save_data_flushed_to_disk = 0;
 
 	while (emu_is_running && !emu_is_paused)
 	{
@@ -179,16 +184,23 @@ void Emulator::MainLoop()
 			SaveState();
 
 		auto frame_end_t = std::chrono::steady_clock::now();
-		long long microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
+		long long milliseconds_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(frame_end_t - frame_start_t).count();
 
-		// update fps on window title if it is time to do so (updated once every second)
-		frame_end_t = std::chrono::steady_clock::now();
-		microseconds_elapsed_this_frame = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
-		microseconds_since_fps_update += microseconds_elapsed_this_frame;
-		if (microseconds_since_fps_update >= 1000000 && emu_is_running)
+		// update fps on window title if it is time to do so
+		milliseconds_since_fps_update += milliseconds_elapsed;
+		const long long milliseconds_per_fps_update = 1000;
+		if (milliseconds_since_fps_update >= milliseconds_per_fps_update && emu_is_running)
 		{
 			gui->UpdateFPSLabel();
-			microseconds_since_fps_update -= 1000000;
+			milliseconds_since_fps_update -= milliseconds_per_fps_update;
+		}
+
+		milliseconds_since_save_data_flushed_to_disk += milliseconds_elapsed;
+		const long long milliseconds_per_save_data_flush = 5000;
+		if (milliseconds_since_save_data_flushed_to_disk >= milliseconds_per_save_data_flush && emu_is_running)
+		{
+			nes.mapper->WritePRGRAMToDisk();
+			milliseconds_since_save_data_flushed_to_disk -= milliseconds_per_save_data_flush;
 		}
 	}
 }
@@ -206,6 +218,7 @@ void Emulator::Reset()
 	nes.bus->Reset();
 	nes.cpu->Reset();
 	nes.ppu->Reset();
+	MainLoop();
 }
 
 

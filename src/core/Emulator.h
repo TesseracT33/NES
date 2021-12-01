@@ -36,7 +36,6 @@ public:
 	[[nodiscard]] bool PrepareLaunchOfGame(const std::string& rom_path);
 
 	void LaunchGame();
-	void MainLoop();
 	void Pause();
 	void Reset();
 	void Resume();
@@ -74,5 +73,6 @@ private:
 
 	void CreateSnapshottableComponentVector();
 	void ConstructNES();
+	void MainLoop();
 };
 
