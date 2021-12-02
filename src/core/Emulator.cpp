@@ -125,18 +125,17 @@ void Emulator::SetEmulationSpeed(unsigned speed)
 bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 {
 	// Construct a mapper class instance given the rom file. If it failed (e.g. if the mapper is not supported), return.
-	std::optional<std::shared_ptr<BaseMapper>> mapper_opt = Cartridge::ConstructMapperFromRom(rom_path);
+	std::optional<std::unique_ptr<BaseMapper>> mapper_opt = Cartridge::ConstructMapperFromRom(rom_path);
 	if (!mapper_opt.has_value()) return false;
-	std::shared_ptr<BaseMapper> mapper = mapper_opt.value();
-	nes.mapper = mapper;
-	mapper->AttachNES(&nes);
+	nes.mapper = std::move(mapper_opt.value());
+	nes.mapper->AttachNES(&nes);
 
 	this->current_rom_path = rom_path;
 
 	nes.bus->Reset();
 
 	/* The operations of the apu and ppu are affected by the video standard (NTSC/PAL/Dendy). */
-	const System::VideoStandard video_standard = mapper.get()->GetVideoStandard();
+	const System::VideoStandard video_standard = nes.mapper->GetVideoStandard();
 	nes.apu->PowerOn(video_standard);
 	nes.cpu->PowerOn();
 	nes.ppu->PowerOn(video_standard);

@@ -1,7 +1,7 @@
 #include "Cartridge.h"
 
 
-std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(const std::string& rom_path)
+std::optional<std::unique_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(const std::string& rom_path)
 {
 	/* Attempt to open the rom file */
 	std::ifstream rom_ifs{rom_path, std::ifstream::in | std::ifstream::binary};
@@ -39,19 +39,19 @@ std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 	rom_ifs.read((char*)&rom_vec[0], chr_prg_rom_size);
 
 	/* Match, construct and return a mapper. If the construction fails (e.g. due to unsupported mapper detected), return. */
-	std::optional<std::shared_ptr<BaseMapper>> mapper = ConstructMapperFromMapperNumber(rom_vec, mapper_properties);
+	std::optional<std::unique_ptr<BaseMapper>> mapper = ConstructMapperFromMapperNumber(rom_vec, mapper_properties);
 	if (!mapper.has_value())
 		return std::nullopt;
 	return mapper;
 }
 
 
-std::optional<std::shared_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperNumber(const std::vector<u8> rom_vec, MapperProperties& mapper_properties)
+std::optional<std::unique_ptr<BaseMapper>> Cartridge::ConstructMapperFromMapperNumber(const std::vector<u8> rom_vec, MapperProperties& mapper_properties)
 {
-	auto Instantiate = [&] <typename Mapper> () -> std::optional<std::shared_ptr<BaseMapper>>
+	auto Instantiate = [&] <typename Mapper> () -> std::optional<std::unique_ptr<BaseMapper>>
 	{
-		std::shared_ptr<BaseMapper> mapper = std::make_shared<Mapper>(rom_vec, mapper_properties);
-		return std::make_optional<std::shared_ptr<BaseMapper>>(mapper);
+		return std::make_optional<std::unique_ptr<BaseMapper>>(
+			std::make_unique<Mapper>(rom_vec, mapper_properties));
 	};
 
 	switch (mapper_properties.mapper_num)

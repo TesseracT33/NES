@@ -16,7 +16,7 @@
 class Cartridge final
 {
 public:
-	static std::optional<std::shared_ptr<BaseMapper>> ConstructMapperFromRom(const std::string& rom_path);
+	static std::optional<std::unique_ptr<BaseMapper>> ConstructMapperFromRom(const std::string& rom_path);
 
 private:
 	/* The header will specify the rom size in units of the below. */
@@ -26,7 +26,7 @@ private:
 
 	static constexpr size_t header_size = 0x10;
 
-	static std::optional<std::shared_ptr<BaseMapper>> ConstructMapperFromMapperNumber(std::vector<u8> rom_vec, MapperProperties& mapper_properties);
+	static std::optional<std::unique_ptr<BaseMapper>> ConstructMapperFromMapperNumber(std::vector<u8> rom_vec, MapperProperties& mapper_properties);
 
 	static bool ParseHeader(const std::array<u8, header_size>& header, MapperProperties& properties);
 	static void ParseFirstEightBytesOfHeader(const std::array<u8, header_size>& header, MapperProperties& properties);
