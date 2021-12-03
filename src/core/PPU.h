@@ -38,8 +38,6 @@ public:
 	unsigned GetWindowScale()  const { return window_scale; }
 	unsigned GetWindowHeight() const { return standard.num_visible_scanlines * window_scale; }
 	unsigned GetWindowWidth()  const { return num_pixels_per_scanline * window_scale; }
-	/* Note: vblank is counted to begin on the first "post-render" scanline, not on the same scanline as when NMI is triggered. */
-	bool IsInVblank() const { return scanline >= standard.nmi_scanline - 1; }
 
 	[[nodiscard]] bool CreateRenderer(const void* window_handle);
 	void PowerOn(const System::VideoStandard standard);
@@ -82,8 +80,8 @@ private:
 	static constexpr int num_pixels_per_scanline = 256; // Horizontal resolution
 	static constexpr int pre_render_scanline = -1;
 
-	// https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02
-	const SDL_Color palette[64] = {
+	// https://wiki.nesdev.org/w/index.php?title=PPU_palettes#2C02
+	const std::array<SDL_Color, 64> palette = { {
 		{ 84,  84,  84}, {  0,  30, 116}, {  8,  16, 144}, { 48,   0, 136}, { 68,   0, 100}, { 92,   0,  48}, { 84,   4,   0}, { 60,  24,   0},
 		{ 32,  42,   0}, {  8,  58,   0}, {  0,  64,   0}, {  0,  60,   0}, {  0,  50,  60}, {  0,   0,   0}, {  0,   0,   0}, {  0,   0,   0},
 		{152, 150, 152}, {  8,  76, 196}, { 48,  50, 236}, { 92,  30, 228}, {136,  20, 176}, {160,  20, 100}, {152,  34,  32}, {120,  60,   0},
@@ -92,14 +90,14 @@ private:
 		{160, 170,   0}, {116, 196,   0}, { 76, 208,  32}, { 56, 204, 108}, { 56, 180, 204}, { 60,  60,  60}, {  0,   0,   0}, {  0,   0,   0},
 		{236, 238, 236}, {168, 204, 236}, {188, 188, 236}, {212, 178, 236}, {236, 174, 236}, {236, 174, 212}, {236, 180, 176}, {228, 194, 144},
 		{204, 210, 120}, {180, 222, 120}, {168, 226, 144}, {152, 226, 180}, {160, 214, 228}, {160, 162, 160}, {  0,   0,   0}, {  0,   0,   0}
-	};
+	} };
 
 	const std::array<u8, 0x20> palette_ram_on_powerup = { /* Source: blargg_ppu_tests_2005.09.15b */
 		0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D, 0x08, 0x10, 0x08, 0x24, 0x00, 0x00, 0x04, 0x2C,
 		0x09, 0x01, 0x34, 0x03, 0x00, 0x04, 0x00, 0x14, 0x08, 0x3A, 0x00, 0x02, 0x00, 0x20, 0x2C, 0x08
 	};
 
-	// PPU IO open bus related. See https://wiki.nesdev.com/w/index.php?title=PPU_registers#Ports
+	// PPU IO open bus related. See https://wiki.nesdev.org/w/index.php?title=PPU_registers#Ports
 	// and the 'NES PPU Open-Bus Test' test rom readme
 	struct OpenBusIO
 	{
@@ -278,7 +276,6 @@ private:
 	std::array<u8, 0x100 > oam          {}; /* Not mapped. Holds sprite data (four bytes each for up to 64 sprites). */
 	std::array<u8, 0x20  > palette_ram  {}; /* Mapped to PPU $3F00-$3F1F (mirrored at $3F20-$3FFF). */
 	std::array<u8, 0x20  > secondary_oam{}; /* Holds sprite data for sprites to be rendered on the next scanline. */
-	std::array<u8, 0x1000> nametable_ram{}; /* Mapped to PPU $2000-$2FFF (mirrored at $3000-$3EFF). */
 
 	std::array<u8 ,  8> sprite_attribute_latch  {};
 	std::array<u8 , 16> sprite_pattern_shift_reg{};
@@ -292,11 +289,14 @@ private:
 	SDL_Renderer* renderer;
 	SDL_Window* window;
 
+	/* Note: vblank is counted to begin on the first "post-render" scanline, not on the same scanline as when NMI is triggered. */
+	bool IsInVblank() const { return scanline >= standard.nmi_scanline - 1; }
+
 	void CheckNMI();
 	void LogState();
 	void PrepareForNewFrame();
 	void PrepareForNewScanline();
-	void PushPixel(u8 nes_col);
+	void PushPixelToFramebuffer(u8 nes_col);
 	void ReloadBackgroundShiftRegisters();
 	void ReloadSpriteShiftRegisters(unsigned sprite_index);
 	void RenderGraphics();
@@ -314,15 +314,4 @@ private:
 	u8 ReadPaletteRAM(u16 addr);
 
 	size_t GetFrameBufferSize() const { return num_pixels_per_scanline * standard.num_visible_scanlines * num_colour_channels; };
-
-	u8 ReadNametableRAM(u16 addr) const
-	{
-		addr = nes->mapper->TransformNametableAddr(addr);
-		return nametable_ram[addr & 0xFFF];
-	}
-	void WriteNametableRAM(u16 addr, u8 data)
-	{
-		addr = nes->mapper->TransformNametableAddr(addr);
-		nametable_ram[addr & 0xFFF] = data;
-	}
 };

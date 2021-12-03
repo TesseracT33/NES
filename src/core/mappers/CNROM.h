@@ -35,13 +35,6 @@ public:
 	{
 		// PPU $0000-$1FFF: 8 KiB switchable CHR ROM bank.
 		return chr[addr + 0x2000 * chr_bank];
-	}
-
-	u16 TransformNametableAddr(u16 addr) override
-	{
-		if (properties.mirroring == 0)
-			return NametableAddrHorizontal(addr);
-		return NametableAddrVertical(addr);
 	};
 
 protected:

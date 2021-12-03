@@ -38,12 +38,11 @@ public:
 		chr[addr] = data;
 	};
 
-	u16 TransformNametableAddr(u16 addr) override
+	const std::array<int, 4>& GetNametableMap() const override
 	{
-		// TODO: not sure about this
 		if (vram_page == 0)
-			return NametableAddrSingleLower(addr);
-		return NametableAddrSingleUpper(addr);
+			return map_singlescreen_bottom;
+		return map_singlescreen_top;
 	};
 
 protected:

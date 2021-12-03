@@ -763,10 +763,10 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 }
 
 
-void PPU::PushPixel(u8 nes_col)
+void PPU::PushPixelToFramebuffer(u8 nes_col)
 {
 	// From the nes colour (0-63), get an RGB24 colour from the predefined palette
-	// The palette from https://wiki.nesdev.com/w/index.php?title=PPU_palettes#2C02 was used for this
+	// The palette from https://wiki.nesdev.org/w/index.php?title=PPU_palettes#2C02 was used for this
 	const SDL_Color& sdl_col = palette[nes_col];
 	framebuffer[framebuffer_pos    ] = sdl_col.r;
 	framebuffer[framebuffer_pos + 1] = sdl_col.g;
@@ -898,7 +898,7 @@ void PPU::ShiftPixel()
 	bg_palette_attr_reg[0] <<= 1;
 	bg_palette_attr_reg[1] <<= 1;
 
-	PushPixel(col);
+	PushPixelToFramebuffer(col);
 }
 
 
@@ -957,7 +957,7 @@ void PPU::UpdateBGTileFetching()
 		break;
 
 	case 1: /* Fetch nametable byte. */
-		tile_fetcher.tile_num = ReadNametableRAM(tile_fetcher.addr);
+		tile_fetcher.tile_num = nes->mapper->ReadNametableRAM(tile_fetcher.addr);
 		break;
 
 	case 2: /* Compose address for attribute table byte. */
@@ -978,7 +978,7 @@ void PPU::UpdateBGTileFetching()
 		break;
 
 	case 3: /* Fetch atttribute table byte. */
-		tile_fetcher.attribute_table_byte = ReadNametableRAM(tile_fetcher.addr);
+		tile_fetcher.attribute_table_byte = nes->mapper->ReadNametableRAM(tile_fetcher.addr);
 		break;
 
 	case 4: /* Compose address for pattern table tile low. */
@@ -1110,7 +1110,7 @@ u8 PPU::ReadMemory(u16 addr)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		return ReadNametableRAM(addr);
+		return nes->mapper->ReadNametableRAM(addr);
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
@@ -1132,7 +1132,7 @@ void PPU::WriteMemory(u16 addr, u8 data)
 	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
 	else if (addr <= 0x3EFF)
 	{
-		WriteNametableRAM(addr, data);
+		nes->mapper->WriteNametableRAM(addr, data);
 	}
 	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
 	else if (addr <= 0x3FFF)
@@ -1183,31 +1183,13 @@ void PPU::SetWindowSize(unsigned width, unsigned height)
 void PPU::StreamState(SerializationStream& stream)
 {
 	/* I've tried to follow the order of the declarations in the class definition. */
-	stream.StreamPrimitive(open_bus_io.value);
-	stream.StreamArray(open_bus_io.decayed);
-	stream.StreamArray(open_bus_io.ppu_cycles_since_refresh);
+	stream.StreamPrimitive(open_bus_io);
+	stream.StreamPrimitive(scroll);
+	stream.StreamPrimitive(sprite_evaluation);
+	stream.StreamPrimitive(tile_fetcher);
 
-	scroll.v = stream.StreamBitfield(scroll.v);
-	scroll.t = stream.StreamBitfield(scroll.t);
-	scroll.x = stream.StreamBitfield(scroll.x);
-	stream.StreamPrimitive(scroll.w);
-
-	sprite_evaluation.sprite_index = stream.StreamBitfield(sprite_evaluation.sprite_index);
-	sprite_evaluation.byte_index = stream.StreamBitfield(sprite_evaluation.byte_index);
-	stream.StreamPrimitive(sprite_evaluation.num_sprites_copied);
-	stream.StreamPrimitive(sprite_evaluation.idle);
-	stream.StreamPrimitive(sprite_evaluation.sprite_0_included_current_scanline);
-	stream.StreamPrimitive(sprite_evaluation.sprite_0_included_next_scanline);
-
-	stream.StreamPrimitive(tile_fetcher.tile_num);
-	stream.StreamPrimitive(tile_fetcher.attribute_table_byte);
-	stream.StreamPrimitive(tile_fetcher.pattern_table_tile_low);
-	stream.StreamPrimitive(tile_fetcher.pattern_table_tile_high);
-	stream.StreamPrimitive(tile_fetcher.attribute_table_quadrant);
-	stream.StreamPrimitive(tile_fetcher.sprite_y_pos);
-	stream.StreamPrimitive(tile_fetcher.sprite_attr);
-	stream.StreamPrimitive(tile_fetcher.addr);
-	tile_fetcher.cycle_step = stream.StreamBitfield(tile_fetcher.cycle_step);
+	stream.StreamPrimitive(a12);
+	stream.StreamPrimitive(cpu_cycles_since_a12_set_low);
 
 	stream.StreamPrimitive(cycle_340_was_skipped_on_last_scanline);
 	stream.StreamPrimitive(do_not_set_vblank_flag_on_next_vblank);
@@ -1241,7 +1223,6 @@ void PPU::StreamState(SerializationStream& stream)
 	stream.StreamArray(oam);
 	stream.StreamArray(palette_ram);
 	stream.StreamArray(secondary_oam);
-	stream.StreamArray(nametable_ram);
 
 	stream.StreamArray(sprite_attribute_latch);
 	stream.StreamArray(sprite_pattern_shift_reg);

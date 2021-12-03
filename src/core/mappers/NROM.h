@@ -40,19 +40,12 @@ public:
 	{
 		// PPU $0000-$1FFF: 8 KiB (not bank switched)
 		return chr[addr];
-	}
+	};
 
 	void WriteCHR(u16 addr, u8 data) override
 	{
 		if (properties.has_chr_ram)
 			chr[addr] = data;
-	}
-
-	u16 TransformNametableAddr(u16 addr) override
-	{
-		if (properties.mirroring == 0)
-			return NametableAddrHorizontal(addr);
-		return NametableAddrVertical(addr);
 	};
 
 private:

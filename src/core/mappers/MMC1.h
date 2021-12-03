@@ -152,15 +152,15 @@ public:
 		}
 	};
 
-	u16 TransformNametableAddr(u16 addr) override
+	const std::array<int, 4>& GetNametableMap() const override
 	{
 		switch (chr_mirroring)
 		{
-		case 0: return NametableAddrSingleLower(addr);
-		case 1: return NametableAddrSingleUpper(addr);
-		case 2: return NametableAddrVertical(addr);
-		case 3: return NametableAddrHorizontal(addr);
-		default: return addr; // impossible
+		case 0: return map_singlescreen_bottom;
+		case 1: return map_singlescreen_top;
+		case 2: return map_vertical;
+		case 3: return map_horizontal;
+		default: return map_horizontal; // impossible
 		}
 	};
 

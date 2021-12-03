@@ -46,13 +46,6 @@ public:
 			chr[addr] = data;
 	};
 
-	u16 TransformNametableAddr(u16 addr) override
-	{
-		if (properties.mirroring == 0)
-			return NametableAddrHorizontal(addr);
-		return NametableAddrVertical(addr);
-	};
-
 protected:
 	u8 prg_bank = 0;
 

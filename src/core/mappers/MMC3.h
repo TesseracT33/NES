@@ -125,15 +125,15 @@ public:
 		chr[physical_addr] = data;
 	}
 
-	u16 TransformNametableAddr(u16 addr) override
+	const std::array<int, 4>& GetNametableMap() const override
 	{
-		/* $A000.0 is ingored on cartridges with hardwired 4-screen VRAM. */
+		/* $A000.0 is ignored on cartridges with hardwired 4-screen VRAM. */
 		/* TODO: put this in BaseMapper? */
 		if (properties.hard_wired_four_screen)
-			return addr;
+			return map_fourscreen;
 		if (nametable_mirroring == 0)
-			return NametableAddrVertical(addr);
-		return NametableAddrHorizontal(addr);
+			return map_vertical;
+		return map_horizontal;
 	};
 
 	void ClockIRQ() override

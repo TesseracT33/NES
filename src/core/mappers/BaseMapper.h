@@ -41,6 +41,9 @@ public:
 
 		if (!prg_ram.empty())
 			std::fill(prg_ram.begin(), prg_ram.end(), 0x00);
+
+		for (auto& nametable_arr : nametable_ram)
+			nametable_arr.fill(0);
 	}
 
 	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
@@ -89,11 +92,34 @@ public:
 	virtual void WritePRG(u16 addr, u8 data) {};
 	virtual void WriteCHR(u16 addr, u8 data) {};
 
-	virtual u16 TransformNametableAddr(u16 addr) = 0;
+	u8 ReadNametableRAM(u16 addr)
+	{
+		const int page = GetNametablePage(addr);
+		return nametable_ram[page][addr & 0x3FF];
+	}
+
+	void WriteNametableRAM(u16 addr, u8 data)
+	{
+		const int page = GetNametablePage(addr);
+		nametable_ram[page][addr & 0x3FF] = data;
+	}
 
 	virtual void ClockIRQ() {};
 
+	void StreamState(SerializationStream& stream) override
+	{
+		stream.StreamArray(nametable_ram);
+	}
+
 protected:
+	/* https://wiki.nesdev.org/w/index.php/Mirroring */
+	static constexpr std::array<int, 4> nametable_map_horizontal          = { 0, 0, 1, 1 };
+	static constexpr std::array<int, 4> nametable_map_vertical            = { 0, 1, 0, 1 };
+	static constexpr std::array<int, 4> nametable_map_singlescreen_bottom = { 0, 0, 0, 0 };
+	static constexpr std::array<int, 4> nametable_map_singlescreen_top    = { 1, 1, 1, 1 };
+	static constexpr std::array<int, 4> nametable_map_fourscreen          = { 1, 2, 3, 4 };
+	static constexpr std::array<int, 4> nametable_map_diagonal            = { 1, 2, 2, 1 };
+
 	const std::string save_file_postfix = "_SAVE_DATA.bin";
 
 	MapperProperties properties;
@@ -102,20 +128,12 @@ protected:
 	std::vector<u8> prg_ram;
 	std::vector<u8> prg_rom;
 
-	// Horizontal mirroring; addresses in $2400-$27FF and $2C00-$2FFF are transformed into $2000-$23FF and $2800-$2BFF, respectively.
-	u16 NametableAddrHorizontal(u16 addr) const { return addr & ~0x400; }
-
-	// Vertical mirroring; addresses in $2800-$2FFF are transformed into $2000-$27FF.
-	u16 NametableAddrVertical(u16 addr) const { return addr & ~0x800; }
-
-	// Single screen, lower; addresses in $2000-$2FFF are transformed into $2000-$23FF
-	u16 NametableAddrSingleLower(u16 addr) const { return addr & ~0xC00; }
-
-	// Single screen, upper; addresses in $2000-$2FFF are transformed into $2400-$27FF
-	u16 NametableAddrSingleUpper(u16 addr) const { return addr & ~0x800 | 0x400; }
-
-	// 4-Screen: address are not transformed
-	u16 NametableAddrFourScreen(u16 addr) const { return addr; }
+	virtual const std::array<int, 4>& GetNametableMap() const
+	{
+		if (properties.mirroring == 0)
+			return nametable_map_horizontal;
+		return nametable_map_vertical;
+	}
 
 	/* The following static functions may be called from submapper constructors.
 	   The submapper classes must apply these properties themselves; they cannot be deduced from the rom header. */
@@ -152,6 +170,17 @@ protected:
 			properties.has_prg_ram = true;
 			properties.prg_ram_size = size;
 		}
+	}
+
+private:
+	std::array<std::array<u8, 0x400>, 4> nametable_ram{};
+
+	int GetNametablePage(u16 addr) const
+	{
+		const std::array<int, 4>& map = GetNametableMap();
+		const int quadrant = (addr & 0xF00) >> 10; /* $2000-$23FF ==> 0; $2400-$27FF ==> 1; $2800-$2BFF ==> 2; $2C00-$2FFF ==> 3 */
+		const int page = map[quadrant];
+		return page;
 	}
 };
 
