@@ -38,10 +38,10 @@ public:
 	SerializationStream(const std::string& file_path, Mode mode) : mode(mode)
 	{
 		auto ios_base = mode == Mode::Serialization ?
-			std::ios_base::out | std::ios_base::binary :
-			std::ios_base::in | std::ios_base::binary;
+			std::ios::out | std::ios::binary | std::ios::trunc :
+			std::ios::in  | std::ios::binary;
 
-		fstream = std::fstream{ file_path, ios_base };
+		fstream.open(file_path, ios_base);
 
 		if (!fstream)
 		{

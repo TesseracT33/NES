@@ -164,7 +164,6 @@ private:
 			}
 			else v += 0x1000; // increment fine y
 		}
-
 	} scroll;
 
 	struct SpriteEvaluation
@@ -264,8 +263,10 @@ private:
 
 	int scanline = 0;
 
+	unsigned cpu_cycle_counter = 0; /* Used in PAL mode to sync ppu to cpu */
 	unsigned framebuffer_pos = 0;
 	unsigned scanline_cycle;
+	unsigned secondary_oam_sprite_index /* (0-7) index of the sprite currently being fetched (ppu dots 257-320). */;
 	unsigned window_scale;
 	unsigned window_scale_temp;
 	unsigned window_pixel_offset_x;

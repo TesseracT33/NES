@@ -43,10 +43,6 @@ public:
 	void LoadState();
 	void SaveState();
 
-	void StreamState(SerializationStream& stream) override;
-	void StreamConfig(SerializationStream& stream) override;
-	void SetDefaultConfig() override;
-
 	void AddObserver(Observer* observer);
 	bool SetupSDLVideo(const void* window_handle);
 
@@ -61,7 +57,7 @@ public:
 	std::vector<Configurable*> GetConfigurableComponents() { return { this, nes.joypad.get(), nes.ppu.get() }; }
 
 private:
-	const std::string save_state_path = AppUtils::GetExecutablePath() + "state.bin";
+	const std::string save_state_path_postfix = "_SAVE_STATE.bin";
 
 	bool load_state_on_next_cycle = false, save_state_on_next_cycle = false;
 
@@ -71,8 +67,6 @@ private:
 
 	std::vector<Snapshottable*> snapshottable_components{};
 
-	void CreateSnapshottableComponentVector();
-	void ConstructNES();
 	void MainLoop();
 };
 

@@ -43,7 +43,7 @@ public:
 			std::fill(prg_ram.begin(), prg_ram.end(), 0x00);
 
 		for (auto& nametable_arr : nametable_ram)
-			nametable_arr.fill(0);
+			nametable_arr.fill(0x00);
 	}
 
 	const System::VideoStandard GetVideoStandard() const { return properties.video_standard; };
@@ -106,9 +106,13 @@ public:
 
 	virtual void ClockIRQ() {};
 
+	/* This function should always be called from the derived classes' 'StreamState' functions. */
 	void StreamState(SerializationStream& stream) override
 	{
 		stream.StreamArray(nametable_ram);
+		stream.StreamVector(prg_ram);
+		if (properties.has_chr_ram)
+			stream.StreamVector(chr);
 	}
 
 protected:

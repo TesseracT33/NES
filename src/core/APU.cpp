@@ -666,24 +666,24 @@ void APU::DMC::ReadSample()
 void APU::MixAndSample()
 {
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
-    u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
-    f32 pulse_out = pulse_table[pulse_sum];
-    u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
+    const u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
+    const f32 pulse_out = pulse_table[pulse_sum];
+    const u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
         2 * noise_ch.output * noise_ch.volume + dmc.output_level * !dmc.silence_flag;
-    f32 tnd_out = tnd_table[tnd_sum];
+    const f32 tnd_out = tnd_table[tnd_sum];
 
-    f32 output = pulse_out + tnd_out;
+    const f32 output = pulse_out + tnd_out;
 
     sample_buffer[sample_buffer_index++] = output;
     sample_buffer[sample_buffer_index++] = output;
 
 	if (sample_buffer_index == sample_buffer_size)
 	{
-		//while (std::chrono::duration_cast<std::chrono::microseconds>(
-			//std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
+		while (std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
 
 		last_audio_enqueue_time_point = std::chrono::steady_clock::now();
-		//SDL_QueueAudio(1, sample_buffer, sample_buffer_size * sizeof(f32));
+		SDL_QueueAudio(1, sample_buffer.data(), sample_buffer_size * sizeof(f32));
 		sample_buffer_index = 0;
 	}
 }
@@ -691,5 +691,21 @@ void APU::MixAndSample()
 
 void APU::StreamState(SerializationStream& stream)
 {
+	stream.StreamPrimitive(pulse_ch_1);
+	stream.StreamPrimitive(pulse_ch_2);
+	stream.StreamPrimitive(triangle_ch);
+	stream.StreamPrimitive(noise_ch);
 
+	/* Do not mutate the apu pointers in the dmc channel and frame counter */
+	APU* apu = dmc.apu;
+	stream.StreamPrimitive(dmc);
+	stream.StreamPrimitive(frame_counter);
+	dmc.apu = frame_counter.apu = apu;
+
+	stream.StreamPrimitive(on_apu_cycle);
+	stream.StreamPrimitive(cpu_cycle_sample_counter);
+	stream.StreamPrimitive(sample_buffer_index);
+
+	stream.StreamArray(sample_buffer);
+	/* TODO: last_audio_enqueue_time_point? */
 }

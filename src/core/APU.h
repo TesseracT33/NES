@@ -183,20 +183,14 @@ private:
 		unsigned target_timer_period  = 0;
 	};
 
-	struct Channel
-	{
-		bool enabled = false;
-		u8 output = 0;
-		u8 volume = 0;
-
-		virtual void Step() = 0;
-		virtual void UpdateVolume() = 0;
-	};
-
-	struct PulseCh : Channel
+	struct PulseCh
 	{
 		PulseCh(int id) : id(id) {};
 		const int id; /* 1 or 2 */
+
+		bool enabled = false;
+		u8 output = 0;
+		u8 volume = 0;
 
 		unsigned duty         :  2 = 0;
 		unsigned duty_pos     :  3 = 0;
@@ -229,8 +223,12 @@ private:
 		}
 	} pulse_ch_1{1}, pulse_ch_2{2};
 
-	struct TriangleCh : Channel
+	struct TriangleCh
 	{
+		bool enabled = false;
+		u8 output = 0;
+		u8 volume = 0;
+
 		unsigned duty_pos     :  5 = 0;
 		unsigned timer        : 11 = 0;
 		unsigned timer_period : 11 = 0;
@@ -250,8 +248,12 @@ private:
 		}
 	} triangle_ch;
 
-	struct NoiseCh : Channel
+	struct NoiseCh
 	{
+		bool enabled = false;
+		u8 output = 0;
+		u8 volume = 0;
+
 		bool mode          = 0;
 		unsigned LFSR : 15 = 1;
 		u16 timer          = 0;
@@ -274,10 +276,14 @@ private:
 		}
 	} noise_ch;
 
-	struct DMC : Channel
+	struct DMC
 	{
 		DMC(APU* apu) : apu(apu) {};
 		APU* apu; /* This unit needs access to some members outside of the struct. */
+
+		bool enabled = false;
+		u8 output = 0;
+		u8 volume = 0;
 
 		bool interrupt                              = false;
 		bool IRQ_enable                             = false;
@@ -352,7 +358,7 @@ private:
 	unsigned cpu_cycle_sample_counter = 0;
 	unsigned sample_buffer_index = 0;
 
-	f32 sample_buffer[sample_buffer_size];
+	std::array<f32, sample_buffer_size> sample_buffer{};
 
 	SDL_AudioSpec audio_spec;
 

@@ -48,6 +48,11 @@ public:
 			chr[addr] = data;
 	};
 
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+	};
+
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)
 	{

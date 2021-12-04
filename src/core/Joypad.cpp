@@ -231,3 +231,12 @@ void Joypad::SetDefaultConfig()
 		}
 	}
 }
+
+
+void Joypad::StreamState(SerializationStream& stream)
+{
+	stream.StreamPrimitive(strobe);
+	stream.StreamPrimitive(strobe_seq_completed);
+	stream.StreamArray(button_return_index, 2 * sizeof(int));
+	stream.StreamArray(buttons_held_on_last_latch, 2 * num_buttons * sizeof(bool));
+}

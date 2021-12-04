@@ -32,6 +32,7 @@ public:
 	void UpdateBinding(Button button, SDL_Keycode key, Player player);
 
 	void StreamConfig(SerializationStream& stream) override;
+	void StreamState(SerializationStream& stream) override;
 	void SetDefaultConfig() override;
 
 private:
@@ -50,7 +51,8 @@ private:
 
 	bool strobe = 0;
 	bool strobe_seq_completed = false;
-	
+
+	/* TODO: make all arrays std::array */
 	int button_return_index[2] = { 0, 0 }; // The index of the button to be returned on the next read to this register, for each player
 
 	SDL_GameController* controller[2];

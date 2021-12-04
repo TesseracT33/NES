@@ -3,25 +3,19 @@
 
 Emulator::Emulator()
 {
-	ConstructNES();
-	CreateSnapshottableComponentVector();
-}
-
-
-void Emulator::CreateSnapshottableComponentVector()
-{
-	// TODO
-}
-
-
-void Emulator::ConstructNES()
-{
+	/* Construct the NES. Note: the mapper will be created when a game is loaded.  */
 	nes.apu    = std::make_unique<APU>    (&nes);
 	nes.bus    = std::make_unique<BusImpl>(&nes);
 	nes.cpu    = std::make_unique<CPU>    (&nes);
 	nes.joypad = std::make_unique<Joypad> (&nes);
 	nes.ppu    = std::make_unique<PPU>    (&nes);
-	/* Note: the mapper will be created when a game is loaded. */
+
+	/* Construct a vector of components that are used for save states */
+	snapshottable_components.push_back(nes.apu.get());
+	snapshottable_components.push_back(nes.bus.get());
+	snapshottable_components.push_back(nes.cpu.get());
+	snapshottable_components.push_back(nes.joypad.get());
+	snapshottable_components.push_back(nes.ppu.get());
 }
 
 
@@ -33,6 +27,7 @@ void Emulator::LoadState()
 		return;
 	}
 
+	const std::string save_state_path = current_rom_path + save_state_path_postfix;
 	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
 	if (stream.HasError())
 	{
@@ -63,7 +58,8 @@ void Emulator::SaveState()
 		return;
 	}
 
-	SerializationStream stream{ save_state_path, SerializationStream::Mode::Deserialization };
+	const std::string save_state_path = current_rom_path + save_state_path_postfix;
+	SerializationStream stream{ save_state_path, SerializationStream::Mode::Serialization };
 	if (stream.HasError())
 	{
 		UserMessage::Show("Save state could not be created.", UserMessage::Type::Error);
@@ -85,24 +81,6 @@ void Emulator::SaveState()
 }
 
 
-void Emulator::StreamState(SerializationStream& stream)
-{
-
-}
-
-
-void Emulator::StreamConfig(SerializationStream& stream)
-{
-
-}
-
-
-void Emulator::SetDefaultConfig()
-{
-
-}
-
-
 void Emulator::AddObserver(Observer* observer)
 {
 	this->gui = nes.ppu->gui = observer;
@@ -118,6 +96,7 @@ bool Emulator::SetupSDLVideo(const void* window_handle)
 
 void Emulator::SetEmulationSpeed(unsigned speed)
 {
+	/* Currently unimplemented due to the fact that the emulator now is synced to audio. */
 }
 
 
@@ -129,6 +108,7 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 	if (!mapper_opt.has_value()) return false;
 	nes.mapper = std::move(mapper_opt.value());
 	nes.mapper->AttachNES(&nes);
+	snapshottable_components.push_back(nes.mapper.get());
 
 	this->current_rom_path = rom_path;
 
@@ -173,6 +153,8 @@ void Emulator::MainLoop()
 		catch (const std::runtime_error& e)
 		{
 			UserMessage::Show(e.what(), UserMessage::Type::Error);
+			emu_is_running = false;
+			return;
 		}
 
 		nes.joypad->PollInput();

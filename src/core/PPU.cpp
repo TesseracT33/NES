@@ -180,8 +180,6 @@ void PPU::Update()
 	}
 	else /* PAL */
 	{
-		static int cpu_cycle_counter = 0;
-
 		StepCycle();
 		StepCycle();
 		nes->cpu->PollInterruptInputs();
@@ -263,14 +261,12 @@ void PPU::StepCycle()
 			if (rendering_is_enabled)
 				OAMADDR = 0;
 
-			static unsigned sprite_index;
-
 			if (scanline_cycle == 257)
 			{
 				ReloadBackgroundShiftRegisters(); // Update the bg shift registers at cycle 257
 				if (rendering_is_enabled)
 					scroll.v = scroll.v & ~0x41F | scroll.t & 0x41F; // copy all bits related to horizontal position from t to v:
-				sprite_index = 0;
+				secondary_oam_sprite_index = 0;
 			}
 
 			// Consider an 8 cycle period (0-7) between cycles 257-320 (of which there are eight: one for each sprite)
@@ -280,16 +276,16 @@ void PPU::StepCycle()
 			// On cycle 8 (i.e. the cycle after each period: 265, 273, ..., 321), update the sprite shift registers with pattern data.
 			if (tile_fetcher.cycle_step == 0)
 			{
-				tile_fetcher.sprite_y_pos            = secondary_oam[4 * sprite_index    ];
-				tile_fetcher.tile_num                = secondary_oam[4 * sprite_index + 1];
-				tile_fetcher.sprite_attr             = secondary_oam[4 * sprite_index + 2];
-				sprite_attribute_latch[sprite_index] = secondary_oam[4 * sprite_index + 2];
-				sprite_x_pos_counter  [sprite_index] = secondary_oam[4 * sprite_index + 3];
+				tile_fetcher.sprite_y_pos                          = secondary_oam[4 * secondary_oam_sprite_index    ];
+				tile_fetcher.tile_num                              = secondary_oam[4 * secondary_oam_sprite_index + 1];
+				tile_fetcher.sprite_attr                           = secondary_oam[4 * secondary_oam_sprite_index + 2];
+				sprite_attribute_latch[secondary_oam_sprite_index] = secondary_oam[4 * secondary_oam_sprite_index + 2];
+				sprite_x_pos_counter  [secondary_oam_sprite_index] = secondary_oam[4 * secondary_oam_sprite_index + 3];
 
 				if (scanline_cycle >= 265)
-					ReloadSpriteShiftRegisters(sprite_index - 1); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 1.
+					ReloadSpriteShiftRegisters(secondary_oam_sprite_index - 1); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 1.
 
-				sprite_index++;
+				secondary_oam_sprite_index++;
 			}
 			UpdateSpriteTileFetching();
 
@@ -571,7 +567,7 @@ void PPU::WriteRegister(u16 addr, u8 data)
 		// It is done by the cpu, so the cpu will be suspended during this time.
 		// The writes to OAM will start at the current value of OAMADDR (OAM will be cycled if OAMADDR > 0)
 		// TODO: what happens if OAMDMA is written to while a transfer is already taking place?
-		nes->cpu->StartOAMDMATransfer(data, &oam[0], OAMADDR);
+		nes->cpu->StartOAMDMATransfer(data, oam.data(), OAMADDR);
 		break;
 
 	default:
@@ -1211,8 +1207,10 @@ void PPU::StreamState(SerializationStream& stream)
 
 	stream.StreamPrimitive(scanline);
 
+	stream.StreamPrimitive(cpu_cycle_counter);
 	stream.StreamPrimitive(framebuffer_pos);
 	stream.StreamPrimitive(scanline_cycle);
+	stream.StreamPrimitive(secondary_oam_sprite_index);
 	stream.StreamPrimitive(window_scale);
 	stream.StreamPrimitive(window_scale_temp);
 	stream.StreamPrimitive(window_pixel_offset_x);

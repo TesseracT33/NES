@@ -41,8 +41,15 @@ public:
 	const std::array<int, 4>& GetNametableMap() const override
 	{
 		if (vram_page == 0)
-			return map_singlescreen_bottom;
-		return map_singlescreen_top;
+			return nametable_map_singlescreen_bottom;
+		return nametable_map_singlescreen_top;
+	};
+
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+		stream.StreamPrimitive(vram_page);
+		prg_bank = stream.StreamBitfield(prg_bank);
 	};
 
 protected:

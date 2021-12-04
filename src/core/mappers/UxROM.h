@@ -46,6 +46,12 @@ public:
 			chr[addr] = data;
 	};
 
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+		stream.StreamPrimitive(prg_bank);
+	};
+
 protected:
 	u8 prg_bank = 0;
 

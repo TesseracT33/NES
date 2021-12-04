@@ -37,6 +37,12 @@ public:
 		return chr[addr + 0x2000 * chr_bank];
 	};
 
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+		chr_bank = stream.StreamBitfield(chr_bank);
+	};
+
 protected:
 	unsigned chr_bank : 2 = 0;
 };

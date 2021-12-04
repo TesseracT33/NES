@@ -16,15 +16,21 @@ u8 BusImpl::Read(u16 addr)
 		return ram[addr & 0x7FF]; // wrap address to between 0-0x7FF
 	}
 
+	// Cartridge Space ($4020 - $FFFF)
+	if (addr >= 0x4020)
+	{
+		return nes->mapper->ReadPRG(addr);
+	}
+
 	// PPU Registers ($2000 - $3FFF)
-	else if (addr <= 0x3FFF)
+	if (addr <= 0x3FFF)
 	{
 		// Wrap address to between 0x2000-0x2007 
 		return nes->ppu->ReadRegister(addr & 0x2007);
 	}
 
 	// APU & I/O Registers ($4000-$4017)
-	else if (addr <= 0x4017)
+	if (addr <= 0x4017)
 	{
 		switch (addr)
 		{
@@ -39,17 +45,7 @@ u8 BusImpl::Read(u16 addr)
 	}
 
 	// APU Test Registers ($4018 - $401F)
-	else if (addr <= 0x401F) [[unlikely]]
-	{
-		//unused
-		return 0xFF;
-	}
-
-	// Cartridge Space ($4020 - $FFFF)
-	else
-	{
-		return nes->mapper->ReadPRG(addr);
-	}
+	return 0xFF;
 }
 
 
@@ -59,6 +55,12 @@ void BusImpl::Write(u16 addr, u8 data)
 	if (addr <= 0x1FFF)
 	{
 		ram[addr & 0x7FF] = data; // wrap address to between 0-0x7FF
+	}
+
+	// Cartridge Space ($4020 - $FFFF)
+	else if (addr >= 0x4020)
+	{
+		nes->mapper->WritePRG(addr, data);
 	}
 
 	// PPU Registers ($2000 - $3FFF)
@@ -86,15 +88,9 @@ void BusImpl::Write(u16 addr, u8 data)
 	}
 
 	// APU Test Registers ($4018 - $401F)
-	else if (addr <= 0x401F) [[unlikely]]
+	else [[unlikely]]
 	{
 		//unused
-	}
-
-	// Cartridge Space ($4020 - $FFFF)
-	else
-	{
-		nes->mapper->WritePRG(addr, data);
 	}
 }
 
@@ -103,7 +99,9 @@ u8 BusImpl::ReadCycle(u16 addr)
 {
 	nes->apu->Update();
 	nes->ppu->Update();
+#ifdef DEBUG
 	UpdateLogging();
+#endif DEBUG
 	return Read(addr);
 }
 
@@ -112,7 +110,9 @@ void BusImpl::WriteCycle(u16 addr, u8 data)
 {
 	nes->apu->Update();
 	nes->ppu->Update();
+#ifdef DEBUG
 	UpdateLogging();
+#endif DEBUG
 	Write(addr, data);
 }
 
@@ -121,17 +121,23 @@ void BusImpl::WaitCycle()
 {
 	nes->apu->Update();
 	nes->ppu->Update();
+#ifdef DEBUG
 	UpdateLogging();
+#endif DEBUG
 }
 
 
 void BusImpl::UpdateLogging()
 {
-#ifdef DEBUG
-	if (update_logging_on_next_cycle)
-	{
-		Logging::Update();
-		update_logging_on_next_cycle = false;
-	}
-#endif DEBUG
+	if (!update_logging_on_next_cycle)
+		return;
+	Logging::Update();
+	update_logging_on_next_cycle = false;
+}
+
+
+void BusImpl::StreamState(SerializationStream& stream)
+{
+	stream.StreamArray(ram);
+	stream.StreamArray(apu_io_test);
 }

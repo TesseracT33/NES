@@ -71,17 +71,16 @@ public:
 			// On the fifth write, bit 0 and the shift register contents are copied into an internal register selected by bits 14 and 13 of the address, and then it clears the shift register.
 			// The shift register can also be reset to its original state ($10) by writing any value where bit 7 is set.
 			// TODO: When the CPU writes to the serial port on consecutive cycles, the MMC1 ignores all writes but the first. 
-			static int times_written = 0;
 			if (data & 0x80)
 			{
 				shift_reg = 0x10;
-				times_written = 0;
+				times_written_to_control_register = 0;
 				prg_rom_bank_mode = 3; /* Mesen source code (MMC1.h): the control register should be reset as well. */
 			}
 			else
 			{
 				shift_reg = shift_reg >> 1 | data << 4;
-				if (++times_written == 5)
+				if (++times_written_to_control_register == 5)
 				{
 					switch (addr >> 12)
 					{
@@ -107,7 +106,7 @@ public:
 					default: break; // impossible
 					}
 					shift_reg = 0x10;
-					times_written = 0;
+					times_written_to_control_register = 0;
 				}
 			}
 		}
@@ -156,12 +155,27 @@ public:
 	{
 		switch (chr_mirroring)
 		{
-		case 0: return map_singlescreen_bottom;
-		case 1: return map_singlescreen_top;
-		case 2: return map_vertical;
-		case 3: return map_horizontal;
-		default: return map_horizontal; // impossible
+		case 0: return nametable_map_singlescreen_bottom;
+		case 1: return nametable_map_singlescreen_top;
+		case 2: return nametable_map_vertical;
+		case 3: return nametable_map_horizontal;
+		default: return nametable_map_horizontal; // impossible
 		}
+	};
+
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+		stream.StreamPrimitive(prg_ram_enabled);
+		stream.StreamPrimitive(chr_bank_mode);
+		chr_bank_0        = stream.StreamBitfield(chr_bank_0);
+		chr_bank_1        = stream.StreamBitfield(chr_bank_1);
+		chr_mirroring     = stream.StreamBitfield(chr_mirroring);
+		prg_bank          = stream.StreamBitfield(prg_bank);
+		prg_ram_bank      = stream.StreamBitfield(prg_ram_bank);
+		prg_rom_bank_mode = stream.StreamBitfield(prg_rom_bank_mode);
+		shift_reg         = stream.StreamBitfield(shift_reg);
+		stream.StreamPrimitive(times_written_to_control_register);
 	};
 
 protected:
@@ -175,6 +189,7 @@ protected:
 	unsigned prg_ram_bank : 2 = 0;
 	unsigned prg_rom_bank_mode : 2 = 3; /* nesdev seem to suggest that many carts start in PRG ROM bank mode 3. */
 	unsigned shift_reg : 5 = 0x10;
+	unsigned times_written_to_control_register = 0;
 
 private:
 	static MapperProperties MutateProperties(MapperProperties properties)

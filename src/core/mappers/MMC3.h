@@ -130,10 +130,10 @@ public:
 		/* $A000.0 is ignored on cartridges with hardwired 4-screen VRAM. */
 		/* TODO: put this in BaseMapper? */
 		if (properties.hard_wired_four_screen)
-			return map_fourscreen;
+			return nametable_map_fourscreen;
 		if (nametable_mirroring == 0)
-			return map_vertical;
-		return map_horizontal;
+			return nametable_map_vertical;
+		return nametable_map_horizontal;
 	};
 
 	void ClockIRQ() override
@@ -149,6 +149,27 @@ public:
 		if (IRQ_counter == 0 && IRQ_enabled)
 			nes->cpu->SetIRQLow(IRQSource::MMC3);
 	}
+
+	void StreamState(SerializationStream& stream) override
+	{
+		BaseMapper::StreamState(stream);
+
+		stream.StreamPrimitive(nametable_mirroring);
+		stream.StreamPrimitive(chr_a12_inversion);
+		stream.StreamPrimitive(IRQ_enabled);
+		stream.StreamPrimitive(prg_ram_enabled);
+		stream.StreamPrimitive(prg_ram_write_protection);
+		stream.StreamPrimitive(prg_rom_bank_mode);
+		stream.StreamPrimitive(reload_IRQ_counter_on_next_clock);
+
+		bank_reg_select = stream.StreamBitfield(bank_reg_select);
+
+		stream.StreamPrimitive(IRQ_counter);
+		stream.StreamPrimitive(IRQ_counter_reload);
+		stream.StreamPrimitive(prg_ram_open_bus);
+
+		stream.StreamArray(rom_bank);
+	};
 
 protected:
 	bool nametable_mirroring = 0;
@@ -181,7 +202,7 @@ protected:
 	u8 IRQ_counter = 0;
 	u8 IRQ_counter_reload = 0;
 	u8 prg_ram_open_bus = 0;
-	u8 rom_bank[8]{}; // 0..5 : CHR; 6, 7 : PRG
+	std::array<u8, 8> rom_bank{}; // 0..5 : CHR; 6, 7 : PRG
 
 	size_t GetPhysicalCHRAddress(const u16 addr) const
 	{

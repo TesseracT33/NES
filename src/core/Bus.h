@@ -1,10 +1,11 @@
 #pragma once
 
+#include "../Snapshottable.h"
 #include "../Types.h"
 
 #include "../debug/DebugOptions.h"
 
-class Bus
+class Bus : public Snapshottable
 {
 public:
 	enum Addr : u16
@@ -56,6 +57,8 @@ public:
 	virtual u8   ReadCycle(u16 addr)           = 0;
 	virtual void WaitCycle()                   = 0;
 	virtual void WriteCycle(u16 addr, u8 data) = 0;
+
+	virtual void StreamState(SerializationStream& stream) = 0;
 
 #ifdef DEBUG
 	bool update_logging_on_next_cycle = false;
