@@ -18,9 +18,6 @@
     <ClInclude Include="src\Configurable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Serializable.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="src\Types.h">
       <Filter>Header Files</Filter>
     </ClInclude>

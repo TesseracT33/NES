@@ -54,7 +54,6 @@
     <ClInclude Include="src\core\Cartridge.h" />
     <ClInclude Include="src\core\Bus.h" />
     <ClInclude Include="src\Configurable.h" />
-    <ClInclude Include="src\Serializable.h" />
     <ClInclude Include="src\Types.h" />
     <ClInclude Include="src\BitUtils.h" />
   </ItemGroup>
