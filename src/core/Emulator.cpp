@@ -10,7 +10,8 @@ Emulator::Emulator()
 	nes.joypad = std::make_unique<Joypad> (&nes);
 	nes.ppu    = std::make_unique<PPU>    (&nes);
 
-	/* Construct a vector of components that are used for save states */
+	/* Create vector of components that are streamed with save states. */
+	/* TODO: make this vector hold shared_ptr instead */
 	snapshottable_components.push_back(nes.apu.get());
 	snapshottable_components.push_back(nes.bus.get());
 	snapshottable_components.push_back(nes.cpu.get());
@@ -21,7 +22,14 @@ Emulator::Emulator()
 
 void Emulator::LoadState()
 {
-	if (!load_state_on_next_cycle)
+	if (!emu_is_running)
+	{
+		UserMessage::Show("Cannot load state when a game isn't running.", UserMessage::Type::Error);
+		load_state_on_next_cycle = false;
+		return;
+	}
+
+	if (!emu_is_paused && !load_state_on_next_cycle)
 	{
 		load_state_on_next_cycle = true;
 		return;
@@ -36,7 +44,7 @@ void Emulator::LoadState()
 		return;
 	}
 
-	for (Snapshottable* snapshottable : snapshottable_components)
+	for (auto& snapshottable : snapshottable_components)
 		snapshottable->StreamState(stream);
 
 	if (stream.HasError())
@@ -47,12 +55,21 @@ void Emulator::LoadState()
 	}
 
 	load_state_on_next_cycle = false;
+	if (emu_is_paused)
+		Resume();
 }
 
 
 void Emulator::SaveState()
 {
-	if (!save_state_on_next_cycle)
+	if (!emu_is_running)
+	{
+		UserMessage::Show("Cannot save state when a game isn't running.", UserMessage::Type::Error);
+		save_state_on_next_cycle = false;
+		return;
+	}
+
+	if (!emu_is_paused && !save_state_on_next_cycle)
 	{
 		save_state_on_next_cycle = true;
 		return;
@@ -67,7 +84,7 @@ void Emulator::SaveState()
 		return;
 	}
 
-	for (Snapshottable* snapshottable : snapshottable_components)
+	for (auto& snapshottable : snapshottable_components)
 		snapshottable->StreamState(stream);
 
 	if (stream.HasError())
@@ -130,11 +147,11 @@ bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 void Emulator::LaunchGame()
 {
 	nes.cpu->RunStartUpCycles();
-	MainLoop();
+	EmulatorLoop();
 }
 
 
-void Emulator::MainLoop()
+void Emulator::EmulatorLoop()
 {
 	emu_is_running = true;
 	emu_is_paused = false;
@@ -145,6 +162,11 @@ void Emulator::MainLoop()
 	while (emu_is_running && !emu_is_paused)
 	{
 		auto frame_start_t = std::chrono::steady_clock::now();
+
+		if (load_state_on_next_cycle)
+			LoadState();
+		else if (save_state_on_next_cycle)
+			SaveState();
 
 		// Run the CPU for roughly 2/3 of a frame (exact timing is not important; audio/video synchronization is done by the APU).
 		try {
@@ -158,11 +180,6 @@ void Emulator::MainLoop()
 		}
 
 		nes.joypad->PollInput();
-
-		if (load_state_on_next_cycle)
-			LoadState();
-		else if (save_state_on_next_cycle)
-			SaveState();
 
 		auto frame_end_t = std::chrono::steady_clock::now();
 		long long microseconds_elapsed = std::chrono::duration_cast<std::chrono::microseconds>(frame_end_t - frame_start_t).count();
@@ -195,22 +212,30 @@ void Emulator::Pause()
 
 void Emulator::Reset()
 {
-	nes.apu->Reset();
-	nes.bus->Reset();
-	nes.cpu->Reset();
-	nes.ppu->Reset();
-	MainLoop();
+	if (emu_is_running)
+	{
+		nes.apu->Reset();
+		nes.bus->Reset();
+		nes.cpu->Reset();
+		nes.ppu->Reset();
+		EmulatorLoop();
+	}
 }
 
 
 void Emulator::Resume()
 {
 	if (emu_is_running)
-		MainLoop();
+		EmulatorLoop();
 }
 
 
 void Emulator::Stop()
 {
-	emu_is_running = false;
+	if (emu_is_running)
+	{
+		nes.mapper->WritePRGRAMToDisk();
+		snapshottable_components.pop_back(); /* Remove mapper pointer (always last in the list) */
+		emu_is_running = false;
+	}
 }

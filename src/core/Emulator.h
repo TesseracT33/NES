@@ -22,14 +22,13 @@
 #include "NES.h"
 #include "PPU.h"
 
-class Emulator final : public Snapshottable, public Configurable
+class Emulator final
 {
 public:
 	Emulator();
 
 	bool emu_is_paused = false, emu_is_running = false;
 	bool emulation_speed_uncapped = false;
-	unsigned emulation_speed = 100;
 
 	Observer* gui;
 
@@ -54,7 +53,7 @@ public:
 	unsigned GetWindowHeight() const { return nes.ppu->GetWindowHeight(); }
 	unsigned GetWindowWidth() const { return nes.ppu->GetWindowWidth(); }
 
-	std::vector<Configurable*> GetConfigurableComponents() { return { this, nes.joypad.get(), nes.ppu.get() }; }
+	std::vector<Configurable*> GetConfigurableComponents() { return { nes.joypad.get(), nes.ppu.get() }; }
 
 private:
 	const std::string save_state_path_postfix = "_SAVE_STATE.bin";
@@ -67,6 +66,6 @@ private:
 
 	std::vector<Snapshottable*> snapshottable_components{};
 
-	void MainLoop();
+	void EmulatorLoop();
 };
 

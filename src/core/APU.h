@@ -25,6 +25,8 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
+	void StreamState(SerializationStream& stream) override;
+
 private:
 	static constexpr u8 length_table[32] = {
 		10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
@@ -389,7 +391,4 @@ private:
 	}
 
 	void MixAndSample();
-
-	void StreamState(SerializationStream& stream) override;
 };
-

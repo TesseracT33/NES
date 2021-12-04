@@ -9,8 +9,7 @@ class PPU;
 
 struct NES
 {
-	/* Note: these will be constructed from the Emulator class;
-	   this struct cannot call their constructors, for that would lead to cyclic dependencies. */
+	/* Note: these will be constructed from the Emulator class */
 	std::unique_ptr<APU> apu;
 	std::unique_ptr<BaseMapper> mapper;
 	std::unique_ptr<Bus> bus;

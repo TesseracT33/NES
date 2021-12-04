@@ -5,5 +5,5 @@
 class Snapshottable
 {
 public:
-	virtual void StreamState(SerializationStream& stream) {};
+	virtual void StreamState(SerializationStream& stream) = 0;
 };

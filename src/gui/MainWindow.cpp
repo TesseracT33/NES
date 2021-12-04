@@ -278,17 +278,18 @@ void MainWindow::ApplyGUISettings()
 	}
 	else
 	{
-		unsigned speed = emulator.emulation_speed;
-		menu_id = GetIdOfSpeedMenubarItem(speed);
-		if (menu_id == wxNOT_FOUND)
-		{
-			menu_speed->Check(MenuBarID::speed_custom, true);
-			menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
-		}
-		else
-		{
-			menu_speed->Check(menu_id, true);
-		}
+		/* Changing of speed is unimplemented */
+		//unsigned speed = emulator.emulation_speed;
+		//menu_id = GetIdOfSpeedMenubarItem(speed);
+		//if (menu_id == wxNOT_FOUND)
+		//{
+		//	menu_speed->Check(MenuBarID::speed_custom, true);
+		//	menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
+		//}
+		//else
+		//{
+		//	menu_speed->Check(menu_id, true);
+		//}
 	}
 }
 
@@ -429,7 +430,7 @@ void MainWindow::OnMenuSize(wxCommandEvent& event)
 	else if (id == MenuBarID::size_custom)
 	{
 		wxTextEntryDialog* textEntryDialog = new wxTextEntryDialog(this,
-			"The resolution will be 160s x 144s, where s is the scale.", "Enter a scale (positive integer).",
+			"The resolution will be 256 x 240, where s is the scale.", "Enter a scale (positive integer).",
 			wxEmptyString, wxTextEntryDialogStyle, wxDefaultPosition);
 		textEntryDialog->SetTextValidator(wxFILTER_DIGITS);
 
@@ -722,8 +723,8 @@ int MainWindow::GetIdOfSpeedMenubarItem(int speed) const
 
 wxString MainWindow::FormatSizeMenubarLabel(int scale) const
 {
-	// format is '160x144 (1x)'
-	int width = scale * 160, height = scale * 144;
+	// format is '256x240 (1x)'
+	int width = scale * 256, height = scale * 240;
 	return wxString::Format("%ix%i (%ix)", width, height, scale);
 }
 
