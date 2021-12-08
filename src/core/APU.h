@@ -96,7 +96,7 @@ private:
 	}();
 
 	static constexpr unsigned cpu_cycles_per_sec_ntsc = 1789773;
-	static constexpr unsigned cpu_cycles_per_sec_pal  = 1662607;
+	static constexpr unsigned cpu_cycles_per_sec_pal = 1662607;
 	static constexpr unsigned num_audio_channels = 2;
 	static constexpr unsigned sample_buffer_size_per_channel = 512;
 	static constexpr unsigned sample_buffer_size = sample_buffer_size_per_channel * num_audio_channels;;
@@ -106,39 +106,32 @@ private:
 
 	struct Standard
 	{
-		const u8*  dmc_rate_table;
+		const u8* dmc_rate_table;
 		const u16* noise_period_table;
 		const unsigned* frame_counter_step_cycle_table;
 		unsigned cpu_cycles_per_sec;
-	};
+	} standard;
 
 	static constexpr Standard NTSC  = { dmc_rate_table_ntsc, noise_period_table_ntsc, frame_counter_step_cycle_table_ntsc, cpu_cycles_per_sec_ntsc };
 	static constexpr Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, frame_counter_step_cycle_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
 	static constexpr Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , frame_counter_step_cycle_table_pal , cpu_cycles_per_sec_pal  };
-	Standard standard = NTSC; /* The default */
 
 	struct Envelope
 	{
 		bool const_vol  = false;
 		bool start_flag = false;
-		unsigned decay_level_cnt : 4 = 0; 
+		unsigned decay_level_cnt : 4 = 0;
 		unsigned divider         : 4 = 0;
 		unsigned divider_period  : 4 = 0; // Doubles as the channels volume when in constant volume mode
 	};
 
 	struct LengthCounter
 	{
-		bool halt                          = false;
-		bool has_reached_zero              = false;
-		bool write_to_halt_next_cpu_cycle  = false; /* Write to halt flag is delayed by one clock */
-		bool bit_to_write_to_halt          = false;
+		bool halt                         = false;
+		bool write_to_halt_next_cpu_cycle = false; /* Write to halt flag is delayed by one clock */
+		bool bit_to_write_to_halt         = false;
 		u8 value = 0; /* The maximum value that can be loaded is 254 */
 
-		void SetValue(const u8 value)
-		{
-			this->value = value;
-			has_reached_zero = value == 0;
-		}
 		void UpdateHaltFlag()
 		{
 			if (write_to_halt_next_cpu_cycle)
@@ -152,7 +145,7 @@ private:
 	struct LinearCounter
 	{
 		/* Note: this counter has a control flag, but it is the same thing has the length counter halt flag. */
-		bool reload           = false;
+		bool reload = false;
 		unsigned reload_value : 7 = 0;
 		unsigned value        : 7 = 0;
 	};
@@ -163,10 +156,10 @@ private:
 		bool muting  = false;
 		bool negate  = false;
 		bool reload  = false;
-		unsigned divider          : 3 = 0;
-		unsigned divider_period   : 3 = 0;
-		unsigned shift_count      : 3 = 0;
-		unsigned target_timer_period  = 0;
+		unsigned divider         : 3 = 0;
+		unsigned divider_period  : 3 = 0;
+		unsigned shift_count     : 3 = 0;
+		unsigned target_timer_period = 0;
 	};
 
 	struct PulseCh
@@ -200,14 +193,14 @@ private:
 
 		void UpdateVolume()
 		{
-			if (length_counter.has_reached_zero || sweep.muting)
+			if (length_counter.value == 0 || sweep.muting)
 				volume = 0;
 			else if (envelope.const_vol)
 				volume = envelope.divider_period; // Doubles as the channel's volume when in constant volume mode
 			else
 				volume = envelope.decay_level_cnt;
 		}
-	} pulse_ch_1{1}, pulse_ch_2{2};
+	} pulse_ch_1{ 1 }, pulse_ch_2{ 2 };
 
 	struct TriangleCh
 	{
@@ -232,10 +225,10 @@ private:
 		bool output = 0;
 		u8 volume = 0;
 
-		bool mode          = 0;
+		bool mode = 0;
 		unsigned LFSR : 15 = 1;
-		u16 timer          = 0;
-		u16 timer_period   = 0;
+		u16 timer = 0;
+		u16 timer_period = 0;
 		Envelope envelope;
 		LengthCounter length_counter;
 
@@ -245,7 +238,7 @@ private:
 
 		void UpdateVolume()
 		{
-			if (length_counter.has_reached_zero || (LFSR & 1)) // The volume is 0 if bit 0 of the LFSR is set
+			if (length_counter.value == 0 || (LFSR & 1)) // The volume is 0 if bit 0 of the LFSR is set
 				volume = 0;
 			else if (envelope.const_vol)
 				volume = envelope.divider_period; // Doubles as the channel's volume when in constant volume mode
@@ -259,14 +252,12 @@ private:
 		DMC(APU* apu) : apu(apu) {};
 		APU* apu; /* This unit needs access to some members outside of the struct. */
 
-		bool enabled = false;
-
-		bool interrupt                              = false;
-		bool IRQ_enable                             = false;
-		bool loop                                   = false;
-		bool restart_sample_after_buffer_is_emptied = false;
-		bool sample_buffer_is_empty                 =  true;
-		bool silence_flag                           =  true; /* Note: this flag being set doesn't actually make the output 0. */
+		bool enabled                = false;
+		bool interrupt              = false;
+		bool IRQ_enable             = false;
+		bool loop                   = false;
+		bool sample_buffer_is_empty = true;
+		bool silence_flag           = true; /* Note: this flag being set doesn't actually make the output 0. */
 		unsigned output_level : 7 = 0;
 		u8 apu_cycles_until_step  = 0;
 		u8 bits_remaining         = 8;
