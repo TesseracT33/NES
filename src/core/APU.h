@@ -22,12 +22,20 @@ public:
 	void Reset();
 	void Update();
 
-	u8 ReadRegister(u16 addr);
-	void WriteRegister(u16 addr, u8 data);
+	u8 ReadRegister(const u16 addr);
+	void WriteRegister(const u16 addr, const u8 data);
 
 	void StreamState(SerializationStream& stream) override;
 
 private:
+	static constexpr u8 dmc_rate_table_ntsc[16] = {
+		214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27
+	};
+
+	static constexpr u8 dmc_rate_table_pal[16] = {
+		199, 177, 158, 149, 138, 118, 105, 99, 88, 74, 66, 59, 49, 39, 33, 25
+	};
+
 	static constexpr u8 length_table[32] = {
 		10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
 		12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
@@ -45,20 +53,12 @@ private:
 		 0,  1,  2,  3,  4,  5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 	};
 
-	static constexpr u16 dmc_rate_table_ntsc[16] = {
-		214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27
-	};
-
-	static constexpr u16 dmc_rate_table_pal[16] = {
-		199, 177, 158, 149, 138, 118, 105, 99, 88, 74, 66, 59, 49, 39, 33, 25
-	};
-
 	static constexpr u16 noise_period_table_ntsc[16] = {
-		4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068 
+		4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
 	};
 
 	static constexpr u16 noise_period_table_pal[16] = {
-		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778 
+		4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778
 	};
 
 	static constexpr unsigned frame_counter_step_cycle_table_ntsc[8] = {
@@ -98,15 +98,15 @@ private:
 	static constexpr unsigned cpu_cycles_per_sec_ntsc = 1789773;
 	static constexpr unsigned cpu_cycles_per_sec_pal  = 1662607;
 	static constexpr unsigned num_audio_channels = 2;
-	static constexpr unsigned sample_buffer_size = 2048;
-	static constexpr unsigned sample_buffer_size_per_channel = sample_buffer_size / num_audio_channels;
+	static constexpr unsigned sample_buffer_size_per_channel = 512;
+	static constexpr unsigned sample_buffer_size = sample_buffer_size_per_channel * num_audio_channels;;
 	static constexpr unsigned sample_rate = 44100;
-	static constexpr unsigned microseconds_per_audio_enqueue =
-		double(sample_buffer_size_per_channel) / double(sample_rate) * 1'000'000 + 1;
+	static constexpr u64 nanoseconds_per_audio_enqueue =
+		double(sample_buffer_size_per_channel) / double(sample_rate) * 1'000'000'000;
 
 	struct Standard
 	{
-		const u16* dmc_rate_table;
+		const u8*  dmc_rate_table;
 		const u16* noise_period_table;
 		const unsigned* frame_counter_step_cycle_table;
 		unsigned cpu_cycles_per_sec;
@@ -116,8 +116,6 @@ private:
 	static constexpr Standard Dendy = { dmc_rate_table_ntsc, noise_period_table_ntsc, frame_counter_step_cycle_table_ntsc, cpu_cycles_per_sec_ntsc }; /* TODO: not sure about this */
 	static constexpr Standard PAL   = { dmc_rate_table_pal , noise_period_table_pal , frame_counter_step_cycle_table_pal , cpu_cycles_per_sec_pal  };
 	Standard standard = NTSC; /* The default */
-
-	/* Note: many of the initial values of the below structs are set from within CPU::Power() / CPU::Reset(). */
 
 	struct Envelope
 	{
@@ -131,22 +129,15 @@ private:
 	struct LengthCounter
 	{
 		bool halt                          = false;
-		bool has_reached_zero              = true;
+		bool has_reached_zero              = false;
 		bool write_to_halt_next_cpu_cycle  = false; /* Write to halt flag is delayed by one clock */
 		bool bit_to_write_to_halt          = false;
-		u8 value = 0;
-		
-		void SetToZero()
-		{
-			value = 0;
-			has_reached_zero = true;
-		}
-		void SetValue(unsigned value)
+		u8 value = 0; /* The maximum value that can be loaded is 254 */
+
+		void SetValue(const u8 value)
 		{
 			this->value = value;
-			/* The length counter silences the channel when clocked while already zero,
-			   so we should probably not set this to true if value == 0. */
-			has_reached_zero = false;
+			has_reached_zero = value == 0;
 		}
 		void UpdateHaltFlag()
 		{
@@ -161,16 +152,9 @@ private:
 	struct LinearCounter
 	{
 		/* Note: this counter has a control flag, but it is the same thing has the length counter halt flag. */
-		bool has_reached_zero = true;
 		bool reload           = false;
 		unsigned reload_value : 7 = 0;
 		unsigned value        : 7 = 0;
-
-		void Reload()
-		{
-			value = reload_value;
-			has_reached_zero = false;
-		}
 	};
 
 	struct Sweep
@@ -187,7 +171,7 @@ private:
 
 	struct PulseCh
 	{
-		PulseCh(int id) : id(id) {};
+		explicit PulseCh(int id) : id(id) {};
 		const int id; /* 1 or 2 */
 
 		bool enabled = false;
@@ -229,7 +213,6 @@ private:
 	{
 		bool enabled = false;
 		u8 output = 0;
-		u8 volume = 0;
 
 		unsigned duty_pos     :  5 = 0;
 		unsigned timer        : 11 = 0;
@@ -240,20 +223,13 @@ private:
 		void ClockLength();
 		void ClockLinear();
 		void Step();
-
-		void UpdateVolume()
-		{
-			if (length_counter.has_reached_zero || linear_counter.has_reached_zero)
-				volume = 0;
-			else
-				volume = 1;
-		}
+		/* Note: the triangle channel does not have volume control; the waveform is either cycling or suspended. */
 	} triangle_ch;
 
 	struct NoiseCh
 	{
 		bool enabled = false;
-		u8 output = 0;
+		bool output = 0;
 		u8 volume = 0;
 
 		bool mode          = 0;
@@ -284,36 +260,27 @@ private:
 		APU* apu; /* This unit needs access to some members outside of the struct. */
 
 		bool enabled = false;
-		u8 output = 0;
-		u8 volume = 0;
 
 		bool interrupt                              = false;
 		bool IRQ_enable                             = false;
 		bool loop                                   = false;
-		bool read_sample_on_next_apu_cycle          = false;
 		bool restart_sample_after_buffer_is_emptied = false;
-		bool sample_buffer_is_empty                 = true ;
-		bool silence_flag                           = false;
+		bool sample_buffer_is_empty                 =  true;
+		bool silence_flag                           =  true; /* Note: this flag being set doesn't actually make the output 0. */
 		unsigned output_level : 7 = 0;
-		u8 bits_remaining         = 0;
+		u8 apu_cycles_until_step  = 0;
+		u8 bits_remaining         = 8;
 		u8 sample_buffer          = 0;
 		u8 shift_register         = 0;
-		u16 apu_cycles_until_step = 0;
 		u16 bytes_remaining       = 0;
 		u16 current_sample_addr   = 0;
 		u16 period                = 0;
-		u16 sample_addr           = 0;
-		u16 sample_len            = 0;
+		u16 sample_addr_start     = 0;
+		u16 sample_length         = 0;
 
-		void ReadSample();
-		void RestartSample()
-		{
-			current_sample_addr = sample_addr;
-			bytes_remaining = sample_len;
-		}
+		void ReadSampleByte();
+		void RestartSample();
 		void Step();
-
-		void UpdateVolume() { /* TODO */ }
 	} dmc{ this };
 
 	struct FrameCounter
@@ -358,11 +325,12 @@ private:
 	bool on_apu_cycle = true;
 
 	unsigned cpu_cycle_sample_counter = 0;
+	unsigned microsecond_counter = 0;
 	unsigned sample_buffer_index = 0;
 
-	std::array<f32, sample_buffer_size> sample_buffer{};
+	SDL_AudioDeviceID audio_device_id;
 
-	SDL_AudioSpec audio_spec;
+	std::array<f32, sample_buffer_size> sample_buffer{};
 
 	std::chrono::steady_clock::time_point last_audio_enqueue_time_point = std::chrono::steady_clock::now();
 

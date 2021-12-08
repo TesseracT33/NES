@@ -3,28 +3,29 @@
 
 void APU::PowerOn(const System::VideoStandard standard)
 {
-	audio_spec.freq = sample_rate;
-	audio_spec.format = AUDIO_F32;
-	audio_spec.channels = 2;
-	audio_spec.samples = sample_buffer_size / 2;
-	audio_spec.callback = nullptr;
+	SDL_AudioSpec desired_spec;
+	SDL_zero(desired_spec);
+	desired_spec.freq = sample_rate;
+	desired_spec.format = AUDIO_F32;
+	desired_spec.channels = num_audio_channels;
+	desired_spec.samples = sample_buffer_size_per_channel;
+	desired_spec.callback = nullptr;
 
-	SDL_AudioSpec obtainedSpec;
-	SDL_OpenAudio(&audio_spec, &obtainedSpec);
-	SDL_PauseAudio(0);
-
-	Reset();
+	SDL_AudioSpec obtained_spec;
+	audio_device_id = SDL_OpenAudioDevice(nullptr, 0, &desired_spec, &obtained_spec, 0);
+	if (audio_device_id == 0)
+	{
+		const char* error_msg = SDL_GetError();
+		UserMessage::Show(std::format("Could not open an audio device; {}", error_msg), UserMessage::Type::Warning);
+	}
+	SDL_PauseAudioDevice(audio_device_id, 0);
 
     for (u16 addr = 0x4000; addr <= 0x4013; addr++)
         WriteRegister(addr, 0x00);
     WriteRegister(0x4015, 0x00);
     WriteRegister(0x4017, 0x00);
 
-    pulse_ch_1.timer = pulse_ch_1.timer_period;
-    pulse_ch_2.timer = pulse_ch_2.timer_period;
-
-    noise_ch.LFSR = 1;
-    dmc.output_level = 0;
+	dmc.apu_cycles_until_step = dmc.period; /* To prevent underflow of 'apu_cycles_until_step' the first time DMC::Step() is called */
 
 	switch (standard)
 	{
@@ -75,18 +76,18 @@ void APU::Update()
 }
 
 
-u8 APU::ReadRegister(u16 addr)
+u8 APU::ReadRegister(const u16 addr)
 {
     // Only $4015 is readable, the rest are write only.
     if (addr == Bus::Addr::APU_STAT)
     {
-        u8 ret = (pulse_ch_1.length_counter.value  > 0)
-               | (pulse_ch_2.length_counter.value  > 0) << 1
-               | (triangle_ch.length_counter.value > 0) << 2
-               | (noise_ch.length_counter.value    > 0) << 3
-               | (dmc.bytes_remaining > 0             ) << 4
-               | (frame_counter.interrupt             ) << 6
-               | (dmc.interrupt                       ) << 7;
+        const u8 ret = (pulse_ch_1.length_counter.value  > 0)
+                     | (pulse_ch_2.length_counter.value  > 0) << 1
+                     | (triangle_ch.length_counter.value > 0) << 2
+                     | (noise_ch.length_counter.value    > 0) << 3
+                     | (dmc.bytes_remaining              > 0) << 4
+                     | (frame_counter.interrupt             ) << 6
+                     | (dmc.interrupt                       ) << 7;
 
 		SetFrameCounterIRQHigh();
         // TODO If an interrupt flag was set at the same moment of the read, it will read back as 1 but it will not be cleared.
@@ -96,7 +97,7 @@ u8 APU::ReadRegister(u16 addr)
 }
 
 
-void APU::WriteRegister(u16 addr, u8 data)
+void APU::WriteRegister(const u16 addr, const u8 data)
 {
     switch (addr)
     {
@@ -130,7 +131,7 @@ void APU::WriteRegister(u16 addr, u8 data)
         if (pulse_ch_1.enabled)
         {
             pulse_ch_1.length_counter.SetValue(length_table[data >> 3]);
-            pulse_ch_1.UpdateVolume(); // TODO: possible to somehow call UpdateVolume from SetValue?
+            pulse_ch_1.UpdateVolume();
         }
 		pulse_ch_1.duty_pos = 0;
 		pulse_ch_1.envelope.start_flag = true;
@@ -189,7 +190,6 @@ void APU::WriteRegister(u16 addr, u8 data)
         if (triangle_ch.enabled)
         {
             triangle_ch.length_counter.SetValue(length_table[data >> 3]);
-            triangle_ch.UpdateVolume();
         }
         triangle_ch.linear_counter.reload = true;
         break;
@@ -226,59 +226,76 @@ void APU::WriteRegister(u16 addr, u8 data)
 
     case Bus::Addr::DMC_RAW: // $4011
         dmc.output_level = data;
-		dmc.UpdateVolume();
         break;
 
     case Bus::Addr::DMC_START: // $4012
-        dmc.sample_addr = 0xC000 | data << 6;
+        dmc.sample_addr_start = 0xC000 | data << 6;
         break;
 
     case Bus::Addr::DMC_LEN: // $4013
-        dmc.sample_len = 1 | data << 4;
+        dmc.sample_length = 1 | data << 4;
         break;
 
     case Bus::Addr::APU_STAT: // $4015
         pulse_ch_1.enabled = data & 0x01;
 		if (!pulse_ch_1.enabled)
 		{
-			pulse_ch_1.length_counter.SetToZero();
+			pulse_ch_1.length_counter.SetValue(0);
 			pulse_ch_1.volume = 0;
+		}
+		else
+		{
+			pulse_ch_1.length_counter.has_reached_zero = false;
+			pulse_ch_1.UpdateVolume();
 		}
 
         pulse_ch_2.enabled = data & 0x02;
 		if (!pulse_ch_2.enabled)
 		{
-			pulse_ch_2.length_counter.SetToZero();
+			pulse_ch_2.length_counter.SetValue(0);
 			pulse_ch_2.volume = 0;
+		}
+		else
+		{
+			pulse_ch_2.length_counter.has_reached_zero = false;
+			pulse_ch_2.UpdateVolume();
 		}
 
         triangle_ch.enabled = data & 0x04;
 		if (!triangle_ch.enabled)
 		{
-			triangle_ch.length_counter.SetToZero();
-			triangle_ch.volume = 0;
+			triangle_ch.length_counter.SetValue(0);
+		}
+		else
+		{
+			triangle_ch.length_counter.has_reached_zero = false;
 		}
 
         noise_ch.enabled = data & 0x08;
 		if (!noise_ch.enabled)
 		{
-			noise_ch.length_counter.SetToZero();
+			noise_ch.length_counter.SetValue(0);
 			noise_ch.volume = 0;
+		}
+		else
+		{
+			noise_ch.length_counter.has_reached_zero = false;
+			noise_ch.UpdateVolume();
 		}
 
         dmc.enabled = data & 0x10;
         if (dmc.enabled)
         {
-            if (dmc.bytes_remaining == 0)
-            {
-                if (dmc.bits_remaining == 0)
-                    dmc.RestartSample();
-                else
-                    dmc.restart_sample_after_buffer_is_emptied = true;
-            }
+			if (dmc.bytes_remaining == 0)
+				dmc.RestartSample();
+			if (dmc.sample_buffer_is_empty)
+				dmc.ReadSampleByte();
         }
-        else
-            dmc.bytes_remaining = 0;
+		else
+		{
+			dmc.bytes_remaining = 0;
+			dmc.sample_buffer_is_empty = true;
+		}
 
 		SetDMCIRQHigh();
         break;
@@ -498,19 +515,10 @@ void APU::TriangleCh::ClockLength()
 
 void APU::TriangleCh::ClockLinear()
 {
-    if (linear_counter.reload)
-    {
-        linear_counter.Reload();
-        UpdateVolume(); // TODO: what should happen when linear is reloaded, but length is still at 0? Currently, volume will still be 0.
-    }
-    else if (linear_counter.value != 0)
-    {
-        if (--linear_counter.value == 0)
-        {
-            linear_counter.has_reached_zero = true;
-			/* The volume is not set to 0; silencing the triangle channel merely halts it. It will continue to output its last value, rather than 0. */
-        }
-    }
+	if (linear_counter.reload)
+		linear_counter.value = linear_counter.reload_value;
+	else if (linear_counter.value > 0)
+		--linear_counter.value;
     if (!length_counter.halt) // Note: this flag doubles as the linear counter control flag.
         linear_counter.reload = false;
 }
@@ -589,8 +597,7 @@ void APU::NoiseCh::Step()
         output = (LFSR & 1) ^ (mode ? (LFSR >> 6 & 1) : (LFSR >> 1 & 1));
         LFSR >>= 1;
         LFSR |= output << 14;
-		if (LFSR & 1)
-			volume = 0;
+		UpdateVolume();
     }
     else
         timer--;
@@ -599,67 +606,59 @@ void APU::NoiseCh::Step()
 
 void APU::DMC::Step()
 {
-    if (read_sample_on_next_apu_cycle)
-    {
-        ReadSample();
-        read_sample_on_next_apu_cycle = false;
-    }
-
     if (--apu_cycles_until_step > 0)
         return;
 
     if (!silence_flag)
     {
-        int new_output_level = output_level + ((shift_register & 1) ? 2 : -2);
+        const int new_output_level = output_level + ((shift_register & 1) ? 2 : -2);
         if (new_output_level >= 0 && new_output_level <= 127)
             output_level = new_output_level;
     }
 
-    shift_register >>= 1;
+	shift_register >>= 1;
 
     if (--bits_remaining == 0)
     {
-        bits_remaining = 8;
-        if (restart_sample_after_buffer_is_emptied)
-        {
-            RestartSample();
-            restart_sample_after_buffer_is_emptied = false;
-        }
+		bits_remaining = 8;
         if (sample_buffer_is_empty)
             silence_flag = true;
-        else if (enabled)
+        else
         {
             silence_flag = false;
             shift_register = sample_buffer;
-            sample_buffer_is_empty = true;
-            if (bytes_remaining > 0)
-            {
-                if (apu->on_apu_cycle)
-                    ReadSample();
-                else
-                    read_sample_on_next_apu_cycle = true;
-            }
+			if (bytes_remaining > 0)
+				ReadSampleByte();
+			else
+				sample_buffer_is_empty = true;
         }
     }
 
-    apu_cycles_until_step = period;
+	apu_cycles_until_step = period;
 }
 
 
-void APU::DMC::ReadSample()
+void APU::DMC::ReadSampleByte()
 {
-    apu->nes->cpu->Stall(); // TODO: make less ugly
-    sample_buffer = apu->nes->mapper->ReadPRG(current_sample_addr); // TODO: make less ugly
-    sample_buffer_is_empty = false;
-    current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
+	apu->nes->cpu->Stall();
+	sample_buffer = apu->nes->mapper->ReadPRG(current_sample_addr);
+	current_sample_addr = (current_sample_addr + 1) | 0x8000; // If the address exceeds $FFFF, it is wrapped around to $8000.
+	sample_buffer_is_empty = false;
 
-    if (--bytes_remaining == 0)
-    {
+	if (--bytes_remaining == 0)
+	{
 		if (loop)
 			RestartSample();
 		else if (IRQ_enable)
 			apu->SetDMCIRQLow();
-    }
+	}
+}
+
+
+void APU::DMC::RestartSample()
+{
+	current_sample_addr = sample_addr_start;
+	bytes_remaining = sample_length;
 }
 
 
@@ -668,22 +667,22 @@ void APU::MixAndSample()
     // https://wiki.nesdev.org/w/index.php?title=APU_Mixer
     const u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;
     const f32 pulse_out = pulse_table[pulse_sum];
-    const u16 tnd_sum = 3 * triangle_ch.output * triangle_ch.volume + 
-        2 * noise_ch.output * noise_ch.volume + dmc.output_level * !dmc.silence_flag;
+
+    const u16 tnd_sum = 3 * triangle_ch.output + 2 * noise_ch.output * noise_ch.volume + dmc.output_level;
     const f32 tnd_out = tnd_table[tnd_sum];
 
-    const f32 output = pulse_out + tnd_out;
+    const f32 output = pulse_out + tnd_out; /* [0, 2] */
 
     sample_buffer[sample_buffer_index++] = output;
     sample_buffer[sample_buffer_index++] = output;
 
 	if (sample_buffer_index == sample_buffer_size)
 	{
-		while (std::chrono::duration_cast<std::chrono::microseconds>(
-			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < microseconds_per_audio_enqueue);
+		while (std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < nanoseconds_per_audio_enqueue);
 
-		last_audio_enqueue_time_point = std::chrono::steady_clock::now();
-		SDL_QueueAudio(1, sample_buffer.data(), sample_buffer_size * sizeof(f32));
+		last_audio_enqueue_time_point = std::chrono::steady_clock::now(); /* TODO: improve accuracy by using the last ::now() in the while loop */
+		SDL_QueueAudio(audio_device_id, sample_buffer.data(), sample_buffer_size * sizeof(f32));
 		sample_buffer_index = 0;
 	}
 }
