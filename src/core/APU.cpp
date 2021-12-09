@@ -20,19 +20,19 @@ void APU::PowerOn(const System::VideoStandard standard)
 	}
 	SDL_PauseAudioDevice(audio_device_id, 0);
 
-	for (u16 addr = 0x4000; addr <= 0x4013; addr++)
-		WriteRegister(addr, 0x00);
-	WriteRegister(0x4015, 0x00);
-	WriteRegister(0x4017, 0x00);
-
-	dmc.apu_cycles_until_step = dmc.period; /* To prevent underflow of 'apu_cycles_until_step' the first time DMC::Step() is called */
-
 	switch (standard)
 	{
 	case System::VideoStandard::NTSC : this->standard = NTSC ; break;
 	case System::VideoStandard::PAL  : this->standard = PAL  ; break;
 	case System::VideoStandard::Dendy: this->standard = Dendy; break;
 	}
+
+	for (u16 addr = 0x4000; addr <= 0x4013; addr++)
+		WriteRegister(addr, 0x00);
+	WriteRegister(0x4015, 0x00);
+	WriteRegister(0x4017, 0x00);
+
+	dmc.apu_cycles_until_step = dmc.period; /* To prevent underflow of 'apu_cycles_until_step' the first time DMC::Step() is called */
 }
 
 
@@ -68,7 +68,7 @@ void APU::Update()
 	cpu_cycle_sample_counter += sample_rate;
 	if (cpu_cycle_sample_counter >= standard.cpu_cycles_per_sec)
 	{
-		MixAndSample();
+		SampleAndMix();
 		cpu_cycle_sample_counter -= standard.cpu_cycles_per_sec;
 	}
 
@@ -634,7 +634,7 @@ void APU::DMC::RestartSample()
 }
 
 
-void APU::MixAndSample()
+void APU::SampleAndMix()
 {
 	// https://wiki.nesdev.org/w/index.php?title=APU_Mixer
 	const u8 pulse_sum = pulse_ch_1.output * pulse_ch_1.volume + pulse_ch_2.output * pulse_ch_2.volume;

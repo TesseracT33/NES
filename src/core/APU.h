@@ -349,5 +349,5 @@ private:
 		nes->cpu->SetIRQHigh(IRQSource::APU_DMC);
 	}
 
-	void MixAndSample();
+	void SampleAndMix();
 };
