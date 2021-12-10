@@ -653,10 +653,13 @@ void PPU::CheckNMI()
 	}
 	/* The PPU pulls /NMI low only if both PPUCTRL.7 and PPUSTATUS.7 are set.
 	   Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal. */
-	if (PPUCTRL_NMI_ENABLE && PPUSTATUS_VBLANK && NMI_line == 1)
+	if (PPUCTRL_NMI_ENABLE && PPUSTATUS_VBLANK)
 	{
-		nes->cpu->SetNMILow();
-		NMI_line = 0;
+		if (NMI_line == 1)
+		{
+			nes->cpu->SetNMILow();
+			NMI_line = 0;
+		}
 	}
 	else if (NMI_line == 0)
 	{
