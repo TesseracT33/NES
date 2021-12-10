@@ -411,7 +411,7 @@ u8 PPU::ReadRegister(u16 addr)
 			}
 		}
 
-		u8 ret = PPUSTATUS & 0xE0 | open_bus_io.Read(0x1F); /* Bits 4-0 are unused and then return bits 4-0 of open bus */
+		const u8 ret = PPUSTATUS & 0xE0 | open_bus_io.Read(0x1F); /* Bits 4-0 are unused and then return bits 4-0 of open bus */
 		open_bus_io.UpdateValue(PPUSTATUS, 0xE0); /* Update bits 7-5 of open bus with the read value */
 		PPUSTATUS &= ~PPUSTATUS_VBLANK_MASK; /* Reading this register clears the vblank flag */
 		CheckNMI();
@@ -474,7 +474,7 @@ u8 PPU::ReadRegister(u16 addr)
 }
 
 
-void PPU::WriteRegister(u16 addr, u8 data)
+void PPU::WriteRegister(const u16 addr, const u8 data)
 {
 	/* Writes to any PPU port, including the nominally read-only status port at $2002, load a value onto the entire PPU's I/O bus */
 	open_bus_io.Write(data);
@@ -690,13 +690,13 @@ void PPU::UpdateSpriteEvaluation()
 	// The value of OAMADDR as it were at dot 65 is used as an offset to the address here.
 	// If OAMADDR is unaligned and does not point to the y-position (first byte) of an OAM entry, then whatever it points to will be reinterpreted as a y position, and the following bytes will be similarly reinterpreted.
 	// When the end of OAM is reached, no more sprites will be found (it will not wrap around to the start of OAM).
-	u32 addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.sprite_index + sprite_evaluation.byte_index;
+	const u32 addr = OAMADDR_at_cycle_65 + 4 * sprite_evaluation.sprite_index + sprite_evaluation.byte_index;
 	if (addr >= oam.size())
 	{
 		sprite_evaluation.idle = true;
 		return;
 	}
-	u8 oam_entry = oam[addr];
+	const u8 oam_entry = oam[addr];
 
 	if (sprite_evaluation.num_sprites_copied < 8)
 	{
@@ -736,7 +736,7 @@ void PPU::UpdateSpriteEvaluation()
 
 
 // Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given the palette id (0-3)
-u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
+u8 PPU::GetNESColorFromColorID(const u8 col_id, const u8 palette_id, const TileType tile_type)
 {
 	if (RENDERING_IS_ENABLED)
 	{
@@ -759,7 +759,7 @@ u8 PPU::GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type)
 }
 
 
-void PPU::PushPixelToFramebuffer(u8 nes_col)
+void PPU::PushPixelToFramebuffer(const u8 nes_col)
 {
 	// From the nes colour (0-63), get an RGB24 colour from the predefined palette
 	// The palette from https://wiki.nesdev.org/w/index.php?title=PPU_palettes#2C02 was used for this
@@ -775,7 +775,7 @@ void PPU::PushPixelToFramebuffer(u8 nes_col)
 
 void PPU::RenderGraphics()
 {
-	void* pixels = &framebuffer[0];
+	void* pixels = framebuffer.data();
 	int width = num_pixels_per_scanline;
 	int height = standard.num_visible_scanlines;
 	int depth = 8 * num_colour_channels;
@@ -819,11 +819,12 @@ void PPU::ShiftPixel()
 {
 	// Fetch one bit from each of the two bg shift registers containing pattern table data for the current tile, forming the colour id for the current bg pixel.
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
-	u8 bg_col_id;
-	if (PPUMASK_BG_ENABLE && (pixel_x_pos >= 8 || PPUMASK_BG_LEFT_COL_ENABLE))
-		bg_col_id = ((bg_pattern_shift_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << scroll.x) & 0x8000) >> 14;
-	else
-		bg_col_id = 0;
+	const u8 bg_col_id = [&]() {
+		if (PPUMASK_BG_ENABLE && (pixel_x_pos >= 8 || PPUMASK_BG_LEFT_COL_ENABLE))
+			return ((bg_pattern_shift_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_pattern_shift_reg[1] << scroll.x) & 0x8000) >> 14;
+		return 0;
+	}();
+
 	bg_pattern_shift_reg[0] <<= 1;
 	bg_pattern_shift_reg[1] <<= 1;
 
@@ -844,7 +845,7 @@ void PPU::ShiftPixel()
 				if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
 					offset = 7 - offset;
 
-				u8 col_id = ((sprite_pattern_shift_reg[2 * i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[2 * i + 1] << offset) & 0x80) >> 6;
+				const u8 col_id = ((sprite_pattern_shift_reg[2 * i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[2 * i + 1] << offset) & 0x80) >> 6;
 				if (col_id != 0)
 				{
 					sprite_col_id = col_id;
@@ -881,16 +882,16 @@ void PPU::ShiftPixel()
 		 1-3    |      1-3     |     0    | Sprite
 		 1-3    |      1-3     |     1    |   BG
 	*/
-	u8 col;
-	bool sprite_priority = sprite_attribute_latch[sprite_index] & 0x20;
-	if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
-		col = GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
-	else
-	{
+	const bool sprite_priority = sprite_attribute_latch[sprite_index] & 0x20;
+
+	const u8 col = [&]() {
+		if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
+			return GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
 		// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
-		u8 bg_palette_id = ((bg_palette_attr_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << scroll.x) & 0x8000) >> 14;
-		col = GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
-	}
+		const u8 bg_palette_id = ((bg_palette_attr_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << scroll.x) & 0x8000) >> 14;
+		return GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
+	}();
+
 	bg_palette_attr_reg[0] <<= 1;
 	bg_palette_attr_reg[1] <<= 1;
 
@@ -909,11 +910,13 @@ void PPU::ReloadBackgroundShiftRegisters()
 	// The byte is divided into four 2-bit areas, which each control a 16x16 pixel metatile
 	// Denoting the four 16x16 pixel metatiles by 'bottomright', 'bottomleft' etc, then: value = (bottomright << 6) | (bottomleft << 4) | (topright << 2) | (topleft << 0)
 	// We find which quadrant our 8x8 tile lies in. Then, the two extracted bits give the palette number (0-3) used for the tile
-	u8 palette_id = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
+	const u8 palette_id = tile_fetcher.attribute_table_byte >> (2 * tile_fetcher.attribute_table_quadrant) & 3;
 	// The LSB of the attribute registers are filled with the palette id (0-3) (next tile to be rendered after the current one).
 	// Note: the same palette id is used for an entire tile, so the LSB is either set to $00 or $FF
-	if (palette_id & 0x01) bg_palette_attr_reg[0] |= 0xFF;
-	if (palette_id & 0x02) bg_palette_attr_reg[1] |= 0xFF;
+	if (palette_id & 0x01)
+		bg_palette_attr_reg[0] |= 0xFF;
+	if (palette_id & 0x02)
+		bg_palette_attr_reg[1] |= 0xFF;
 }
 
 
@@ -988,7 +991,7 @@ void PPU::UpdateBGTileFetching()
 		  +------------------ Half of pattern table (0: "left"; 1: "right"); dependent on PPUCTRL flags
 		  RRRR CCCC == the nametable byte fetched in step 1
 		*/
-		u16 pattern_table_half = PPUCTRL_BG_TILE_SELECT ? 0x1000 : 0x0000;
+		const u16 pattern_table_half = PPUCTRL_BG_TILE_SELECT ? 0x1000 : 0x0000;
 		tile_fetcher.addr = pattern_table_half | tile_fetcher.tile_num << 4 | scroll.v >> 12;
 		set_a12(pattern_table_half);
 		break;
@@ -1051,20 +1054,22 @@ void PPU::UpdateSpriteTileFetching()
 		  RRRR CCC == upper 7 bits of the sprite tile index number fetched from secondary OAM during cycles 257-320
 		*/
 		// TODO: not sure if scroll.v should be used instead of current_scanline
-		unsigned scanline_sprite_y_delta = scanline - tile_fetcher.sprite_y_pos; // delta between scanline and sprite position (0-15)
-		unsigned sprite_row_num = scanline_sprite_y_delta & 0x07; // which row of the tile the scanline falls on (0-7)
-		bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
-		if (flip_sprite_y)
-			sprite_row_num = 7 - sprite_row_num;
+		const unsigned scanline_sprite_y_delta = scanline - tile_fetcher.sprite_y_pos; // delta between scanline and sprite position (0-15)
+		const bool flip_sprite_y = tile_fetcher.sprite_attr & 0x80;
+		const unsigned sprite_row_num = [&]() { // which row of the tile the scanline falls on (0-7)
+			if (!flip_sprite_y)
+				return scanline_sprite_y_delta & 0x07;
+			return 7 - (scanline_sprite_y_delta & 0x07);
+		}();
 
 		if (PPUCTRL_SPRITE_HEIGHT) // 8x16 sprites
 		{
-			bool sprite_table_half = tile_fetcher.tile_num & 0x01;
+			const bool sprite_table_half = tile_fetcher.tile_num & 0x01;
 			u8 tile_num = tile_fetcher.tile_num & 0xFE; // Tile number of the top of sprite (0 to 254; bottom half gets the next tile)
 			// Check if we are on the top or bottom tile of the sprite.
 			// If sprites are flipped vertically, the top and bottom tiles are flipped.
-			bool on_bottom_tile = scanline_sprite_y_delta > 7;
-			bool fetch_bottom_tile = on_bottom_tile ^ flip_sprite_y;
+			const bool on_bottom_tile = scanline_sprite_y_delta > 7;
+			const bool fetch_bottom_tile = on_bottom_tile ^ flip_sprite_y;
 			if (fetch_bottom_tile)
 				tile_num++;
 			tile_fetcher.addr = sprite_table_half << 12 | tile_num << 4 | sprite_row_num;
@@ -1096,7 +1101,7 @@ void PPU::UpdateSpriteTileFetching()
 
 
 // Reading and writing done internally by the ppu
-u8 PPU::ReadMemory(u16 addr)
+u8 PPU::ReadMemory(const u16 addr)
 {
 	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 	if (addr <= 0x1FFF)
@@ -1118,7 +1123,7 @@ u8 PPU::ReadMemory(u16 addr)
 }
 
 
-void PPU::WriteMemory(u16 addr, u8 data)
+void PPU::WriteMemory(const u16 addr, const u8 data)
 {
 	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 	if (addr <= 0x1FFF)
@@ -1164,7 +1169,7 @@ void PPU::PrepareForNewScanline()
 }
 
 
-void PPU::SetWindowSize(unsigned width, unsigned height)
+void PPU::SetWindowSize(const unsigned width, const unsigned height)
 {
 	if (width > 0 && height > 0)
 	{

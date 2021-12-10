@@ -66,9 +66,6 @@ void CPU::Run()
 			continue;
 		}
 
-		//if (!all_ppu_regs_writable && ++cpu_clocks_since_reset == cpu_clocks_until_all_ppu_regs_writable)
-		//	all_ppu_regs_writable = true;
-
 		if (write_to_interrupt_disable_flag_before_next_instr)
 		{
 			flags.I = bit_to_write_to_interrupt_disable_flag;
@@ -271,7 +268,7 @@ void CPU::ExecIndirectIndexed()
 }
 
 
-void CPU::ServiceInterrupt(InterruptType asserted_interrupt_type)
+void CPU::ServiceInterrupt(const InterruptType asserted_interrupt_type)
 {
 #ifdef DEBUG
 	if (asserted_interrupt_type == InterruptType::NMI)

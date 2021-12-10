@@ -138,7 +138,7 @@ private:
 	static constexpr std::array<CPU::AddrMode, num_opcodes> addr_mode_table = []
 	{
 		std::array<CPU::AddrMode, num_opcodes> table{};
-		for (unsigned opcode = 0x00; opcode < num_opcodes; opcode++)
+		for (size_t opcode = 0x00; opcode < num_opcodes; opcode++)
 		{
 			switch (opcode & 0x1F)
 			{
