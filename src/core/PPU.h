@@ -234,22 +234,26 @@ private:
 	   TODO: in the future: consider the entire address bus, not just A12? This is basically just to get MMC3 to work. */
 	bool a12;
 	unsigned cpu_cycles_since_a12_set_low = 0;
-	void set_a12(bool new_val)
+	void SetA12(bool new_val)
 	{
-		if (a12 == 0 && new_val == 1 && cpu_cycles_since_a12_set_low >= 3)
-			nes->mapper->ClockIRQ();
-		else if (a12 == 1 && new_val == 0)
-			cpu_cycles_since_a12_set_low = 0;
-		a12 = new_val;
+		if (a12 ^ new_val)
+		{
+			if (new_val == 1)
+			{
+				if (cpu_cycles_since_a12_set_low >= 3)
+					nes->mapper->ClockIRQ();
+			}
+			else
+				cpu_cycles_since_a12_set_low = 0;
+			a12 = new_val;
+		}
 	}
 
 	bool cycle_340_was_skipped_on_last_scanline = false; // On NTSC, cycle 340 of the pre render scanline may be skipped every other frame.
-	bool do_not_set_vblank_flag_on_next_vblank = false; // The VBL flag may not be set if PPUSTATUS is read to close to when the flag is supposed to be set.
 	bool NMI_line = 1;
 	bool odd_frame = false;
 	bool reset_graphics_after_render = false;
 	bool set_sprite_0_hit_flag = false;
-	bool suppress_nmi_on_next_vblank = false; // An NMI may not trigger on VBL if PPUSTATUS is read to close to when the VBL flag is set.
 
 	u8 pixel_x_pos = 0;
 	u8 PPUCTRL;

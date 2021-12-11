@@ -319,15 +319,9 @@ void PPU::StepCycle()
 	/* NTSC: scanline 241. PAL: scanline 240. Dendy: scanline 290 */
 	else if (scanline == standard.nmi_scanline && scanline_cycle == 1)
 	{
-		if (do_not_set_vblank_flag_on_next_vblank)
-		{
-			do_not_set_vblank_flag_on_next_vblank = false;
-		}
-		else
-		{
-			PPUSTATUS |= PPUSTATUS_VBLANK_MASK;
-			CheckNMI();
-		}
+		PPUSTATUS |= PPUSTATUS_VBLANK_MASK;
+		CheckNMI();
+		SetA12(scroll.v & 0x1000); /* At the start of vblank, the bus address is set back to the video ram address. */
 		scanline_cycle = 2;
 		return;
 	}
@@ -393,24 +387,6 @@ u8 PPU::ReadRegister(u16 addr)
 
 	case Bus::Addr::PPUSTATUS: // $2002 (read-only)
 	{
-		/* From https://wiki.nesdev.org/w/index.php?title=PPU_frame_timing:
-		   Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior.
-		   Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame.
-		   Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame.
-		   Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, and doesn't affect NMI operation). */
-		if (scanline == standard.nmi_scanline)
-		{
-			/* Note: The PPU is always stepped after the CPU.
-			   If e.g. scanline_cycle == 1 during the call to ReadRegister, then the PPU has not yet updated for that cycle, so it hasn't trigger an NMI yet. */
-			switch (scanline_cycle)
-			{
-			case 0: do_not_set_vblank_flag_on_next_vblank = true; break;
-			case 1: suppress_nmi_on_next_vblank = true;           break;
-			case 2: nes->cpu->SetNMIHigh(); NMI_line = 1;         break;
-			default:                                              break;
-			}
-		}
-
 		const u8 ret = PPUSTATUS & 0xE0 | open_bus_io.Read(0x1F); /* Bits 4-0 are unused and then return bits 4-0 of open bus */
 		open_bus_io.UpdateValue(PPUSTATUS, 0xE0); /* Update bits 7-5 of open bus with the read value */
 		PPUSTATUS &= ~PPUSTATUS_VBLANK_MASK; /* Reading this register clears the vblank flag */
@@ -457,7 +433,7 @@ u8 PPU::ReadRegister(u16 addr)
 				open_bus_io.UpdateValue(ret, 0x3F); /* Update bits 5-0 of open bus with the read value */
 			}
 			scroll.v += (PPUCTRL_INCR_MODE ? 32 : 1);
-			set_a12(scroll.v & 0x1000);
+			SetA12(scroll.v & 0x1000);
 			return ret;
 		}
 		else
@@ -536,7 +512,7 @@ void PPU::WriteRegister(const u16 addr, const u8 data)
 		{
 			scroll.t = scroll.t & 0xFF00 | data; // Set the lower byte of 't' to 'data'
 			scroll.v = scroll.t;
-			set_a12(scroll.v & 0x1000);
+			SetA12(scroll.v & 0x1000);
 		}
 		scroll.w = !scroll.w;
 		break;
@@ -548,11 +524,12 @@ void PPU::WriteRegister(const u16 addr, const u8 data)
 		{
 			WriteMemory(scroll.v & 0x3FFF, data); // Only bits 0-13 of v are used; the PPU memory space is 14 bits wide.
 			scroll.v += (PPUCTRL_INCR_MODE ? 32 : 1);
-			set_a12(scroll.v & 0x1000);
+			SetA12(scroll.v & 0x1000);
 		}
 		else if ((scroll.v & 0x3FFF) >= 0x3F00)
 		{
 			WritePaletteRAM(scroll.v, data);
+			SetA12(scroll.v & 0x1000);
 			// Do not increment scroll.v
 		}
 		else
@@ -645,12 +622,6 @@ void PPU::WritePaletteRAM(u16 addr, u8 data)
 
 void PPU::CheckNMI()
 {
-	/* If PPUSTATUS was read on the same ppu cycle as the vblank flag is set, do not trigger an NMI. */
-	if (suppress_nmi_on_next_vblank && scanline_cycle == 1)
-	{
-		suppress_nmi_on_next_vblank = true;
-		return;
-	}
 	/* The PPU pulls /NMI low only if both PPUCTRL.7 and PPUSTATUS.7 are set.
 	   Do not call cpu->SetNMILow() if NMI is already low; this would cause multiple interrupts to be handled for the same signal. */
 	if (PPUCTRL_NMI_ENABLE && PPUSTATUS_VBLANK)
@@ -955,7 +926,7 @@ void PPU::UpdateBGTileFetching()
 		  ++----------------- Nametable base address ($2000)
 		*/
 		tile_fetcher.addr = 0x2000 | (scroll.v & 0xFFF);
-		set_a12(0);
+		SetA12(0);
 		break;
 
 	case 1: /* Fetch nametable byte. */
@@ -972,7 +943,7 @@ void PPU::UpdateBGTileFetching()
 		  ++------------------ Nametable base address ($2000)
 		*/
 		tile_fetcher.addr = 0x23C0 | (scroll.v & 0x0C00) | ((scroll.v >> 4) & 0x38) | ((scroll.v >> 2) & 0x07);
-		set_a12(0);
+		SetA12(0);
 		// Determine in which quadrant (0-3) of the 32x32 pixel metatile that the current tile is in
 		// topleft == 0, topright == 1, bottomleft == 2, bottomright = 3
 		// scroll-x % 4 and scroll-y % 4 give the "tile-coordinates" of the current tile in the metatile
@@ -996,7 +967,7 @@ void PPU::UpdateBGTileFetching()
 		*/
 		const u16 pattern_table_half = PPUCTRL_BG_TILE_SELECT ? 0x1000 : 0x0000;
 		tile_fetcher.addr = pattern_table_half | tile_fetcher.tile_num << 4 | scroll.v >> 12;
-		set_a12(pattern_table_half);
+		SetA12(pattern_table_half);
 		break;
 	}
 
@@ -1007,6 +978,7 @@ void PPU::UpdateBGTileFetching()
 	case 6: /* Compose address for pattern table tile high. This could be done in step 7 instead; it does not affect A12. */
 		// Technically, a game could change PPUCTRL_BG_TILE_SELECT here (?). What game would do that?
 		tile_fetcher.addr |= 0x0008;
+		SetA12(tile_fetcher.addr & 0x1000);
 		break;
 
 	case 7: /* Fetch pattern table tile high. */
@@ -1029,7 +1001,7 @@ void PPU::UpdateSpriteTileFetching()
 	switch (tile_fetcher.cycle_step++)
 	{
 	case 0: case 2: /* Prepare address for garbage nametable fetches. The important thing is to update A12. */
-		set_a12(PPUCTRL_BG_TILE_SELECT); // TODO: should PPUCTRL_SPRITE_TILE_SELECT be used instead? Probably not.
+		SetA12(PPUCTRL_BG_TILE_SELECT); // TODO: should PPUCTRL_SPRITE_TILE_SELECT be used instead? Probably not.
 		break;
 
 	case 1: case 3: /* Garbage nametable fetches. */
@@ -1081,7 +1053,7 @@ void PPU::UpdateSpriteTileFetching()
 		{
 			tile_fetcher.addr = (PPUCTRL_SPRITE_TILE_SELECT ? 0x1000 : 0x0000) | tile_fetcher.tile_num << 4 | sprite_row_num;
 		}
-		set_a12(tile_fetcher.addr & 0x1000);
+		SetA12(tile_fetcher.addr & 0x1000);
 		break;
 	}
 
@@ -1089,8 +1061,9 @@ void PPU::UpdateSpriteTileFetching()
 		tile_fetcher.pattern_table_tile_low = nes->mapper->ReadCHR(tile_fetcher.addr);
 		break;
 
-	case 6: /* Compose address for pattern table tile high. This could be done in step 7 instead; it does not affect A12. */
+	case 6: /* Compose address for pattern table tile high. This could be done in step 7 instead. */
 		tile_fetcher.addr |= 0x0008;
+		SetA12(tile_fetcher.addr & 0x1000);
 		break;
 
 	case 7: /* Fetch pattern table tile high. */
@@ -1106,45 +1079,48 @@ void PPU::UpdateSpriteTileFetching()
 // Reading and writing done internally by the ppu
 u8 PPU::ReadMemory(const u16 addr)
 {
-	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
-	if (addr <= 0x1FFF)
+	switch (addr >> 12)
 	{
+	case 0: case 1: // $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 		return nes->mapper->ReadCHR(addr);
-	}
-	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
-	else if (addr <= 0x3EFF)
-	{
+
+	case 2: // $2000-$2FFF - Nametables; internal ppu vram.
 		return nes->mapper->ReadNametableRAM(addr);
-	}
-	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
-	else if (addr <= 0x3FFF)
-	{
-		return ReadPaletteRAM(addr);
-	}
-	else
+
+	case 3:
+		if (addr < 0x3F00) // $3000-$3EFF - mirror of $2000-$2EFF
+			return nes->mapper->ReadNametableRAM(addr);
+		else
+			return ReadPaletteRAM(addr); // $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
+
+	default:
 		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::ReadMemory(u16, u8). The range is $0000-$3FFF.", addr));
+	}
 }
 
 
 void PPU::WriteMemory(const u16 addr, const u8 data)
 {
-	// $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
-	if (addr <= 0x1FFF)
+	switch (addr >> 12)
 	{
+	case 0: case 1: // $0000-$1FFF - Pattern tables; maps to CHR ROM/RAM on the game cartridge
 		nes->mapper->WriteCHR(addr, data);
-	}
-	// $2000-$2FFF - Nametables; internal ppu vram. $3000-$3EFF - mirror of $2000-$2EFF
-	else if (addr <= 0x3EFF)
-	{
+		break;
+
+	case 2: // $2000-$2FFF - Nametables; internal ppu vram.
 		nes->mapper->WriteNametableRAM(addr, data);
+		break;
+
+	case 3:
+		if (addr < 0x3F00) // $3000-$3EFF - mirror of $2000-$2EFF
+			nes->mapper->WriteNametableRAM(addr, data);
+		else
+			WritePaletteRAM(addr, data); // $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
+		break;
+
+	default:
+		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::ReadMemory(u16, u8). The range is $0000-$3FFF.", addr));
 	}
-	// $3F00-$3F1F - Palette RAM indeces. $3F20-$3FFF - mirrors of $3F00-$3F1F
-	else if (addr <= 0x3FFF)
-	{
-		WritePaletteRAM(addr, data);
-	}
-	else
-		throw std::runtime_error(std::format("Invalid address ${:X} given as argument to PPU::WriteMemory(u16, u8). The range is $0000-$3FFF.", addr));
 }
 
 
@@ -1196,12 +1172,10 @@ void PPU::StreamState(SerializationStream& stream)
 	stream.StreamPrimitive(cpu_cycles_since_a12_set_low);
 
 	stream.StreamPrimitive(cycle_340_was_skipped_on_last_scanline);
-	stream.StreamPrimitive(do_not_set_vblank_flag_on_next_vblank);
 	stream.StreamPrimitive(NMI_line);
 	stream.StreamPrimitive(odd_frame);
 	stream.StreamPrimitive(reset_graphics_after_render);
 	stream.StreamPrimitive(set_sprite_0_hit_flag);
-	stream.StreamPrimitive(suppress_nmi_on_next_vblank);
 
 	stream.StreamPrimitive(pixel_x_pos);
 	stream.StreamPrimitive(PPUCTRL);
