@@ -89,10 +89,10 @@ void MainWindow::SwitchToMenuView()
 {
 	SDL_window_panel->Hide();
 	game_list_box->Show();
+	game_view_active = false;
 	SetClientSize(default_client_size);
 	UpdateWindowLabel(false);
 	menu_emulation->SetLabel(MenuBarID::pause_play, wxT("&Pause"));
-	game_view_active = false;
 }
 
 
@@ -101,11 +101,11 @@ void MainWindow::SwitchToGameView()
 	game_list_box->Hide();
 	SDL_window_panel->Show();
 	SDL_window_panel->SetFocus();
+	game_view_active = true;
 	wxSize SDL_window_size = wxSize(emulator.GetWindowWidth(), emulator.GetWindowHeight());
 	SDL_window_panel->SetSize(SDL_window_size);
 	SetClientSize(SDL_window_size);
 	UpdateWindowLabel(true);
-	game_view_active = true;
 }
 
 
