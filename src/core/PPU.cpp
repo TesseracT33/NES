@@ -202,7 +202,7 @@ void PPU::Update()
 
 void PPU::StepCycle()
 {
-	if (set_sprite_0_hit_flag && scanline_cycle >= 2) // todo: not sure if this should be at the end of this function instead
+	if (set_sprite_0_hit_flag && scanline_cycle >= 2)
 	{
 		PPUSTATUS |= PPUSTATUS_SPRITE_0_HIT_MASK;
 		set_sprite_0_hit_flag = false;
@@ -212,7 +212,8 @@ void PPU::StepCycle()
 		// Idle cycle on every scanline, except for if cycle 340 on the previous scanline was skipped. Then, we perform another dummy nametable fetch.
 		if (cycle_340_was_skipped_on_last_scanline)
 		{
-			UpdateBGTileFetching();
+			if (RENDERING_IS_ENABLED)
+				UpdateBGTileFetching();
 			cycle_340_was_skipped_on_last_scanline = false;
 		}
 		scanline_cycle = 1;
@@ -230,9 +231,9 @@ void PPU::StepCycle()
 		{
 			// The shifters are reloaded during ticks 9, 17, 25, ..., 257, i.e., if tile_fetch_cycle_step == 0 && scanline_cycle >= 9
 			// They are only reloaded on visible scanlines.
-			if (tile_fetcher.cycle_step == 0 && scanline_cycle >= 9 && scanline != pre_render_scanline) // TODO: have within RENDERING_IS_ENABLED?
+			if (tile_fetcher.cycle_step == 0 && scanline_cycle >= 9 && scanline != pre_render_scanline)
 				ReloadBackgroundShiftRegisters();
-			// Update the BG tile fetching every cycle.
+			// Update the BG tile fetching every cycle (if rendering is enabled).s
 			// Although no pixels are rendered on the pre-render scanline, the PPU still makes the same memory accesses it would for a regular scanline.
 			if (rendering_is_enabled)
 				UpdateBGTileFetching();
@@ -274,25 +275,28 @@ void PPU::StepCycle()
 			//    Note: All of this can be done on cycle 0, as none of this data is used until cycle 5 at the earliest (some of it is not used until the next scanline).
 			// On each cycle, update the sprite tile fetching.
 			// On cycle 8 (i.e. the cycle after each period: 265, 273, ..., 321), update the sprite shift registers with pattern data.
-			if (tile_fetcher.cycle_step == 0)
+			if (rendering_is_enabled)
 			{
-				tile_fetcher.sprite_y_pos                          = secondary_oam[4 * secondary_oam_sprite_index    ];
-				tile_fetcher.tile_num                              = secondary_oam[4 * secondary_oam_sprite_index + 1];
-				tile_fetcher.sprite_attr                           = secondary_oam[4 * secondary_oam_sprite_index + 2];
-				sprite_attribute_latch[secondary_oam_sprite_index] = secondary_oam[4 * secondary_oam_sprite_index + 2];
-				sprite_x_pos_counter  [secondary_oam_sprite_index] = secondary_oam[4 * secondary_oam_sprite_index + 3];
+				if (tile_fetcher.cycle_step == 0)
+				{
+					tile_fetcher.sprite_y_pos                          = secondary_oam[4 * secondary_oam_sprite_index];
+					tile_fetcher.tile_num                              = secondary_oam[4 * secondary_oam_sprite_index + 1];
+					tile_fetcher.sprite_attr                           = secondary_oam[4 * secondary_oam_sprite_index + 2];
+					sprite_attribute_latch[secondary_oam_sprite_index] = secondary_oam[4 * secondary_oam_sprite_index + 2];
+					sprite_x_pos_counter[secondary_oam_sprite_index]   = secondary_oam[4 * secondary_oam_sprite_index + 3];
 
-				if (scanline_cycle >= 265)
-					ReloadSpriteShiftRegisters(secondary_oam_sprite_index - 1); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 1.
+					if (scanline_cycle >= 265)
+						ReloadSpriteShiftRegisters(secondary_oam_sprite_index - 1); // Once we've hit this point for the first time, it's time to update for sprite 0, but sprite_index will be 1.
 
-				secondary_oam_sprite_index++;
-			}
-			UpdateSpriteTileFetching();
+					secondary_oam_sprite_index++;
+				}
+				UpdateSpriteTileFetching();
 
-			if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304 && rendering_is_enabled)
-			{
-				// Copy the vertical bits of t to v
-				scroll.v = scroll.v & ~0x7BE0 | scroll.t & 0x7BE0;
+				if (scanline == pre_render_scanline && scanline_cycle >= 280 && scanline_cycle <= 304)
+				{
+					// Copy the vertical bits of t to v
+					scroll.v = scroll.v & ~0x7BE0 | scroll.t & 0x7BE0;
+				}
 			}
 		}
 		else // Cycles 321-340
@@ -791,6 +795,8 @@ void PPU::ResetGraphics()
 
 void PPU::ShiftPixel()
 {
+	/* TODO: not clear if pixel colours should be 0 if rendering is disabled */
+
 	// Fetch one bit from each of the two bg shift registers containing pattern table data for the current tile, forming the colour id for the current bg pixel.
 	// If the PPUMASK_bg_left_col_enable flag is not set, then the background is not rendered in the leftmost 8 pixel columns.
 	const u8 bg_col_id = [&]() {
