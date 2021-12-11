@@ -469,7 +469,7 @@ private:
 	}
 
 	/// Debugging-related
-	enum class Action { Instruction, NMI };
+	enum class Action { Instruction, NMI, IRQ };
 	void LogStateBeforeAction(Action action);
 };
 

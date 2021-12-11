@@ -273,6 +273,8 @@ void CPU::ServiceInterrupt(const InterruptType asserted_interrupt_type)
 #ifdef DEBUG
 	if (asserted_interrupt_type == InterruptType::NMI)
 		LogStateBeforeAction(Action::NMI);
+	else if (asserted_interrupt_type == InterruptType::IRQ)
+		LogStateBeforeAction(Action::IRQ);
 #endif
 
 	/* IRQ and NMI tick-by-tick execution
@@ -1185,7 +1187,15 @@ void CPU::StreamState(SerializationStream& stream)
 
 void CPU::LogStateBeforeAction(Action action)
 {
-	bool nmi = action == Action::NMI;
-	Logging::ReportCpuState(A, X, Y, GetStatusRegInterrupt(), curr_instr.opcode, SP, PC - 1, total_cpu_cycle_counter - 1, nmi);
+	Logging::cpu_state.A = A;
+	Logging::cpu_state.X = X;
+	Logging::cpu_state.Y = Y;
+	Logging::cpu_state.P = GetStatusRegInterrupt() & ~0x20; // Mesen always outputs bit 5 as 0 in the log
+	Logging::cpu_state.opcode = curr_instr.opcode;
+	Logging::cpu_state.SP = SP;
+	Logging::cpu_state.PC = PC - 1;
+	Logging::cpu_state.cpu_cycle_counter = total_cpu_cycle_counter;
+	Logging::cpu_state.NMI = action == Action::NMI;
+	Logging::cpu_state.IRQ = action == Action::IRQ;
 	nes->bus->update_logging_on_next_cycle = true;
 }

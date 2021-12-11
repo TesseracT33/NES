@@ -11,33 +11,6 @@ Logging::CPUState Logging::cpu_state{};
 Logging::PPUState Logging::ppu_state{};
 
 
-void Logging::ReportApuState()
-{
-	// todo
-}
-
-
-void Logging::ReportCpuState(u8 A, u8 X, u8 Y, u8 P, u8 opcode, u16 SP, u16 PC, unsigned cpu_cycle_counter, bool NMI)
-{
-	Logging::cpu_state.NMI = NMI;
-	Logging::cpu_state.A = A;
-	Logging::cpu_state.X = X;
-	Logging::cpu_state.Y = Y;
-	Logging::cpu_state.P = P & ~0x20; // Mesen always outputs bit 5 as 0 in the log
-	Logging::cpu_state.opcode = opcode;
-	Logging::cpu_state.SP = SP;
-	Logging::cpu_state.PC = PC;
-	Logging::cpu_state.cpu_cycle_counter = cpu_cycle_counter;
-}
-
-
-void Logging::ReportPpuState(unsigned scanline, unsigned ppu_cycle_counter)
-{
-	Logging::ppu_state.scanline = scanline;
-	Logging::ppu_state.ppu_cycle_counter = ppu_cycle_counter;
-}
-
-
 void Logging::Update()
 {
 #ifdef DEBUG_LOG
@@ -95,7 +68,12 @@ void Logging::LogLine()
 {
 	if (cpu_state.NMI)
 	{
-		log_ofs << "<<< NMI handled >>>" << std::endl;
+		log_ofs << "<<< NMI handled >>>" << '\n';
+		return;
+	}
+	if (cpu_state.IRQ)
+	{
+		log_ofs << "<<< IRQ handled >>>" << '\n';
 		return;
 	}
 
@@ -104,13 +82,7 @@ void Logging::LogLine()
 		cpu_state.cpu_cycle_counter, cpu_state.PC, cpu_state.opcode, cpu_state.SP,
 		cpu_state.A, cpu_state.X, cpu_state.Y, cpu_state.P, ppu_state.scanline, ppu_state.ppu_cycle_counter);
 
-	log_ofs << output << std::endl;
-}
-
-
-void Logging::LogNMILine()
-{
-	log_ofs << "NMI handled" << std::endl;
+	log_ofs << output << '\n';
 }
 #endif
 
@@ -147,6 +119,20 @@ void Logging::CompareMesenLogLine()
 #ifdef DEBUG_COMPARE_MESEN_NMI
 	else if (cpu_state.NMI)
 		UserMessage::Show(std::format("Did not expect an NMI at line {}.", line_counter), UserMessage::Type::Warning);
+#endif
+
+	// Check whether an IRQ occured here
+	if (current_line.find("IRQ") != std::string::npos)
+	{
+#ifdef DEBUG_COMPARE_MESEN_IRQ
+		if (!cpu_state.IRQ)
+			UserMessage::Show(std::format("Expected an IRQ at line {}.", line_counter), UserMessage::Type::Warning);
+#endif
+		return;
+	}
+#ifdef DEBUG_COMPARE_MESEN_IRQ
+	else if (cpu_state.IRQ)
+		UserMessage::Show(std::format("Did not expect an IRQ at line {}.", line_counter), UserMessage::Type::Warning);
 #endif
 
 	// Test PC

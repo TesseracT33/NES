@@ -1255,5 +1255,6 @@ void PPU::SetDefaultConfig()
 
 void PPU::LogState()
 {
-	Logging::ReportPpuState(scanline, scanline_cycle);
+	Logging::ppu_state.scanline = scanline;
+	Logging::ppu_state.ppu_cycle_counter = scanline_cycle;
 }
