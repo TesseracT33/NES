@@ -111,12 +111,6 @@ bool Emulator::SetupSDLVideo(const void* window_handle)
 }
 
 
-void Emulator::SetEmulationSpeed(unsigned speed)
-{
-	/* Currently unimplemented due to the fact that the emulator now is synced to audio. */
-}
-
-
 /* Returns true on success, otherwise false. */
 bool Emulator::PrepareLaunchOfGame(const std::string& rom_path)
 {

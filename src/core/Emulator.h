@@ -28,7 +28,6 @@ public:
 	Emulator();
 
 	bool emu_is_paused = false, emu_is_running = false;
-	bool emulation_speed_uncapped = false;
 
 	Observer* gui;
 
@@ -45,7 +44,6 @@ public:
 	void AddObserver(Observer* observer);
 	bool SetupSDLVideo(const void* window_handle);
 
-	void SetEmulationSpeed(unsigned speed);
 	void SetWindowScale(unsigned scale) { nes.ppu->SetWindowScale(scale); }
 	void SetWindowSize(unsigned width, unsigned height) { nes.ppu->SetWindowSize(width, height); }
 
@@ -53,7 +51,12 @@ public:
 	unsigned GetWindowHeight() const { return nes.ppu->GetWindowHeight(); }
 	unsigned GetWindowWidth() const { return nes.ppu->GetWindowWidth(); }
 
-	std::vector<Configurable*> GetConfigurableComponents() { return { nes.joypad.get(), nes.ppu.get() }; }
+	/* Currently, audio being enabled corresponds to capped framerate */
+	bool FramerateIsCapped() { return nes.apu->AudioIsEnabled(); }
+	void CapFramerate() { nes.apu->EnableAudio(); }
+	void UncapFramerate() { nes.apu->DisableAudio(); }
+
+	std::vector<Configurable*> GetConfigurableComponents() { return { nes.apu.get(), nes.joypad.get(), nes.ppu.get() }; }
 
 private:
 	const std::string save_state_path_postfix = "_SAVE_STATE.bin";

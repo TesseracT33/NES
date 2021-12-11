@@ -21,11 +21,16 @@ public:
 	void PowerOn(const System::VideoStandard standard);
 	void Reset();
 	void Update();
-
 	u8 ReadRegister(const u16 addr);
 	void WriteRegister(const u16 addr, const u8 data);
 
+	bool AudioIsEnabled() const;
+	void EnableAudio();
+	void DisableAudio();
+
 	void StreamState(SerializationStream& stream) override;
+	void StreamConfig(SerializationStream& stream) override;
+	void SetDefaultConfig() override;
 
 private:
 	static constexpr u8 dmc_rate_table_ntsc[16] = {
@@ -324,6 +329,10 @@ private:
 	std::array<f32, sample_buffer_size> sample_buffer{};
 
 	std::chrono::steady_clock::time_point last_audio_enqueue_time_point = std::chrono::steady_clock::now();
+
+	/* Settings-related */
+	const bool default_audio_is_enabled = true;
+	bool audio_is_enabled = default_audio_is_enabled;
 
 	void SetFrameCounterIRQLow()
 	{

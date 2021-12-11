@@ -1,6 +1,23 @@
 #include "APU.h"
 
 
+bool APU::AudioIsEnabled() const
+{
+	return audio_is_enabled;
+}
+
+
+void APU::EnableAudio()
+{
+	audio_is_enabled = true;
+}
+
+void APU::DisableAudio()
+{
+	audio_is_enabled = false;
+}
+
+
 void APU::PowerOn(const System::VideoStandard standard)
 {
 	SDL_AudioSpec desired_spec;
@@ -650,11 +667,14 @@ void APU::SampleAndMix()
 
 	if (sample_buffer_index == sample_buffer_size)
 	{
-		while (std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < nanoseconds_per_audio_enqueue);
+		if (audio_is_enabled) /* TODO: disable updating of the APU entirely when audio is disabled? */
+		{
+			while (std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now() - last_audio_enqueue_time_point).count() < nanoseconds_per_audio_enqueue);
 
-		last_audio_enqueue_time_point = std::chrono::steady_clock::now(); /* TODO: improve accuracy by using the last ::now() in the while loop */
-		SDL_QueueAudio(audio_device_id, sample_buffer.data(), sample_buffer_size * sizeof(f32));
+			last_audio_enqueue_time_point = std::chrono::steady_clock::now(); /* TODO: improve accuracy by using the last ::now() in the while loop */
+			SDL_QueueAudio(audio_device_id, sample_buffer.data(), sample_buffer_size * sizeof(f32));
+		}
 		sample_buffer_index = 0;
 	}
 }
@@ -678,5 +698,16 @@ void APU::StreamState(SerializationStream& stream)
 	stream.StreamPrimitive(sample_buffer_index);
 
 	stream.StreamArray(sample_buffer);
-	/* TODO: last_audio_enqueue_time_point? */
+}
+
+
+void APU::StreamConfig(SerializationStream& stream)
+{
+	stream.StreamPrimitive(audio_is_enabled);
+}
+
+
+void APU::SetDefaultConfig()
+{
+	audio_is_enabled = default_audio_is_enabled;
 }

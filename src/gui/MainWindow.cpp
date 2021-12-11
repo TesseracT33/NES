@@ -12,6 +12,7 @@ wxBEGIN_EVENT_TABLE(MainWindow, wxFrame)
 	EVT_MENU(MenuBarID::stop, MainWindow::OnMenuStop)
 	EVT_MENU(MenuBarID::size_1x, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_2x, MainWindow::OnMenuSize)
+	EVT_MENU(MenuBarID::size_3x, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_4x, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_6x, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_8x, MainWindow::OnMenuSize)
@@ -21,16 +22,8 @@ wxBEGIN_EVENT_TABLE(MainWindow, wxFrame)
 	EVT_MENU(MenuBarID::size_custom, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_maximized, MainWindow::OnMenuSize)
 	EVT_MENU(MenuBarID::size_fullscreen, MainWindow::OnMenuSize)
-	EVT_MENU(MenuBarID::speed_50, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_75, MainWindow::OnMenuSpeed)
 	EVT_MENU(MenuBarID::speed_100, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_125, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_150, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_200, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_300, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_500, MainWindow::OnMenuSpeed)
 	EVT_MENU(MenuBarID::speed_uncapped, MainWindow::OnMenuSpeed)
-	EVT_MENU(MenuBarID::speed_custom, MainWindow::OnMenuSpeed)
 	EVT_MENU(MenuBarID::input, MainWindow::OnMenuInput)
 	EVT_MENU(MenuBarID::toggle_filter_nes_files, MainWindow::OnMenuToggleFilterFiles)
 	EVT_MENU(MenuBarID::reset_settings, MainWindow::OnMenuResetSettings)
@@ -192,6 +185,7 @@ void MainWindow::CreateMenuBar()
 
 	menu_size->AppendRadioItem(MenuBarID::size_1x, FormatSizeMenubarLabel(1));
 	menu_size->AppendRadioItem(MenuBarID::size_2x, FormatSizeMenubarLabel(2));
+	menu_size->AppendRadioItem(MenuBarID::size_3x, FormatSizeMenubarLabel(3));
 	menu_size->AppendRadioItem(MenuBarID::size_4x, FormatSizeMenubarLabel(4));
 	menu_size->AppendRadioItem(MenuBarID::size_6x, FormatSizeMenubarLabel(6));
 	menu_size->AppendRadioItem(MenuBarID::size_8x, FormatSizeMenubarLabel(8));
@@ -204,16 +198,8 @@ void MainWindow::CreateMenuBar()
 	menu_size->Append(MenuBarID::size_fullscreen, wxT("&Toggle fullscreen (F11)"));
 	menu_settings->AppendSubMenu(menu_size, wxT("&Window size"));
 
-	menu_speed->AppendRadioItem(MenuBarID::speed_50, FormatSpeedMenubarLabel(50));
-	menu_speed->AppendRadioItem(MenuBarID::speed_75, FormatSpeedMenubarLabel(75));
 	menu_speed->AppendRadioItem(MenuBarID::speed_100, FormatSpeedMenubarLabel(100));
-	menu_speed->AppendRadioItem(MenuBarID::speed_125, FormatSpeedMenubarLabel(125));
-	menu_speed->AppendRadioItem(MenuBarID::speed_150, FormatSpeedMenubarLabel(150));
-	menu_speed->AppendRadioItem(MenuBarID::speed_200, FormatSpeedMenubarLabel(200));
-	menu_speed->AppendRadioItem(MenuBarID::speed_300, FormatSpeedMenubarLabel(300));
-	menu_speed->AppendRadioItem(MenuBarID::speed_500, FormatSpeedMenubarLabel(500));
-	menu_speed->AppendRadioItem(MenuBarID::speed_uncapped, wxT("&Uncapped"));
-	menu_speed->AppendRadioItem(MenuBarID::speed_custom, wxT("&Custom"));
+	menu_speed->AppendRadioItem(MenuBarID::speed_uncapped, wxT("&Uncapped (no audio)"));
 	menu_settings->AppendSubMenu(menu_speed, wxT("&Emulation speed"));
 
 	menu_settings->Append(MenuBarID::input, wxT("&Configure input bindings"));
@@ -272,24 +258,13 @@ void MainWindow::ApplyGUISettings()
 		menu_size->Check(menu_id, true);
 	}
 
-	if (emulator.emulation_speed_uncapped)
+	if (emulator.FramerateIsCapped())
 	{
-		menu_speed->Check(MenuBarID::speed_uncapped, true);
+		menu_speed->Check(MenuBarID::speed_100, true);
 	}
 	else
 	{
-		/* Changing of speed is unimplemented */
-		//unsigned speed = emulator.emulation_speed;
-		//menu_id = GetIdOfSpeedMenubarItem(speed);
-		//if (menu_id == wxNOT_FOUND)
-		//{
-		//	menu_speed->Check(MenuBarID::speed_custom, true);
-		//	menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
-		//}
-		//else
-		//{
-		//	menu_speed->Check(menu_id, true);
-		//}
+		menu_speed->Check(MenuBarID::speed_uncapped, true);
 	}
 }
 
@@ -479,51 +454,16 @@ void MainWindow::OnMenuSize(wxCommandEvent& event)
 
 void MainWindow::OnMenuSpeed(wxCommandEvent& event)
 {
-	// Reset the label of the 'custom' speed option
-	if (menu_speed->IsEnabled(MenuBarID::speed_custom))
-		menu_speed->SetLabel(MenuBarID::speed_custom, "Custom");
-
 	int id = event.GetId();
 	int speed = GetSpeedFromMenuBarID(id);
 
-	if (speed != PRESPECIFIED_SPEED_NOT_FOUND)
+	if (speed != PRESPECIFIED_SPEED_NOT_FOUND) // At the moment, can only be 100 % speed
 	{
-		emulator.SetEmulationSpeed(speed);
-		emulator.emulation_speed_uncapped = false;
+		emulator.CapFramerate();
 	}
-	else if (id == MenuBarID::speed_uncapped)
+	else // id == MenuBarID::speed_uncapped
 	{
-		emulator.emulation_speed_uncapped = true;
-	}
-	else // custom speed
-	{
-		wxTextEntryDialog* textEntryDialog = new wxTextEntryDialog(this,
-			"This will be the emulation speed in %.", "Enter a positive integer.",
-			wxEmptyString, wxTextEntryDialogStyle, wxDefaultPosition);
-		textEntryDialog->SetTextValidator(wxFILTER_DIGITS);
-
-		int buttonPressed = textEntryDialog->ShowModal();
-		wxString input = textEntryDialog->GetValue();
-		textEntryDialog->Destroy();
-
-		if (buttonPressed == wxID_CANCEL)
-		{
-			// at this time, the 'custom' option has been checked in the menubar
-			// calling the below function restores the menu to what is was before the event was propogated
-			ApplyGUISettings();
-			return;
-		}
-
-		speed = wxAtoi(input);
-		if (speed <= 0)
-		{
-			UserMessage::Show("Please enter a valid speed value (> 0 %).", UserMessage::Type::Error);
-			ApplyGUISettings();
-			return;
-		}
-		emulator.SetEmulationSpeed(speed);
-		emulator.emulation_speed_uncapped = false;
-		menu_speed->SetLabel(MenuBarID::speed_custom, FormatCustomSpeedMenubarLabel(speed));
+		emulator.UncapFramerate();
 	}
 
 	config.Save();
@@ -532,6 +472,7 @@ void MainWindow::OnMenuSpeed(wxCommandEvent& event)
 
 void MainWindow::OnMenuInput(wxCommandEvent& event)
 {
+	/* Currently disabled */
 	//if (!input_window_active)
 	//	input_bindings_window = new InputBindingsWindow(this, &config, &emulator.joypad, &input_window_active);
 	//input_bindings_window->Show();
@@ -756,6 +697,7 @@ int MainWindow::GetSizeFromMenuBarID(int id) const
 	{
 	case MenuBarID::size_1x: return 1;
 	case MenuBarID::size_2x: return 2;
+	case MenuBarID::size_3x: return 3;
 	case MenuBarID::size_4x: return 4;
 	case MenuBarID::size_6x: return 6;
 	case MenuBarID::size_8x: return 8;
@@ -771,14 +713,7 @@ int MainWindow::GetSpeedFromMenuBarID(int id) const
 {
 	switch (id)
 	{
-	case MenuBarID::speed_50:  return 50;
-	case MenuBarID::speed_75:  return 75;
 	case MenuBarID::speed_100: return 100;
-	case MenuBarID::speed_125: return 125;
-	case MenuBarID::speed_150: return 150;
-	case MenuBarID::speed_200: return 200;
-	case MenuBarID::speed_300: return 300;
-	case MenuBarID::speed_500: return 500;
 	default: return PRESPECIFIED_SPEED_NOT_FOUND;
 	}
 }

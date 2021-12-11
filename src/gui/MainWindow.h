@@ -39,6 +39,7 @@ private:
 		stop,
 		size_1x,
 		size_2x,
+		size_3x,
 		size_4x,
 		size_6x,
 		size_8x,
@@ -48,16 +49,8 @@ private:
 		size_custom,
 		size_maximized,
 		size_fullscreen,
-		speed_50,
-		speed_75,
 		speed_100,
-		speed_125,
-		speed_150,
-		speed_200,
-		speed_300,
-		speed_500,
 		speed_uncapped,
-		speed_custom,
 		sound_off,
 		input,
 		toggle_filter_nes_files,
@@ -83,8 +76,8 @@ private:
 	// however, no other code in GUI.h or GUI.cpp will need to be changed
 	const int size_id_min = MenuBarID::size_1x;
 	const int size_id_max = MenuBarID::size_15x;
-	const int speed_id_min = MenuBarID::speed_50;
-	const int speed_id_max = MenuBarID::speed_500;
+	const int speed_id_min = MenuBarID::speed_100;
+	const int speed_id_max = MenuBarID::speed_100;
 	int GetSizeFromMenuBarID(int id) const;
 	int GetSpeedFromMenuBarID(int id) const;
 
