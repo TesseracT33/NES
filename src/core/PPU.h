@@ -48,7 +48,7 @@ public:
 	u8 ReadRegister(u16 addr);
 	void WriteRegister(u16 addr, u8 data);
 
-	void SetWindowScale(unsigned scale) { this->window_scale = scale; }
+	void SetWindowScale(unsigned scale);
 	void SetWindowSize(unsigned width, unsigned height);
 
 	void StreamState(SerializationStream& stream) override;

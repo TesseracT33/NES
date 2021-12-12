@@ -812,44 +812,52 @@ void PPU::ShiftPixel()
 	// The current pixel for each 'active' sprite is checked, and the first non-transparent pixel moves on to a multiplexer, where it joins the BG pixel.
 	u8 sprite_col_id = 0;
 	u8 sprite_index = 0; // (0-7)
-	bool opaque_pixel_found = false;
-	for (int i = 0; i < 8; i++)
+	if (PPUMASK_SPRITE_ENABLE)
 	{
-		bool sprite_is_in_range = sprite_x_pos_counter[i] <= 0 && sprite_x_pos_counter[i] > -8;
-		if (sprite_is_in_range)
+		bool opaque_pixel_found = false;
+		for (int i = 0; i < 8; i++)
 		{
-			// If the PPUMASK_sprite_left_col_enable flag is not set, then sprites are not rendered in the leftmost 8 pixel columns.
-			if (!opaque_pixel_found && PPUMASK_SPRITE_ENABLE && (pixel_x_pos >= 8 || PPUMASK_SPRITE_LEFT_COL_ENABLE))
+			bool sprite_is_in_range = sprite_x_pos_counter[i] <= 0 && sprite_x_pos_counter[i] > -8;
+			if (sprite_is_in_range)
 			{
-				u8 offset = -sprite_x_pos_counter[i]; // Which pixel of the sprite line to render.
-				if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
-					offset = 7 - offset;
-
-				const u8 col_id = ((sprite_pattern_shift_reg[2 * i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[2 * i + 1] << offset) & 0x80) >> 6;
-				if (col_id != 0)
+				// If the PPUMASK_sprite_left_col_enable flag is not set, then sprites are not rendered in the leftmost 8 pixel columns.
+				if (!opaque_pixel_found && (pixel_x_pos >= 8 || PPUMASK_SPRITE_LEFT_COL_ENABLE))
 				{
-					sprite_col_id = col_id;
-					sprite_index = i;
-					opaque_pixel_found = true;
+					u8 offset = -sprite_x_pos_counter[i]; // Which pixel of the sprite line to render.
+					if (sprite_attribute_latch[i] & 0x40) // flip sprite horizontally 
+						offset = 7 - offset;
+
+					const u8 col_id = ((sprite_pattern_shift_reg[2 * i] << offset) & 0x80) >> 7 | ((sprite_pattern_shift_reg[2 * i + 1] << offset) & 0x80) >> 6;
+					if (col_id != 0)
+					{
+						sprite_col_id = col_id;
+						sprite_index = i;
+						opaque_pixel_found = true;
+					}
 				}
 			}
+			sprite_x_pos_counter[i]--;
 		}
-		sprite_x_pos_counter[i]--;
-	}
 
-	// Set the sprite zero hit flag if all conditions below are met
-	if (!PPUSTATUS_SPRITE_0_HIT                                                              && // The flag has not already been set this frame
-		sprite_evaluation.sprite_0_included_current_scanline && sprite_index == 0            && // The current sprite is the 0th sprite in OAM
-		bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
-		PPUMASK_BG_ENABLE && PPUMASK_SPRITE_ENABLE                                           && // Both bg and sprite rendering must be enabled
-		(pixel_x_pos >= 8 || (PPUMASK_BG_LEFT_COL_ENABLE && PPUMASK_SPRITE_LEFT_COL_ENABLE)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
-		pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
+		// Set the sprite zero hit flag if all conditions below are met. Sprites must be enabled.
+		if (!PPUSTATUS_SPRITE_0_HIT                                                              && // The flag has not already been set this frame
+			sprite_evaluation.sprite_0_included_current_scanline && sprite_index == 0            && // The current sprite is the 0th sprite in OAM
+			bg_col_id != 0 && sprite_col_id != 0                                                 && // The bg and sprite colour IDs are not 0, i.e. both pixels are opaque
+			PPUMASK_BG_ENABLE                                                                    && // Both bg and sprite rendering must be enabled
+			(pixel_x_pos >= 8 || (PPUMASK_BG_LEFT_COL_ENABLE && PPUMASK_SPRITE_LEFT_COL_ENABLE)) && // If the pixel-x-pos is between 0 and 7, the left-side clipping window must be disabled for both bg tiles and sprites.
+			pixel_x_pos != 255)                                                                     // The pixel-x-pos must not be 255
+		{
+			// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
+			if (scanline_cycle >= 2)
+				PPUSTATUS |= PPUSTATUS_SPRITE_0_HIT_MASK;
+			else
+				set_sprite_0_hit_flag = true;
+		}
+	}
+	else
 	{
-		// Due to how internal rendering works, the sprite 0 hit flag will be set at the third tick of a scanline at the earliest.
-		if (scanline_cycle >= 2)
-			PPUSTATUS |= PPUSTATUS_SPRITE_0_HIT_MASK;
-		else
-			set_sprite_0_hit_flag = true;
+		for (int i = 0; i < 8; i++)
+			sprite_x_pos_counter[i]--;
 	}
 
 	// Mix the bg and sprite pixels, and get an actual NES color from the color id and palette attribute data
@@ -1151,6 +1159,12 @@ void PPU::PrepareForNewScanline()
 	pixel_x_pos = 0;
 	sprite_evaluation.sprite_0_included_current_scanline = sprite_evaluation.sprite_0_included_next_scanline;
 	sprite_evaluation.sprite_0_included_next_scanline = false;
+}
+
+
+void PPU::SetWindowScale(const unsigned scale)
+{
+	this->window_scale = scale;
 }
 
 
