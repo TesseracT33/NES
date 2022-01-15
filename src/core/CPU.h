@@ -258,7 +258,8 @@ private:
 	void ExecIndexedIndirect();
 	void ExecIndirectIndexed();
 
-	void ServiceInterrupt(InterruptType asserted_interrupt_type);
+	template<InterruptType asserted_interrupt_type>
+	void ServiceInterrupt();
 
 	// official instructions
 	void ADC();

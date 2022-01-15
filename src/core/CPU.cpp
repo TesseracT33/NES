@@ -82,9 +82,9 @@ void CPU::Run()
 			// Check for pending interrupts (NMI and IRQ); NMI has higher priority than IRQ
 			// Interrupts are only polled after executing an instruction; multiple interrupts cannot be serviced in a row
 			if (polled_need_NMI)
-				ServiceInterrupt(InterruptType::NMI);
+				ServiceInterrupt<InterruptType::NMI>();
 			else if (polled_need_IRQ && !flags.I)
-				ServiceInterrupt(InterruptType::IRQ);
+				ServiceInterrupt<InterruptType::IRQ>();
 		}
 	}
 }
@@ -268,12 +268,13 @@ void CPU::ExecIndirectIndexed()
 }
 
 
-void CPU::ServiceInterrupt(const InterruptType asserted_interrupt_type)
+template<CPU::InterruptType asserted_interrupt_type>
+void CPU::ServiceInterrupt()
 {
 #ifdef DEBUG
-	if (asserted_interrupt_type == InterruptType::NMI)
+	if constexpr (asserted_interrupt_type == InterruptType::NMI)
 		LogStateBeforeAction(Action::NMI);
-	else if (asserted_interrupt_type == InterruptType::IRQ)
+	else if constexpr (asserted_interrupt_type == InterruptType::IRQ)
 		LogStateBeforeAction(Action::IRQ);
 #endif
 
@@ -292,10 +293,16 @@ void CPU::ServiceInterrupt(const InterruptType asserted_interrupt_type)
 	  For BRK: the first two cycles differ as follows:
 	   1    PC     R  fetch opcode, increment PC
 	   2    PC     R  read next instruction byte (and throw it away), increment PC
+	  Moreover, on step 5, P is pushed with the B flag set.
 	*/
 
 	// Cycles 1-2. If the interrupt source is the BRK instruction, then the first two reads have already been handled (in the BRK() function).
-	if (asserted_interrupt_type != InterruptType::BRK)
+	if constexpr (asserted_interrupt_type == InterruptType::BRK)
+	{
+		//ReadCycle(PC++); /* Dummy read */
+		//ReadCycle(PC++); /* Dummy read */
+	}
+	else
 	{
 		ReadCycle(PC); /* Dummy read */
 		ReadCycle(PC); /* Dummy read */
@@ -449,7 +456,7 @@ void CPU::BPL()
 // Force the generation of an interrupt request. Additionally, the break flag is set.
 void CPU::BRK()
 {
-	ServiceInterrupt(InterruptType::BRK);
+	ServiceInterrupt<InterruptType::BRK>();
 }
 
 
