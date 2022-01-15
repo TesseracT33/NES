@@ -314,7 +314,9 @@ private:
 	void WriteMemory(u16 addr, u8 data);
 	void WritePaletteRAM(u16 addr, u8 data);
 
-	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id, TileType tile_type);
+	template<TileType tile_type>
+	u8 GetNESColorFromColorID(u8 col_id, u8 palette_id);
+
 	u8 ReadMemory(u16 addr);
 	u8 ReadPaletteRAM(u16 addr);
 

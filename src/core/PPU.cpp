@@ -714,7 +714,8 @@ void PPU::UpdateSpriteEvaluation()
 
 
 // Get an actual NES color (indexed 0-63) from a bg or sprite color id (0-3), given the palette id (0-3)
-u8 PPU::GetNESColorFromColorID(const u8 col_id, const u8 palette_id, const TileType tile_type)
+template<PPU::TileType tile_type>
+u8 PPU::GetNESColorFromColorID(const u8 col_id, const u8 palette_id)
 {
 	if (RENDERING_IS_ENABLED)
 	{
@@ -724,7 +725,10 @@ u8 PPU::GetNESColorFromColorID(const u8 col_id, const u8 palette_id, const TileT
 		// For bg tiles, two consecutive bits of an attribute table byte holds the palette number (0-3). These have already been extracted beforehand (see the updating of the '' variable)
 		// For sprites, bits 1-0 of the 'attribute byte' (byte 2 from OAM) give the palette number.
 		// Each bg and sprite palette consists of three bytes (describing the actual NES colors for color ID:s 1, 2, 3), starting at $3F01, $3F05, $3F09, $3F0D respectively for bg tiles, and $3F11, $3F15, $3F19, $3F1D for sprites
-		return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id + 0x10 * (tile_type == TileType::OBJ));
+		if constexpr (tile_type == TileType::BG)
+			return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id);
+		else
+			return ReadPaletteRAM(0x3F00 + col_id + 4 * palette_id + 0x10);
 	}
 	else
 	{
@@ -874,10 +878,10 @@ void PPU::ShiftPixel()
 
 	const u8 col = [&]() {
 		if (sprite_col_id > 0 && (sprite_priority == 0 || bg_col_id == 0))
-			return GetNESColorFromColorID(sprite_col_id, sprite_attribute_latch[sprite_index] & 3, TileType::OBJ);
+			return GetNESColorFromColorID<TileType::OBJ>(sprite_col_id, sprite_attribute_latch[sprite_index] & 3);
 		// Fetch one bit from each of the two bg shift registers containing the palette id for the current tile.
 		const u8 bg_palette_id = ((bg_palette_attr_reg[0] << scroll.x) & 0x8000) >> 15 | ((bg_palette_attr_reg[1] << scroll.x) & 0x8000) >> 14;
-		return GetNESColorFromColorID(bg_col_id, bg_palette_id, TileType::BG);
+		return GetNESColorFromColorID<TileType::BG>(bg_col_id, bg_palette_id);
 	}();
 
 	bg_palette_attr_reg[0] <<= 1;
