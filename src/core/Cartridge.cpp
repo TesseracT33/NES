@@ -19,7 +19,7 @@ std::optional<std::unique_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 	/* Read and parse the rom header (16 bytes), containing properties of the cartridge/mapper. */
 	std::array<u8, header_size> header{};
 	MapperProperties mapper_properties{rom_path};
-	rom_ifs.read((char*)&header[0], header_size);
+	rom_ifs.read((char*)header.data(), header_size);
 	bool success = ParseHeader(header, mapper_properties);
 	if (!success)
 		return std::nullopt;
@@ -29,14 +29,20 @@ std::optional<std::unique_ptr<BaseMapper>> Cartridge::ConstructMapperFromRom(con
 	const size_t trainer_size = 0x200;
 	const size_t prg_rom_start = header_size + (mapper_properties.has_trainer ? trainer_size : 0);
 	const size_t chr_prg_rom_size = rom_size - prg_rom_start;
-	const size_t specified_chr_prg_rom_size = mapper_properties.chr_size + mapper_properties.prg_rom_size;
+	const size_t header_specified_chr_prg_rom_size = mapper_properties.chr_size + mapper_properties.prg_rom_size;
 
-	// TODO: compare specified_chr_prg_rom_size with chr_prg_rom_size
+	/* Compare the rom size specified by the header and the one that we found from reading the actual rom file. */
+	if (header_specified_chr_prg_rom_size != chr_prg_rom_size)
+	{
+		UserMessage::Show(std::format(
+			"Rom size mismatch; rom file (PRG+CHR) was {} bytes large, but the header specified it as {} bytes large",
+			chr_prg_rom_size, header_specified_chr_prg_rom_size), UserMessage::Type::Warning);
+	}
 
 	std::vector<u8> rom_vec{};
 	rom_vec.resize(chr_prg_rom_size);
 	rom_ifs.seekg(prg_rom_start);
-	rom_ifs.read((char*)&rom_vec[0], chr_prg_rom_size);
+	rom_ifs.read((char*)rom_vec.data(), chr_prg_rom_size);
 
 	/* Match, construct and return a mapper. If the construction fails (e.g. due to unsupported mapper detected), return. */
 	std::optional<std::unique_ptr<BaseMapper>> mapper = ConstructMapperFromMapperNumber(rom_vec, mapper_properties);
@@ -127,11 +133,10 @@ void Cartridge::ParseiNESHeader(const std::array<u8, header_size>& header, Mappe
 	mapper_properties.prg_ram_size = header[8];
 
 	// Note: Dendy is not supported from this
-	switch (header[9] & 1)
-	{
-	case 0: mapper_properties.video_standard = System::VideoStandard::NTSC; break;
-	case 1: mapper_properties.video_standard = System::VideoStandard::PAL; break;
-	}
+	mapper_properties.video_standard = [&] {
+		if (header[9] & 1) return System::VideoStandard::PAL;
+		else               return System::VideoStandard::NTSC;
+	}();
 }
 
 
@@ -140,7 +145,7 @@ void Cartridge::ParseNES20Header(const std::array<u8, header_size>& header, Mapp
 	/* Parse bytes 8-15 of a NES 2.0 header. */
 	mapper_properties.mapper_num |= (header[8] & 0xF) << 8;
 	mapper_properties.submapper_num = header[8] >> 4;
-	if (!mapper_properties.has_chr_ram)
+	if (!mapper_properties.has_chr_ram) /* If the cart has CHR RAM, its size if not provided by the header. */
 		mapper_properties.chr_size += (size_t(header[9] & 0x0F) << 8) * chr_bank_size;
 	mapper_properties.prg_rom_size += (size_t(header[9] & 0xF0) << 4) * prg_rom_bank_size;
 
@@ -168,11 +173,13 @@ void Cartridge::ParseNES20Header(const std::array<u8, header_size>& header, Mapp
 	else
 		mapper_properties.has_chr_nvram = false;
 
-	switch (header[12] & 3)
-	{
-	case 0: mapper_properties.video_standard = System::VideoStandard::NTSC ; break;
-	case 1: mapper_properties.video_standard = System::VideoStandard::PAL  ; break;
-	case 2: mapper_properties.video_standard = System::VideoStandard::NTSC ; break; // TODO: this is actually "Multi-region"
-	case 3: mapper_properties.video_standard = System::VideoStandard::Dendy; break;
-	}
+	mapper_properties.video_standard = [&] {
+		switch (header[12] & 3)
+		{
+		case 0: return System::VideoStandard::NTSC;
+		case 1: return System::VideoStandard::PAL;
+		case 2: return System::VideoStandard::NTSC; // TODO: this is actually "Multi-region"
+		case 3: return System::VideoStandard::Dendy;
+		}
+	}();
 }
