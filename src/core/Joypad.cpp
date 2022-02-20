@@ -1,5 +1,7 @@
 #include "Joypad.h"
 
+#include <cassert>
+
 
 void Joypad::Reset()
 {
@@ -35,7 +37,7 @@ u8 Joypad::ReadRegister(u16 addr)
 	{
 	case 0x4016: player = Player::ONE; break;
 	case 0x4017: player = Player::TWO; break;
-	default: break; // todo: throw exception
+	default: assert(false); break;
 	}
 
 	u8 ret;
@@ -100,7 +102,7 @@ void Joypad::OpenGameControllers()
 
 void Joypad::PollInput()
 {
-	if (SDL_PollEvent(&event))
+	while (SDL_PollEvent(&event))
 	{
 		switch (event.type)
 		{
